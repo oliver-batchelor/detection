@@ -192,7 +192,7 @@ def unbalanced_add(x, y):
 class Upscale(nn.Module):
     def __init__(self, features, scale_factor=2):
         super().__init__()
-        self.conv = Conv(features, features*4)
+        self.conv = Conv(features, features * scale_factor**2)
         self.scale_factor = scale_factor
 
     def forward(self, inputs):
