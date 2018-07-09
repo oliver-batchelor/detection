@@ -146,12 +146,18 @@ def transform_testing(args):
     return scale(s)
 
 
-
-
 class DetectionDataset:
 
     def __init__(self, images):
+        assert type(images) is dict, "expected images as a dict"
         self.images = images
+
+    def add(self, image):
+        filename = image['file']
+        images[filename] = image
+
+    def remove(self, filename):
+        del images[filename]
 
     def train(self, args, encoder=None, collate_fn=default_collate):
         images = FlatList(self.images, loader = load_boxes, transform = transform_training(args, encoder=encoder))
