@@ -2,51 +2,31 @@
 import argparse
 import tools.arguments as common
 
+from tools.parameters import param, make_parser
+from tools import Struct
+
+
+
 import models
 
-
-def dataset_args(parser):
-
-    parser.add_argument('--min_scale', type=float, default=2/3,
-                    help='minimum scaling during preprocessing')
-
-    parser.add_argument('--max_scale', type=float, default=3/2,
-                help='maximum scaling during preprocessing')
-
-
-    parser.add_argument('--gamma', type=float, default=0.15,
-                help='variation in gamma (brightness) when training')
-
-    parser.add_argument('--image_size', type=int, default=440,
-                    help='size of patches to train on')
-
-    parser.add_argument('--input', required=True,
-                        help='input image path')
-    parser.add_argument('--no_crop', action='store_true', default=False,
-                        help='train always on full size images rather than cropping')
+image_parameters = Struct (
+    min_scale   = param(2/3,   help='minimum scaling during preprocessing'),
+    max_scale   = param(3/2,   help='maximum scaling during preprocessing'),
+    gamma       = param(0.15,  help='variation in gamma (brightness) when training'),
+    image_size  = param(440,   help='size of patches to train on'),
+    no_crop     = param(False, help='train always on full size images rather than cropping'),
+    down_scale  = param(1,     help='down scale of image_size to test/train on')
+)
 
 
-    parser.add_argument('--model', action='append', default=[],
-                        help='model type and sub-parameters e.g. "unet --dropout 0.1"')
 
+parameters = image_parameters.merge(common.parameters)
 
-    parser.add_argument('--down_scale', type=int, default=1,
-                help='down scale of image_size to test/train on')
+parser = make_parser('Object detection', parameters)
+parser.add_argument('--input', required=True, help='input image path')
+parser.add_argument('--model', action='append', default=[], help='model type and sub-parameters e.g. "unet --dropout 0.1"')
+parser.add_argument('--dataset', default='annotate', help='dataset type options are (annotate)')
 
-    parser.add_argument('--dataset', default='annotate',
-                        help='dataset type options are (annotate)')
-
-
-def add_arguments(parser):
-    parser.add_argument('--experiment', default='experiment',
-                        help='name for logged experiment on tensorboard (default None)')
-
-    dataset_args(parser)
-    common.add(parser)
-
-
-parser = argparse.ArgumentParser(description='Object detection')
-add_arguments(parser)
 
 def get_arguments():
     return parser.parse_args()

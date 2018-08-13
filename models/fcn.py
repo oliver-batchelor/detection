@@ -18,6 +18,7 @@ import tools.model.io as io
 
 import torch.nn.init as init
 from tools import Struct
+from tools.parameters import param
 
 
 def image_size(inputs):
@@ -137,7 +138,7 @@ class FCN(nn.Module):
 
             return torch.cat(list(map(permute, layers)), 1)
 
-        conf = F.sigmoid(join(self.classifiers(layers), self.num_classes))
+        conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
         loc = join(self.localisers(layers), 4)
 
         return (loc, conf)
@@ -149,19 +150,19 @@ class FCN(nn.Module):
         ]
 
 box_parameters = Struct (
-    pos_match = (0.5, "lower iou threshold matching positive anchor boxes in training"),
-    neg_match = (0.4, "upper iou threshold matching negative anchor boxes in training"),
+    pos_match = param (0.5, help = "lower iou threshold matching positive anchor boxes in training"),
+    neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training"),
 
-    nms_threshold    = (0.5, "overlap threshold (iou) used in nms to filter duplicates"),
-    class_threshold  = (0.05, 'hard threshold used to filter negative boxes'),
-    max_detections    = (100, 'maximum number of detections (for efficiency) in testing')
+    nms_threshold    = param (0.5, help = "overlap threshold (iou) used in nms to filter duplicates"),
+    class_threshold  = param (0.05, help = 'hard threshold used to filter negative boxes'),
+    max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
 )
 
 parameters = Struct(
-        base_name       = ("resnet18", "name of pretrained resnet to use"),
-        features    = (64, "fixed size features in new conv layers"),
-        first   = (3, "first layer of anchor boxes, anchor size = 2^(n + 2)"),
-        last    = (7, "last layer of anchor boxes")
+        base_name       = param ("resnet18", help = "name of pretrained resnet to use"),
+        features    = param (64, help = "fixed size features in new conv layers"),
+        first   = param (3, help = "first layer of anchor boxes, anchor size = 2^(n + 2)"),
+        last    = param (7, help = "last layer of anchor boxes")
     )
 
 def extra_layer(inp, features):

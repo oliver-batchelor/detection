@@ -17,7 +17,7 @@ from tools.image import cv
 
 from detection.models import models
 from detection.loss import total_bce
-from dataset.load import load_file
+from remote.dataset import load_dataset
 
 from evaluate import eval_train, summarize_train, eval_test, summarize_test
 
@@ -25,6 +25,8 @@ from tools.model import io
 
 from trainer import train, test
 from tqdm import tqdm
+
+
 
 def create_model(output_path, args, classes):
     model_args = {'num_classes':len(classes), 'input_channels':3}
@@ -78,8 +80,8 @@ def main():
         return Variable(t.cuda()) if args.cuda else t
 
 
-    classes, train_data, test_data = load_file(args.input)
-    env = setup_env(args, classes)
+    dataset = load_dataset(args.input)
+    env = setup_env(args, dataset.classes)
 
     io.model_stats(env.model)
 

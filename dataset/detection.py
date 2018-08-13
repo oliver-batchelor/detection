@@ -6,6 +6,9 @@ import torch
 from torch.utils.data.sampler import RandomSampler
 from torch.utils.data.dataloader import DataLoader, default_collate
 
+
+import tools.dataset.direct as direct
+
 from tools.dataset.flat import FlatList
 from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
@@ -105,12 +108,24 @@ def transpose(dicts):
     return accum
 
 
-def load_training(args, images, collate_fn=default_collate):
-    return DataLoader(images,
+def load_training(args, dataset, collate_fn=default_collate):
+    return DataLoader(dataset,
         num_workers=args.num_workers,
         batch_size=1 if args.no_crop else args.batch_size,
         sampler=RepeatSampler(args.epoch_size, len(images)) if args.epoch_size else RandomSampler(images),
         collate_fn=collate_fn)
+
+
+def sample_training(args, images, loader, transform, collate_fn=default_collate):
+    dataset = direct.Loader(loader, transform)
+    sampler = direct.RandomSampler(images, args.epoch_size) if args.epoch_size else direct.ListSampler(images)
+
+    return DataLoader(dataset,
+        num_workers=args.num_workers,
+        batch_size=1 if args.no_crop else args.batch_size,
+        sampler=sampler,
+        collate_fn=collate_fn)
+
 
 def load_testing(args, images):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1)
@@ -148,21 +163,25 @@ def transform_testing(args):
 
 class DetectionDataset:
 
-    def __init__(self, images):
-        assert type(images) is dict, "expected images as a dict"
-        self.images = images
+    def __init__(self, train_images={}, test_images={}, classes=[]):
 
-    def add(self, image):
-        filename = image['file']
-        images[filename] = image
+        assert type(train_images) is list, "expected train_images as a list"
+        assert type(test_images) is list, "expected test_images as a list"
+        assert type(classes) is list, "expected classes as a list"
 
-    def remove(self, filename):
-        del images[filename]
+        self.train_images = train_images
+        self.test_images = test_images
+
+        self.classes = classes
+
 
     def train(self, args, encoder=None, collate_fn=default_collate):
-        images = FlatList(self.images, loader = load_boxes, transform = transform_training(args, encoder=encoder))
+        images = FlatList(self.train_images, loader = load_boxes, transform = transform_training(args, encoder=encoder))
         return load_training(args, images, collate_fn=collate_fn)
 
+    def sample_train(self, args, encoder=None, collate_fn=default_collate):
+        return sample_training(args, self.train_images, load_boxes, transform = transform_training(args, encoder=encoder), collate_fn=collate_fn)
+
     def test(self, args):
-        images = FlatList(self.images, loader = load_boxes, transform = transform_testing(args))
+        images = FlatList(self.test_images, loader = load_boxes, transform = transform_testing(args))
         return load_testing(args, images)

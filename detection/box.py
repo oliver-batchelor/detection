@@ -161,13 +161,13 @@ def make_boxes(box_sizes, box_dim, image_dim):
 
     n = len(box_sizes)
 
-    xs = torch.arange(0, w).add_(0.5).view(1, w, 1, 1).expand(h, w, n, 1)
-    ys = torch.arange(0, h).add_(0.5).view(h, 1, 1, 1).expand(h, w, n, 1)
+    xs = torch.arange(0, w, dtype=torch.float).add_(0.5).view(1, w, 1, 1).expand(h, w, n, 1)
+    ys = torch.arange(0, h, dtype=torch.float).add_(0.5).view(h, 1, 1, 1).expand(h, w, n, 1)
 
     xs = xs.mul(image_dim[0] / w)
     ys = ys.mul(image_dim[1] / h)
 
-    box_sizes = torch.Tensor(box_sizes).view(1, 1, n, 2).expand(h, w, n, 2)
+    box_sizes = torch.FloatTensor(box_sizes).view(1, 1, n, 2).expand(h, w, n, 2)
     boxes = torch.cat([xs, ys, box_sizes], 3).view(-1, 4)
 
     return boxes

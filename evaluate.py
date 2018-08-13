@@ -14,15 +14,19 @@ from tools import Struct, tensor
 
 from detection import evaluate
 
-def eval_train(loss_func, var):
+
+
+
+def eval_train(loss_func, device=torch.cuda.current_device()):
 
     def f(model, data):
         image, targets, lengths = data['image'], data['targets'], data['lengths']
 
-        norm_data = var(normalize_batch(image))
+        norm_data = normalize_batch(image).to(device)
         predictions = model(norm_data)
 
-        class_loss, loc_loss, n = loss_func(var(targets), predictions)
+        print(targets)
+        class_loss, loc_loss, n = loss_func(targets, predictions)
         error = class_loss + loc_loss
 
         stats = Struct(error=error.item(), class_loss=class_loss.item(), loc_loss=loc_loss.item(), size=image.size(0), boxes=lengths.sum(), matches=n)
@@ -41,14 +45,14 @@ def summarize_train(name, stats, epoch, globals={}):
     return avg_loss
 
 
-def eval_test(encoder, var):
+def eval_test(encoder, device=torch.cuda.current_device()):
 
     def f(model, data):
 
         images, target_boxes, target_labels = data['image'], data['boxes'], data['labels']
         assert images.size(0) == 1, "eval_test: expected batch size of 1 for evaluation"
 
-        norm_data = var(normalize_batch(images))
+        norm_data = normalize_batch(images)
         loc_preds, class_preds = model(norm_data)
 
         boxes, labels, confs = encoder.decode_batch(images, loc_preds.detach(), class_preds.detach())[0]

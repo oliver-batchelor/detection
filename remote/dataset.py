@@ -13,17 +13,6 @@ def load_dataset(filename):
     raise Exception('load_file: file not readable ' + filename)
 
 
-def decode_image(data):
-    objs = [obj for obj in data['instances'] if obj['tag'] == 'ObjBox']
-
-    boxes = [to_box(obj) for obj in objs]
-    labels = [to_label(obj) for obj in objs]
-    return {
-        'file':path.join(config['root'], data['imageFile']),
-        'boxes': torch.FloatTensor(boxes),
-        'labels': torch.LongTensor(labels)
-    }
-
 
 def decode_dataset(data):
     config = data['config']
@@ -36,11 +25,20 @@ def decode_dataset(data):
         return [*b['lower'], *b['upper']]
 
     def to_label(obj):
-        return class_mapping[obj['classId']]
+        return class_mapping[obj['label']]
 
-    return [to_image(i) for i in data['images']]
-    #
-    # train = [to_image(i) for i in data['images'] if i['category'] == 'Train']
-    # test = [to_image(i) for i in data['images'] if i['category'] == 'Test']
-    #
-    # return classes, DetectionDataset(train), DetectionDataset(test)
+    def to_image(data):
+        objs = [obj for obj in data['annotations']]
+
+        boxes = [to_box(obj) for obj in objs]
+        labels = [to_label(obj) for obj in objs]
+        return {
+            'file':path.join(config['root'], data['imageFile']),
+            'boxes': torch.FloatTensor(boxes),
+            'labels': torch.LongTensor(labels)
+        }
+
+    train = [to_image(i) for i in data['images'] if i['category'] == 'Train']
+    test = [to_image(i) for i in data['images'] if i['category'] == 'Test']
+
+    return DetectionDataset(classes=classes, train_images=train, test_images=test)

@@ -4,13 +4,16 @@ from tqdm import tqdm
 import gc
 
 
-def train(model, loader, eval, optimizer):
+
+
+
+def train(model, loader, eval, optimizer, check = lambda: False):
     print("training:")
     stats = 0
-    model.train()
 
     with tqdm(total=len(loader) * loader.batch_size) as bar:
         for data in loader:
+            model.train()
 
             optimizer.zero_grad()
             result = eval(model, data)
@@ -22,6 +25,8 @@ def train(model, loader, eval, optimizer):
 
             del result
             gc.collect()
+
+            if check(): break
 
     return stats
 
