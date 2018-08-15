@@ -4,16 +4,20 @@ from tqdm import tqdm
 import gc
 
 
+def const(a):
+    def f(*args):
+        return a
+    return f
 
 
-
-def train(model, loader, eval, optimizer, check = lambda: False):
+def train(model, loader, eval, optimizer, hook = const(False)):
     print("training:")
     stats = 0
 
+    model.train()
     with tqdm(total=len(loader) * loader.batch_size) as bar:
-        for data in loader:
-            model.train()
+        for n, data in enumerate(loader):
+            if hook(n, len(loader)): break
 
             optimizer.zero_grad()
             result = eval(model, data)
@@ -26,16 +30,17 @@ def train(model, loader, eval, optimizer, check = lambda: False):
             del result
             gc.collect()
 
-            if check(): break
-
     return stats
 
 
-def test(model, loader, eval):
+def test(model, loader, eval, hook = const(False)):
     print("testing:")
     stats = 0
+
     model.eval()
-    for data in tqdm(loader):
+    for n, data in enumerate(tqdm(loader)):
+
+        if hook(n, len(loader)): break
 
         result = eval(model, data)
         stats += result.statistics

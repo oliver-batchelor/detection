@@ -5,6 +5,7 @@ import json
 import torch
 from dataset.detection import DetectionDataset
 
+from tools import filterMap, pluck, filterNone
 
 def load_dataset(filename):
     with open(filename, "r") as file:
@@ -14,31 +15,47 @@ def load_dataset(filename):
 
 
 
+
+def split_tagged(tagged):
+    return tagged['tag'], tagged['contents'] if 'contents' in tagged else None
+
+def tagged(name, contents):
+    if contents is None:
+        return {'tag':name}
+    else:
+        return {'tag':name, 'contents':contents}
+
+def decode_image(data, config):
+    class_mapping = {int(k):i  for i, k in enumerate(config['classes'].keys())}
+
+    def decode_obj(obj):
+        tag, shape = split_tagged(obj['shape'])
+        if tag == 'BoxShape':
+            return {
+                'label' : class_mapping[obj['label']],
+                'box'   : [*shape['lower'], *shape['upper']]
+            }
+        else:
+            # Ignore unsupported annotation for now
+            return None
+
+    objs = filterMap(decode_obj, data['annotations'])
+
+    return {
+        'file':path.join(config['root'], data['imageFile']),
+        'boxes': torch.FloatTensor(pluck('box', objs)),
+        'labels': torch.LongTensor(pluck('label', objs)),
+        'category': data['category']
+    }
+
+def filterDict(d):
+    return {k: v for k, v in d.items() if v is not None}
+
 def decode_dataset(data):
     config = data['config']
-
     classes = [{'id':int(k), 'name':v} for k, v in config['classes'].items()]
-    class_mapping = {c['id']:i  for i, c in enumerate(classes)}
 
-    def to_box(obj):
-        b = obj['bounds']
-        return [*b['lower'], *b['upper']]
+    def imageCat(cat):
+        return filterDict( { i['imageFile']:decode_image(i, config) for i in data['images'] if i['category'] == cat })
 
-    def to_label(obj):
-        return class_mapping[obj['label']]
-
-    def to_image(data):
-        objs = [obj for obj in data['annotations']]
-
-        boxes = [to_box(obj) for obj in objs]
-        labels = [to_label(obj) for obj in objs]
-        return {
-            'file':path.join(config['root'], data['imageFile']),
-            'boxes': torch.FloatTensor(boxes),
-            'labels': torch.LongTensor(labels)
-        }
-
-    train = [to_image(i) for i in data['images'] if i['category'] == 'Train']
-    test = [to_image(i) for i in data['images'] if i['category'] == 'Test']
-
-    return DetectionDataset(classes=classes, train_images=train, test_images=test)
+    return config, DetectionDataset(classes=classes, train_images=imageCat('Train'), test_images=imageCat('Test'))

@@ -59,16 +59,17 @@ class Encoder:
         return box.encode(boxes, labels, self.anchors(inputs), self.match_thresholds)
 
 
-    def decode(self, inputs, loc_pred, class_pred):
+    def decode(self, inputs, loc_pred, class_pred, nms_params=None):
+        nms_params = nms_params or self.nms_params
         assert loc_pred.dim() == 2 and class_pred.dim() == 2
 
         inputs = image_size(inputs)
         anchor_boxes = self.anchors(inputs).type_as(loc_pred)
 
-        return box.decode_nms(loc_pred, class_pred, anchor_boxes, **self.nms_params)
+        return box.decode_nms(loc_pred, class_pred, anchor_boxes, **nms_params)
 
 
-    def decode_batch(self, inputs, loc_pred, class_pred):
+    def decode_batch(self, inputs, loc_pred, class_pred, nms_params=None):
         assert loc_pred.dim() == 3 and class_pred.dim() == 3
 
         if torch.is_tensor(inputs):
@@ -76,7 +77,7 @@ class Encoder:
             inputs = inputs.size(2), inputs.size(1)
 
         assert len(inputs) == 2
-        return [self.decode(inputs, l, c) for l, c in zip(loc_pred, class_pred)]
+        return [self.decode(inputs, l, c, nms_params) for l, c in zip(loc_pred, class_pred)]
 
 
 def init_weights(module):
@@ -112,7 +113,7 @@ class FCN(nn.Module):
             return nn.Sequential(
                 Residual(basic_block(features, features)),
                 Residual(basic_block(features, features)),
-                Conv(features, n, bias=True))
+                Conv(features, n, 1, bias=True))
 
         self.num_classes = num_classes
 

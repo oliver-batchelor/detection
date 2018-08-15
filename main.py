@@ -85,8 +85,8 @@ def main():
 
     io.model_stats(env.model)
 
-    def adjust_learning_rate(lr):
-        for param_group in env.optimizer.param_groups:
+    def adjust_learning_rate(lr, optimizer):
+        for param_group in optimizer.param_groups:
             modified = lr * param_group['modifier'] if 'modifier' in param_group else lr
             param_group['lr'] = modified
 
@@ -100,7 +100,7 @@ def main():
         lr = annealing_rate(epoch)
         globals = {'lr': lr}
 
-        adjust_learning_rate(lr)
+        adjust_learning_rate(lr, env.optimizer)
         print("epoch {}, lr {:.3f}, best (AP[0.5-0.95]) {:.2f}".format(epoch, lr, env.best))
 
         stats = train(env.model, train_data.train(args, env.encoder), eval_train(env.loss_func, var), env.optimizer)

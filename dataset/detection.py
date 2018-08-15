@@ -8,6 +8,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 
 
 import tools.dataset.direct as direct
+from tools import transpose, over
 
 from tools.dataset.flat import FlatList
 from tools.dataset.samplers import RepeatSampler
@@ -28,21 +29,29 @@ def random_mean(mean, magnitude):
     return mean + random.uniform(-magnitude, magnitude)
 
 
-def scale(scale):
-    def apply(d):
-        image, boxes = d['image'], d['boxes']
-
+def scale_image(scale):
+    def apply(image):
         input_size = (image.size(1), image.size(0))
         centre = (input_size[0] * 0.5, input_size[1] * 0.5)
 
-        t = transforms.make_affine(input_size, centre, scale=(scale, scale))
+        dest_size = (int(input_size[0] * scale), int(input_size[1] * scale))
 
-        boxes = box.transform(boxes, (0, 0), (sx, sy))
+        t = transforms.make_affine(input_size, centre, scale=(scale, scale))
+        return transforms.warp_affine(image, t, dest_size)
+    return apply
+
+
+def scale(scale):
+    apply_image = scale_image(scale)
+
+    def apply(d):
+        image, boxes = d['image'], d['boxes']
+        boxes = box.transform(boxes, (0, 0), (scale, scale))
         return {**d,
-                'image': transforms.warp_affine(image, t, dest_size),
-                'boxes': boxes,
-                'labels': labels
+                'image': apply_image(image),
+                'boxes': boxes
             }
+    return apply
 
 def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
@@ -50,8 +59,6 @@ def random_log(l, u):
 
 def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_overlap = 0.5):
     cw, ch = dest_size
-
-
 
     def apply(d):
 
@@ -87,25 +94,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
             }
     return apply
 
-def replace(d, key, value):
-    return {**d, key:value}
 
-def over(key, f):
-    def modify(d):
-        value = f(d[key])
-        return replace(d, key, value)
-    return modify
-
-def transpose(dicts):
-    accum = {}
-    for d in dicts:
-        for k, v in d.items():
-            if k in accum:
-                accum[k].append(v)
-            else:
-                accum[k] = [v]
-
-    return accum
 
 
 def load_training(args, dataset, collate_fn=default_collate):
@@ -157,16 +146,27 @@ def transform_training(args, encoder=None):
     return transforms.compose (crop, adjust_colors, encode)
 
 def transform_testing(args):
-    s = 1 / args.down_scale
-    return scale(s)
+    if args.down_scale != 1:
+        s = 1 / args.down_scale
+        return scale(s)
+    else:
+        return None
+
+
+def transform_image_testing(args):
+    if args.down_scale != 1:
+        s = 1 / args.down_scale
+        return scale_image(s)
+    else:
+        return None
 
 
 class DetectionDataset:
 
     def __init__(self, train_images={}, test_images={}, classes=[]):
 
-        assert type(train_images) is list, "expected train_images as a list"
-        assert type(test_images) is list, "expected test_images as a list"
+        assert type(train_images) is dict, "expected train_images as a dict"
+        assert type(test_images) is dict, "expected test_images as a dict"
         assert type(classes) is list, "expected classes as a list"
 
         self.train_images = train_images
@@ -175,13 +175,35 @@ class DetectionDataset:
         self.classes = classes
 
 
+    def update_image(self, file, image, category):
+        if file in self.train_images:
+            del self.train_images[file]
+        if file in self.test_images:
+            del self.test_images[file]
+
+        if image is not None:
+            if category == 'Test':
+                self.test_images[file] = image
+            elif category == 'Train':
+                self.train_images[file] = image
+
+
     def train(self, args, encoder=None, collate_fn=default_collate):
-        images = FlatList(self.train_images, loader = load_boxes, transform = transform_training(args, encoder=encoder))
+        images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_training(args, encoder=encoder))
         return load_training(args, images, collate_fn=collate_fn)
 
     def sample_train(self, args, encoder=None, collate_fn=default_collate):
-        return sample_training(args, self.train_images, load_boxes, transform = transform_training(args, encoder=encoder), collate_fn=collate_fn)
+        return sample_training(args, list(self.train_images.values()), load_boxes, transform = transform_training(args, encoder=encoder), collate_fn=collate_fn)
+
+    def load_testing(self, file, args):
+        transform = transform_testing(args)
+        image = cv.imread_color(file)
+
+        if transform is not None:
+            image = transform(image)
+
+        return image
 
     def test(self, args):
-        images = FlatList(self.test_images, loader = load_boxes, transform = transform_testing(args))
+        images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_testing(args))
         return load_testing(args, images)
