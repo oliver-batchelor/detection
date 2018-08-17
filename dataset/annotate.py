@@ -10,7 +10,7 @@ from tools import filterMap, pluck, filterNone
 def load_dataset(filename):
     with open(filename, "r") as file:
         str = file.read()
-        return decode_dataset()
+        return decode_dataset(json.loads(str))
     raise Exception('load_file: file not readable ' + filename)
 
 

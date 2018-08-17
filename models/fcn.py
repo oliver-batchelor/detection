@@ -14,7 +14,6 @@ from detection import box
 
 from models.common import Conv, Cascade, UpCascade, Residual, Parallel,  \
             DecodeAdd, Decode, init_weights, basic_block, reduce_features, replace_batchnorms
-import tools.model.io as io
 
 import torch.nn.init as init
 from tools import Struct
@@ -196,8 +195,11 @@ def extend_layers(layers, start, end, features=32):
     return [nn.Sequential(*initial), *rest], [*extra_layers]
 
 
-def create_fcn(args, num_classes=2, input_channels=3):
-    assert input_channels == 3
+def create_fcn(args, dataset_args):
+    assert dataset_args.input_channels == 3
+    assert dataset_args.num_classes >= 1
+
+    assert args.first <= args.last
 
     backbone, extra = extend_layers(pretrained.get_layers(args.base_name), args.first, args.last, features=args.features)
     box_sizes = anchor_sizes(args.first, args.last)
@@ -209,7 +211,7 @@ def create_fcn(args, num_classes=2, input_channels=3):
     }
 
 
-    return FCN(backbone, extra, box_sizes, num_classes=num_classes, features=args.features), \
+    return FCN(backbone, extra, box_sizes, num_classes=dataset_args.num_classes, features=args.features), \
            Encoder(args.first, box_sizes,
                 match_thresholds = (args.neg_match, args.pos_match),
                 nms_params = nms_params
@@ -220,10 +222,12 @@ models = {
   }
 
 
+
+
 if __name__ == '__main__':
 
     _, *cmd_args = sys.argv
-    args = io.parse_params(models, cmd_args)
+    args = tools.parse_params(models, cmd_args)
 
     model, _ = create_fcn(args, 2, 3)
 

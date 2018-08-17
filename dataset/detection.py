@@ -46,6 +46,7 @@ def scale(scale):
 
     def apply(d):
         image, boxes = d['image'], d['boxes']
+
         boxes = box.transform(boxes, (0, 0), (scale, scale))
         return {**d,
                 'image': apply_image(image),
@@ -101,7 +102,7 @@ def load_training(args, dataset, collate_fn=default_collate):
     return DataLoader(dataset,
         num_workers=args.num_workers,
         batch_size=1 if args.no_crop else args.batch_size,
-        sampler=RepeatSampler(args.epoch_size, len(images)) if args.epoch_size else RandomSampler(images),
+        sampler=RepeatSampler(args.epoch_size, len(dataset)) if args.epoch_size else RandomSampler(dataset),
         collate_fn=collate_fn)
 
 
@@ -116,8 +117,8 @@ def sample_training(args, images, loader, transform, collate_fn=default_collate)
         collate_fn=collate_fn)
 
 
-def load_testing(args, images):
-    return DataLoader(images, num_workers=args.num_workers, batch_size=1)
+def load_testing(args, images, collate_fn=default_collate):
+    return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
 def encode_targets(encoder):
@@ -196,14 +197,13 @@ class DetectionDataset:
         return sample_training(args, list(self.train_images.values()), load_boxes, transform = transform_training(args, encoder=encoder), collate_fn=collate_fn)
 
     def load_testing(self, file, args):
-        transform = transform_testing(args)
+        transform = transform_image_testing(args)
         image = cv.imread_color(file)
 
         if transform is not None:
             image = transform(image)
-
         return image
 
-    def test(self, args):
+    def test(self, args, collate_fn=default_collate):
         images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_testing(args))
-        return load_testing(args, images)
+        return load_testing(args, images, collate_fn=collate_fn)

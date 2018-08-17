@@ -10,7 +10,7 @@ from torchvision.models import resnet, densenet, vgg
 
 
 import models.common as c
-import tools.model.io as io
+
 
 from tools import Struct
 
@@ -19,13 +19,13 @@ def make_encoder(name, depth = None):
     layers = get_layers(name)
     if depth:
         layers = layers[:depth]
-        
+
     return make_cascade(layers)
 
 
 def get_layers(name):
     model = m.__dict__[name](pretrained=True)
-    
+
     if isinstance(model, resnet.ResNet):
         return resnet_layers(model)
     elif isinstance(model, densenet.DenseNet):
@@ -35,7 +35,7 @@ def get_layers(name):
     else:
         assert false, "unsupported model type " + name
 
-    
+
 
 def make_cascade(layers):
     return c.Cascade(*layers)
@@ -83,6 +83,3 @@ def densenet_layers(densenet):
             nn.Sequential(m['transition2'], m['denseblock3']),
             nn.Sequential(m['transition3'], m['denseblock4'], m['norm5'])
         ]
-
-
-

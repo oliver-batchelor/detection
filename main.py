@@ -1,121 +1,250 @@
-import gc
-import os
-import math
-
-from os import path
-
 import torch
-from torch import nn
-import torch.nn.functional as F
+import copy
 import torch.optim as optim
 
-from torch.autograd import Variable
-import arguments
+import time
+import os
+import json
 
-from tools import Struct
-from tools.image import cv
+from json.decoder import JSONDecodeError
+
+from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, load_dataset
+from remote.connection import connect
 
 from detection.models import models
+from tools.model import tools
+
+from tools import Struct
+from arguments import parameters
+from tools.parameters import default_parameters
+
 from detection.loss import total_bce
-from remote.dataset import load_dataset
 
-from evaluate import eval_train, summarize_train, eval_test, summarize_test
+import trainer
+import evaluate
+import math
 
-from tools.model import io
+import arguments
+import pprint
 
-from trainer import train, test
-from tqdm import tqdm
-
-
-
-def create_model(output_path, args, classes):
-    model_args = {'num_classes':len(classes), 'input_channels':3}
-    creation_params = io.parse_params(models, args.model)
-
-    start_epoch, best = 0, 0
-    model, encoder = None, None
-
-    if args.load:
-        state_dict, creation_params, start_epoch, best = io.load(output_path)
-        model, encoder = io.create(models, creation_params, model_args)
-        model.load_state_dict(state_dict)
-    else:
-        model, encoder = io.create(models, creation_params, model_args)
-
-    return model, encoder, creation_params, start_epoch, best
+pp = pprint.PrettyPrinter(indent=2)
 
 
-def setup_env(args, classes):
+def ready(*xs):
+    return all(v is not None for v in xs)
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-    torch.manual_seed(args.seed)
-    if args.cuda:
-        torch.cuda.manual_seed(args.seed)
 
-    print(args)
+class Reset(Exception):
+    def __init__(self, env):
+        self.env = env
 
-    output_path = os.path.join(args.log, args.name)
-    model, encoder, creation_params, start_epoch, best = create_model(output_path, args, classes)
-    loss_func = total_bce
 
-    print("model parameters: ", creation_params)
-    print("working directory: " + output_path)
-    #output_path, log = logger.make_experiment(args.log, args.name, dry_run=args.dry_run, load=args.load)
+class NotFound(Exception):
+    def __init__(self, filename):
+        self.filename = filename
 
-    model = model.cuda() if args.cuda else model
-#    print(model)
 
-    optimizer = optim.SGD(model.parameter_groups(args, args.fine_tuning), lr=args.lr, momentum=args.momentum)
+
+
+
+
+def initialise(config, dataset, args):
+    data_root = config['root']
+
+    model_args = Struct (
+        dataset = Struct(num_classes = len(dataset.classes), input_channels = 3),
+        model   = args.model
+    )
+
+
+
+    # state_dict, creation_params, start_epoch, best = tools.load(output_path)
+    # model, encoder = tools.create(models, creation_params, model_args)
+    # model.load_state_dict(state_dict)
+
+    model, encoder = tools.create(models, model_args.model, model_args.dataset)
+    parameters = model.parameter_groups(args.lr, args.fine_tuning)
+
+    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
+
+    best = 0.0
+    best_model = copy.deepcopy(model)
+    epoch = 0
+
+    output_path = os.path.join(data_root, "model.pth")
+
     return Struct(**locals())
 
 
-def main():
-
-    args = arguments.get_arguments()
-
-    def var(t):
-        if isinstance(t, list):
-            return [var(x) for x in t]
-
-        return Variable(t.cuda()) if args.cuda else t
+def encode_box(box):
+    lower, upper =  box[:2].tolist(), box[2:].tolist()
+    return {'lower':lower, 'upper':upper}
 
 
-    dataset = load_dataset(args.input)
-    env = setup_env(args, dataset.classes)
+def detect_request(env, file, nms_params, device):
+    path = os.path.join(env.data_root, file)
 
-    io.model_stats(env.model)
+    if not os.path.isfile(path):
+        raise NotFound(file)
 
-    def adjust_learning_rate(lr, optimizer):
-        for param_group in optimizer.param_groups:
-            modified = lr * param_group['modifier'] if 'modifier' in param_group else lr
-            param_group['lr'] = modified
+    image = env.dataset.load_testing(path, env.args)
+    boxes, labels, confs = evaluate.evaluate_image(env.model, image, env.encoder, nms_params, device)
 
-    def annealing_rate(epoch, max_lr=args.lr, min_lr=args.lr*0.01):
-        t = min(1.0, epoch / args.epochs)
-        return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(t * math.pi))
+    n = len(boxes)
+    assert n == len(labels) and n == len(confs)
+
+    classes = env.dataset.classes
+
+    def detection(args):
+        box, label, conf = args
+        shape = tagged('BoxShape', encode_box(box.cpu()))
+
+        label = classes[label.item()]['id']
+
+        return {
+            'annotation' : {'shape': shape, 'label':label},
+            'confidence' : conf.item()
+        }
+
+    return list(map(detection, zip(boxes, labels, confs)))
 
 
-    for epoch in range(env.start_epoch + 1, args.epochs + 1):
 
-        lr = annealing_rate(epoch)
-        globals = {'lr': lr}
+def log_lerp(range, t):
+    begin, end = range
+    return math.exp(math.log(begin) * (1 - t) + math.log(end) * t)
 
+def adjust_learning_rate(lr, optimizer):
+    for param_group in optimizer.param_groups:
+        modified = lr * param_group['modifier'] if 'modifier' in param_group else lr
+        param_group['lr'] = modified
+
+
+
+
+def run_trainer(args, conn = None, env = None):
+
+    device = torch.cuda.current_device()
+
+
+    def send_command(command, data):
+        str = json.dumps(tagged(command, data))
+        conn.send(str)
+
+
+    def process_command(str):
+        nonlocal env, device
+
+        try:
+            tag, data = split_tagged(json.loads(str))
+            print("recieved command: " + tag)
+
+            if tag == 'TrainerDataset':
+
+                config, dataset = decode_dataset(data)
+                env = initialise(config, dataset, args)
+
+                raise Reset(env)
+
+            elif tag == 'TrainerUpdate':
+                file, image_data = data
+
+                image = decode_image(image_data, env.config)
+                category = image_data['category']
+                print ("updating '" + file + "' in " + category)
+
+                env.dataset.update_image(file, image, category)
+
+
+            elif tag == 'TrainerDetect':
+                clientId, image, nms_prefs = data
+
+                nms_params = {
+                    'nms_threshold'     :   nms_prefs['nms'],
+                    'class_threshold'   :   nms_prefs['threshold'],
+                    'max_detections'    :   nms_prefs['detections']
+                }
+
+                if env is not None:
+                    result = detect_request(env, image, nms_params, device)
+                    send_command('TrainerDetections', (clientId, image, result))
+
+                else:
+                    send_command('TrainerReqError', [clientId, "model not available yet"])
+
+            else:
+                send_command('TrainerError', "unknown command: " + tag)
+
+
+        except (JSONDecodeError) as err:
+            send_command('TrainerError', repr(err))
+            return None
+
+
+    def poll_command():
+        if conn and conn.poll():
+            cmd = conn.recv()
+            process_command(cmd)
+
+    def train_update(n, total):
+        lr = log_lerp((args.lr, args.lr * 0.1), n / total)
         adjust_learning_rate(lr, env.optimizer)
-        print("epoch {}, lr {:.3f}, best (AP[0.5-0.95]) {:.2f}".format(epoch, lr, env.best))
+        poll_command()
 
-        stats = train(env.model, train_data.train(args, env.encoder), eval_train(env.loss_func, var), env.optimizer)
-        summarize_train("train", stats, epoch, globals=globals)
+    def test_update(n, total):
+        poll_command()
 
-        stats = test(env.model, test_data.test(args), eval_test(env.encoder, var))
-        score = summarize_test("test", stats, epoch)
+    def training_cycle():
+        model = env.model.to(device)
 
-        if not args.dry_run and score >= env.best:
-            io.save(env.output_path, env.model, env.creation_params, epoch, score)
+        if len(env.dataset.train_images) > 0:
+            stats = trainer.train(model, env.dataset.sample_train(args, env.encoder),
+                        evaluate.eval_train(total_bce, device), env.optimizer, hook=train_update)
+            evaluate.summarize_train("train", stats, env.epoch)
+
+        score = 0
+        if len(env.dataset.test_images) > 0:
+            stats = trainer.test(model, env.dataset.test(args), evaluate.eval_test(env.encoder, device), hook=test_update)
+            score = evaluate.summarize_test("test", stats, env.epoch)
+
+        if score >= env.best:
+            tools.save(env.output_path, model, env.model_args, env.epoch, score)
             env.best = score
 
+        env.epoch = env.epoch + 1
 
-        # print("scanning dataset...")
-        # classes, train_loader, test_loader = dataset.load(args)
+
+    while(True):
+        try:
+            if env is not None:
+                training_cycle()
+            poll_command()
+
+        except Reset as reset:
+            env   = reset.env
+
+def run_main():
+    args = arguments.get_arguments()
+    pp.pprint(args.to_dicts())
+
+    p, conn = None, None
+    env = None
+
+    if args.remote:
+        print("connecting to: " + args.remote)
+        p, conn = connect('ws://' + args.remote)
+
+    if args.input:
+        print("loading from: " + args.input)
+
+        config, dataset = load_dataset(args.input)
+        env = initialise(config, dataset, args)
+
+    try:
+        run_trainer(args, conn, env=env)
+    except (KeyboardInterrupt, SystemExit):
+        p.terminate()
+
 
 if __name__ == '__main__':
-    main()
+    run_main()

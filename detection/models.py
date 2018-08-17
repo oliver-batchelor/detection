@@ -9,3 +9,4 @@ def merge(*dicts):
 
 
 models = fcn.models
+parameters = {k: v.parameters for k, v in models.items()}
