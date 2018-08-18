@@ -34,15 +34,28 @@ def transform(boxes, offset, scale):
     return torch.cat([lower.min(upper), lower.max(upper)], 1)
 
 
-def filter_invalid(boxes, labels):
-    valid = (boxes[:, 2] - boxes[:, 0] > 0) & (boxes[:, 3] - boxes[:, 1] > 0)
-    inds = valid.nonzero()
-
+def subset(boxes, labels, inds):
     if inds.dim() > 1:
         inds = inds.squeeze(1)
         return torch.index_select(boxes, 0, inds), torch.index_select(labels, 0, inds)
 
     return torch.Tensor(), torch.LongTensor()
+
+
+def filter_invalid(boxes, labels):
+    valid = (boxes[:, 2] - boxes[:, 0] > 0) & (boxes[:, 3] - boxes[:, 1] > 0)
+    return subset(boxes, labels, valid.nonzero())
+
+
+def area(boxes):
+    x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
+    return (x2-x1) * (y2-y1)
+
+
+def filter_hidden(boxes, labels, lower, upper, min_visible=0.0):
+    bounds = torch.Tensor([[*lower, *upper]])
+    overlaps = (intersect(bounds, boxes) / area(boxes)).squeeze(0)
+    return subset(boxes, labels, overlaps.gt(min_visible).nonzero())
 
 
 def clamp(boxes, lower, upper):
@@ -97,7 +110,6 @@ nms_defaults = {
 }
 
 
-
 def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
     '''Non maximum suppression.
     Args:
@@ -111,12 +123,9 @@ def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=10
     Reference:
       https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/nms/py_cpu_nms.py
     '''
-    x1 = boxes[:,0]
-    y1 = boxes[:,1]
-    x2 = boxes[:,2]
-    y2 = boxes[:,3]
-
+    x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
     areas = (x2-x1) * (y2-y1)
+
     _, order = confs.sort(0, descending=True)
 
     keep = []
@@ -173,11 +182,11 @@ def make_boxes(box_sizes, box_dim, image_dim):
     return boxes
 
 
-def make_anchors(box_sizes, layer_dims, image_dim, clamp_anchors=True):
+def make_anchors(box_sizes, layer_dims, image_dim, crop_boxes=True):
     boxes = [make_boxes(boxes, box_dim, image_dim) for boxes, box_dim in zip(box_sizes, layer_dims)]
     boxes = torch.cat(boxes, 0)
 
-    if clamp_anchors:
+    if crop_boxes:
         return extents_form(clamp(point_form(boxes), (0, 0), image_dim))
 
     return boxes

@@ -20,7 +20,6 @@ test_parameters = Struct (
     input       = required('str',     help='json to load dataset'),
     num_workers = param(1,           help='number of dataloader workers'),
     epoch_size  = param(1024,        help='number of dataloader workers'),
-    image_samples   = param(1,      help='number of training samples to extract from each loaded image'),
 )
 
 parameters = detection_parameters.merge(test_parameters)
@@ -28,13 +27,12 @@ args = parse_args(parameters, 'display dataset images')
 
 pp.pprint(args.to_dicts())
 
-
 config, dataset = load_dataset(args.input)
 
 def identity(batch):
     return batch
 
-iter = dataset.sample_train(args, collate_fn=identity) # if args.test else dataset.test(args, collate_fn=identity)
+iter = dataset.test(args, collate_fn=identity) if args.test else dataset.sample_train(args, collate_fn=identity)
 
 
 for i in iter:

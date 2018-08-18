@@ -1,25 +1,24 @@
-import torch
-import copy
-import torch.optim as optim
 
 import time
 import os
 import json
+import copy
+
+import torch
+import torch.optim as optim
 
 from json.decoder import JSONDecodeError
 
 from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, load_dataset
-from remote.connection import connect
-
 from detection.models import models
-from tools.model import tools
-
-from tools import Struct
-from arguments import parameters
-from tools.parameters import default_parameters
-
 from detection.loss import total_bce
 
+from tools.model import tools
+
+from tools.parameters import default_parameters
+from tools import Struct
+
+import connection
 import trainer
 import evaluate
 import math
@@ -45,7 +44,24 @@ class NotFound(Exception):
 
 
 
+def try_load(model, model_path, model_args):
 
+    try:
+        loaded = torch.load(model_path)
+        if loaded['params'] == model_args:
+            print("loaded model matches, using loading weights" )
+
+            model.load_state_dict(loaded['state'])
+            return loaded['score'], loaded['epoch']
+
+        else:
+            print("loaded model parameters differ, ignoring" )
+    except: FileNotFoundError
+
+    return 0.0, 0
+
+
+    # print(state.keys())
 
 
 def initialise(config, dataset, args):
@@ -56,22 +72,25 @@ def initialise(config, dataset, args):
         model   = args.model
     )
 
-
-
-    # state_dict, creation_params, start_epoch, best = tools.load(output_path)
-    # model, encoder = tools.create(models, creation_params, model_args)
-    # model.load_state_dict(state_dict)
-
-    model, encoder = tools.create(models, model_args.model, model_args.dataset)
-    parameters = model.parameter_groups(args.lr, args.fine_tuning)
-
-    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
-
     best = 0.0
-    best_model = copy.deepcopy(model)
     epoch = 0
 
     output_path = os.path.join(data_root, "model.pth")
+    model, encoder = tools.create(models, model_args.model, model_args.dataset)
+
+    if not args.no_load:
+        best, epoch = try_load(model, output_path, model_args)
+
+
+    parameters = model.parameter_groups(args.lr, args.fine_tuning)
+    best_model = copy.deepcopy(model)
+
+
+    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
+
+
+
+
 
     return Struct(**locals())
 
@@ -204,7 +223,9 @@ def run_trainer(args, conn = None, env = None):
 
         score = 0
         if len(env.dataset.test_images) > 0:
-            stats = trainer.test(model, env.dataset.test(args), evaluate.eval_test(env.encoder, device), hook=test_update)
+            nms_params = args.subset('nms_threshold',  'class_threshold', 'max_detections')
+
+            stats = trainer.test(model, env.dataset.test(args), evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
             score = evaluate.summarize_test("test", stats, env.epoch)
 
         if score >= env.best:

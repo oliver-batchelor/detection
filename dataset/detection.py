@@ -29,27 +29,13 @@ def random_mean(mean, magnitude):
     return mean + random.uniform(-magnitude, magnitude)
 
 
-def scale_image(scale):
-    def apply(image):
-        input_size = (image.size(1), image.size(0))
-        centre = (input_size[0] * 0.5, input_size[1] * 0.5)
-
-        dest_size = (int(input_size[0] * scale), int(input_size[1] * scale))
-
-        t = transforms.make_affine(input_size, centre, scale=(scale, scale))
-        return transforms.warp_affine(image, t, dest_size)
-    return apply
-
-
 def scale(scale):
-    apply_image = scale_image(scale)
-
     def apply(d):
         image, boxes = d['image'], d['boxes']
 
         boxes = box.transform(boxes, (0, 0), (scale, scale))
         return {**d,
-                'image': apply_image(image),
+                'image': transforms.resize_scale(image, scale),
                 'boxes': boxes
             }
     return apply
@@ -58,7 +44,7 @@ def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
 
-def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_overlap = 0.5):
+def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, crop_boxes=False):
     cw, ch = dest_size
 
     def apply(d):
@@ -82,8 +68,10 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
             else:
                 boxes = box.transform(d['boxes'], (-x, -y), (sx, sy))
 
-            box.clamp(boxes, (0, 0), dest_size)
-            boxes, labels = box.filter_invalid(boxes, d['labels'])
+            boxes, labels = box.filter_hidden(boxes, d['labels'], (0, 0), dest_size, min_visible=min_visible)
+            if crop_boxes:
+                box.clamp(boxes, (0, 0), dest_size)
+
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
         t = transforms.make_affine(dest_size, centre, scale=(sx * (-1 if flip else 1), sy))
@@ -101,7 +89,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
 def load_training(args, dataset, collate_fn=default_collate):
     return DataLoader(dataset,
         num_workers=args.num_workers,
-        batch_size=1 if args.no_crop else args.batch_size,
+        batch_size=1 if args.full_size else args.batch_size,
         sampler=RepeatSampler(args.epoch_size, len(dataset)) if args.epoch_size else RandomSampler(dataset),
         collate_fn=collate_fn)
 
@@ -112,7 +100,7 @@ def sample_training(args, images, loader, transform, collate_fn=default_collate)
 
     return DataLoader(dataset,
         num_workers=args.num_workers,
-        batch_size=1 if args.no_crop else args.batch_size,
+        batch_size=1 if args.full_size else args.batch_size,
         sampler=sampler,
         collate_fn=collate_fn)
 
@@ -121,10 +109,10 @@ def load_testing(args, images, collate_fn=default_collate):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
-def encode_targets(encoder):
+def encode_targets(encoder, crop_boxes=False):
     def f(d):
         image = d['image']
-        targets = encoder.encode(image, d['boxes'], d['labels'])
+        targets = encoder.encode(image, d['boxes'], d['labels'], crop_boxes=crop_boxes)
         return {
             'image':image,
             'targets': targets,
@@ -140,9 +128,9 @@ def transform_training(args, encoder=None):
     result_size = int(args.image_size * s)
 
     crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale), non_uniform_scale = 0.1)
-    adjust_colors = over('image', transforms.adjust_gamma(args.gamma, args.gamma * 0.5))
+    adjust_colors = over('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
 
-    encode = identity if encoder is None else  encode_targets(encoder)
+    encode = identity if encoder is None else  encode_targets(encoder, args.crop_boxes)
     return multiple(args.image_samples, transforms.compose (crop, adjust_colors, encode))
 
 def multiple(n, transform):
@@ -165,8 +153,7 @@ def transform_testing(args):
 
 def transform_image_testing(args):
     if args.down_scale != 1:
-        s = 1 / args.down_scale
-        return scale_image(s)
+        return transforms.adjust_scale(1 / args.down_scale)
     else:
         return None
 

@@ -31,35 +31,33 @@ def image_size(inputs):
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes, nms_params=box.nms_defaults, match_thresholds=(0.4, 0.5)):
+    def __init__(self, start_layer, box_sizes):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
         self.start_layer = start_layer
 
-        self.nms_params = nms_params
-        self.match_thresholds = match_thresholds
 
-
-    def anchors(self, input_size):
+    def anchors(self, input_size, crop_boxes=False):
         def layer_size(i):
             scale = 2 ** i
             return (max(1, math.ceil(input_size[0] / scale)), max(1, math.ceil(input_size[1] / scale)))
 
-        if not (input_size in self.anchor_cache):
+        input_args = (input_size, crop_boxes)
+
+        if not (input_args in self.anchor_cache):
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
-            self.anchor_cache[input_size] = box.make_anchors(self.box_sizes, layer_dims, input_size)
+            self.anchor_cache[input_args] = box.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
 
-        return self.anchor_cache[input_size]
+        return self.anchor_cache[input_args]
 
 
-    def encode(self, inputs, boxes, labels):
+    def encode(self, inputs, boxes, labels, crop_boxes=False, match_thresholds=(0.4, 0.5)):
         inputs = image_size(inputs)
-        return box.encode(boxes, labels, self.anchors(inputs), self.match_thresholds)
+        return box.encode(boxes, labels, self.anchors(inputs, crop_boxes), match_thresholds)
 
 
-    def decode(self, inputs, loc_pred, class_pred, nms_params=None):
-        nms_params = nms_params or self.nms_params
+    def decode(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
         assert loc_pred.dim() == 2 and class_pred.dim() == 2
 
         inputs = image_size(inputs)
@@ -68,7 +66,7 @@ class Encoder:
         return box.decode_nms(loc_pred, class_pred, anchor_boxes, **nms_params)
 
 
-    def decode_batch(self, inputs, loc_pred, class_pred, nms_params=None):
+    def decode_batch(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
         assert loc_pred.dim() == 3 and class_pred.dim() == 3
 
         if torch.is_tensor(inputs):
@@ -76,7 +74,7 @@ class Encoder:
             inputs = inputs.size(2), inputs.size(1)
 
         assert len(inputs) == 2
-        return [self.decode(inputs, l, c, nms_params) for l, c in zip(loc_pred, class_pred)]
+        return [self.decode(inputs, l, c, nms_params=nms_params) for l, c in zip(loc_pred, class_pred)]
 
 
 def init_weights(module):
@@ -149,14 +147,7 @@ class FCN(nn.Module):
             {'params': self.new_modules.parameters(), 'lr':lr, 'modifier': 1.0}
         ]
 
-box_parameters = Struct (
-    pos_match = param (0.5, help = "lower iou threshold matching positive anchor boxes in training"),
-    neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training"),
 
-    nms_threshold    = param (0.5, help = "overlap threshold (iou) used in nms to filter duplicates"),
-    class_threshold  = param (0.05, help = 'hard threshold used to filter negative boxes'),
-    max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
-)
 
 parameters = Struct(
         base_name       = param ("resnet18", help = "name of pretrained resnet to use"),
@@ -204,21 +195,12 @@ def create_fcn(args, dataset_args):
     backbone, extra = extend_layers(pretrained.get_layers(args.base_name), args.first, args.last, features=args.features)
     box_sizes = anchor_sizes(args.first, args.last)
 
-    nms_params = {
-        'nms_threshold'  : args.nms_threshold,
-        'class_threshold': args.class_threshold,
-        'max_detections'  : args.max_detections
-    }
-
 
     return FCN(backbone, extra, box_sizes, num_classes=dataset_args.num_classes, features=args.features), \
-           Encoder(args.first, box_sizes,
-                match_thresholds = (args.neg_match, args.pos_match),
-                nms_params = nms_params
-            )
+           Encoder(args.first, box_sizes)
 
 models = {
-    'fcn' : Struct(create=create_fcn, parameters=parameters + box_parameters)
+    'fcn' : Struct(create=create_fcn, parameters=parameters)
   }
 
 
