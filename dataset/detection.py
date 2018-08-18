@@ -143,8 +143,17 @@ def transform_training(args, encoder=None):
     adjust_colors = over('image', transforms.adjust_gamma(args.gamma, args.gamma * 0.5))
 
     encode = identity if encoder is None else  encode_targets(encoder)
+    return multiple(args.image_samples, transforms.compose (crop, adjust_colors, encode))
 
-    return transforms.compose (crop, adjust_colors, encode)
+def multiple(n, transform):
+    def f(data):
+        return [transform(data) for _ in range(n)]
+    return f
+
+def flatten(collate_fn):
+    def f(lists):
+        return collate_fn([x for y in lists for x in y])
+    return f
 
 def transform_testing(args):
     if args.down_scale != 1:
@@ -190,11 +199,14 @@ class DetectionDataset:
 
 
     def train(self, args, encoder=None, collate_fn=default_collate):
-        images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_training(args, encoder=encoder))
-        return load_training(args, images, collate_fn=collate_fn)
+        images = FlatList(list(self.train_images.values()), loader = load_boxes,
+            transform = transform_training(args, encoder=encoder))
+
+        return load_training(args, images, collate_fn=flatten(collate_fn))
 
     def sample_train(self, args, encoder=None, collate_fn=default_collate):
-        return sample_training(args, list(self.train_images.values()), load_boxes, transform = transform_training(args, encoder=encoder), collate_fn=collate_fn)
+        return sample_training(args, list(self.train_images.values()), load_boxes,
+            transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate_fn))
 
     def load_testing(self, file, args):
         transform = transform_image_testing(args)

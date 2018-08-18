@@ -17,6 +17,8 @@ train_parameters = Struct (
     batch_size      = param(4,     help='input batch size for training'),
     epoch_size      = param(1024,   help='epoch size for training'),
 
+    image_samples   = param(1,      help='number of training samples to extract from each loaded image'),
+
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"')
 )
