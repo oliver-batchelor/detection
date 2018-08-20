@@ -43,9 +43,7 @@ class NotFound(Exception):
         self.filename = filename
 
 
-
 def try_load(model, model_path, model_args):
-
     try:
         loaded = torch.load(model_path)
         if loaded['params'] == model_args:
@@ -57,11 +55,8 @@ def try_load(model, model_path, model_args):
         else:
             print("loaded model parameters differ, ignoring" )
     except: FileNotFoundError
-
     return 0.0, 0
 
-
-    # print(state.keys())
 
 
 def initialise(config, dataset, args):
@@ -75,23 +70,16 @@ def initialise(config, dataset, args):
     best = 0.0
     epoch = 0
 
-    output_path = os.path.join(data_root, "model.pth")
+    output_path = os.path.join(data_root, args.run_name, "model.pth")
     model, encoder = tools.create(models, model_args.model, model_args.dataset)
 
     if not args.no_load:
         best, epoch = try_load(model, output_path, model_args)
 
-
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
     best_model = copy.deepcopy(model)
 
-
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
-
-
-
-
-
     return Struct(**locals())
 
 
@@ -116,12 +104,9 @@ def detect_request(env, file, nms_params, device):
 
     def detection(args):
         box, label, conf = args
-        shape = tagged('BoxShape', encode_box(box.cpu()))
-
-        label = classes[label.item()]['id']
-
         return {
-            'annotation' : {'shape': shape, 'label':label},
+            'bounds' : encode_box(box.cpu()),
+            'label'  : classes[label.item()]['id'],
             'confidence' : conf.item()
         }
 
@@ -253,7 +238,7 @@ def run_main():
 
     if args.remote:
         print("connecting to: " + args.remote)
-        p, conn = connect('ws://' + args.remote)
+        p, conn = connection.connect('ws://' + args.remote)
 
     if args.input:
         print("loading from: " + args.input)

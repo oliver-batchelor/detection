@@ -21,7 +21,8 @@ train_parameters = Struct (
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),
 
-    no_load         = param(False, help="don't attempt to load previously saved model")
+    no_load         = param(False,   help="don't attempt to load previously saved model"),
+    run_name        = param('training', help='name for training run')
 )
 
 
