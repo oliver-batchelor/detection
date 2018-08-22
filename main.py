@@ -200,8 +200,9 @@ def run_trainer(args, conn = None, env = None):
 
     def training_cycle():
         model = env.model.to(device)
+        has_training = len(env.dataset.train_images) > 0
 
-        if len(env.dataset.train_images) > 0:
+        if has_training:
             stats = trainer.train(model, env.dataset.sample_train(args, env.encoder),
                         evaluate.eval_train(total_bce, device), env.optimizer, hook=train_update)
             evaluate.summarize_train("train", stats, env.epoch)
@@ -213,7 +214,7 @@ def run_trainer(args, conn = None, env = None):
             stats = trainer.test(model, env.dataset.test(args), evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
             score = evaluate.summarize_test("test", stats, env.epoch)
 
-        if score >= env.best:
+        if score >= env.best and has_training:
             tools.save(env.output_path, model, env.model_args, env.epoch, score)
             env.best = score
 
