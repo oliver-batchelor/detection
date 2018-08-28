@@ -1,5 +1,6 @@
 import torch
 import math
+import gc
 
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -15,6 +16,7 @@ from tools import Struct, tensor
 import detection.box as box
 
 from detection import evaluate
+
 
 def to_device(t, device):
     if isinstance(t, list):
@@ -60,7 +62,12 @@ def evaluate_batch(model, images, encoder, nms_params, device):
     norm_data = to_device(normalize_batch(images), device)
     loc_preds, class_preds = model(norm_data)
 
+    loc_preds = loc_preds.detach()
+    class_preds = class_preds.detach()
+
+    gc.collect()
     return encoder.decode_batch(images, loc_preds.detach(), class_preds.detach(), nms_params=nms_params)[0]
+
 
 
 def eval_test(encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):

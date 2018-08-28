@@ -53,7 +53,9 @@ def try_load(model, model_path, model_args):
             return loaded['score'], loaded['epoch']
 
         else:
+            print(loaded['params'])
             print("loaded model parameters differ, ignoring" )
+
     except: FileNotFoundError
     return 0.0, 0
 
