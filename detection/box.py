@@ -5,6 +5,7 @@
 import torch
 from enum import Enum
 import math
+import gc
 
 def split(boxes):
     return boxes[..., :2],  boxes[..., 2:]
@@ -32,6 +33,14 @@ def transform(boxes, offset, scale):
     upper = upper.add(offset).mul(scale)
 
     return torch.cat([lower.min(upper), lower.max(upper)], 1)
+
+
+def transpose(boxes):
+    if boxes.size(0) > 0:
+        x1, y1, x2, y2 = split4(boxes)
+        return torch.stack([y1, x1, y2, x2], boxes.dim() - 1)
+    else:
+        return boxes
 
 
 def subset(boxes, labels, inds):
@@ -130,8 +139,7 @@ def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=10
 
     keep = []
     while order.numel() > 0 and len(keep) < max_detections:
-
-        i = order[0]
+        i = order[0].item()
 
         score = confs[i]
         if score < class_threshold:
@@ -158,6 +166,7 @@ def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=10
 
         ids = ids.squeeze(1)
         order = order[ids+1]
+
 
     return torch.LongTensor(keep)
 
@@ -267,7 +276,7 @@ def decode(loc_preds, class_preds, anchor_boxes):
     boxes = point_form(torch.cat([pos, sizes], 1))
     confs, labels = class_preds.max(1)
 
-    return boxes, labels, confs
+    return (boxes, labels, confs)
 
 nms_defaults = {
     'nms_threshold':0.5,
@@ -280,6 +289,12 @@ def filter_preds(keep, boxes, labels, confs):
         return boxes[keep], labels[keep], confs[keep]
     else:
         return boxes.new(), labels.new(), confs.new()
+
+def filter_nms(boxes, labels, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+    inds = nms(boxes, confs, nms_threshold=nms_threshold, class_threshold=class_threshold, \
+        max_detections=max_detections).type_as(labels)
+
+    return filter_preds(inds, boxes, labels, confs)
 
 
 def decode_nms(loc_preds, class_preds, anchor_boxes, nms_threshold=0.5, class_threshold=0.05, max_detections=100):

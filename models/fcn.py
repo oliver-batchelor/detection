@@ -57,24 +57,27 @@ class Encoder:
         return box.encode(boxes, labels, self.anchors(inputs, crop_boxes), match_thresholds)
 
 
-    def decode(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
+    def decode(self, inputs, loc_pred, class_pred):
         assert loc_pred.dim() == 2 and class_pred.dim() == 2
 
         inputs = image_size(inputs)
         anchor_boxes = self.anchors(inputs).type_as(loc_pred)
 
-        return box.decode_nms(loc_pred, class_pred, anchor_boxes, **nms_params)
+        return box.decode(loc_pred, class_pred, anchor_boxes)
 
+    def nms(self, boxes, labels, confs, nms_params=box.nms_defaults):
+        return box.filter_nms(boxes, labels, confs, **nms_params)
 
-    def decode_batch(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
-        assert loc_pred.dim() == 3 and class_pred.dim() == 3
-
-        if torch.is_tensor(inputs):
-            assert(inputs.dim() == 4)
-            inputs = inputs.size(2), inputs.size(1)
-
-        assert len(inputs) == 2
-        return [self.decode(inputs, l, c, nms_params=nms_params) for l, c in zip(loc_pred, class_pred)]
+    #
+    # def decode_batch(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
+    #     assert loc_pred.dim() == 3 and class_pred.dim() == 3
+    #
+    #     if torch.is_tensor(inputs):
+    #         assert(inputs.dim() == 4)
+    #         inputs = inputs.size(2), inputs.size(1)
+    #
+    #     assert len(inputs) == 2
+    #     return [self.decode(inputs, l, c, nms_params=nms_params) for l, c in zip(loc_pred, class_pred)]
 
 
 def init_weights(module):

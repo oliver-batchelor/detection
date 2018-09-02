@@ -36,6 +36,10 @@ detection_parameters = Struct (
         down_scale  = param(1,     help='down scale of image_size to test/train on'),
 
         full_size   = param(False, help='train always on full size images rather than sampling a patch'),
+        transposes  = param(False, help='enable image transposes in training'),
+        flips          = param(False, help='enable horizontal image flips in training'),
+        vertical_flips = param(False, help='enable vertical image flips in training'),
+
         image_samples   = param(1,      help='number of training samples to extract from each loaded image')
     ),
 
@@ -50,7 +54,7 @@ detection_parameters = Struct (
         max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
     ),
 
-    min_visible     = param (0.2, help = 'minimum proportion of area for an overlapped box to be included'),
+    min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
 )
 

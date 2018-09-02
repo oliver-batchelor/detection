@@ -96,8 +96,10 @@ def detect_request(env, file, nms_params, device):
     if not os.path.isfile(path):
         raise NotFound(file)
 
+    env.best_model.to(device)
+
     image = env.dataset.load_testing(path, env.args)
-    boxes, labels, confs = evaluate.evaluate_image(env.model, image, env.encoder, nms_params, device)
+    boxes, labels, confs = evaluate.evaluate_image(env.best_model, image, env.encoder, nms_params, device)
 
     n = len(boxes)
     assert n == len(labels) and n == len(confs)
@@ -193,7 +195,7 @@ def run_trainer(args, conn = None, env = None):
             process_command(cmd)
 
     def train_update(n, total):
-        lr = log_lerp((args.lr, args.lr * 0.1), n / total)
+        lr = log_lerp((args.lr, args.lr * 0.1), n / total) if args.lr > 0 else 0
         adjust_learning_rate(lr, env.optimizer)
         poll_command()
 
@@ -219,6 +221,8 @@ def run_trainer(args, conn = None, env = None):
         if score >= env.best and has_training:
             tools.save(env.output_path, model, env.model_args, env.epoch, score)
             env.best = score
+            env.best_model = copy.deepcopy(model)
+
 
         env.epoch = env.epoch + 1
 

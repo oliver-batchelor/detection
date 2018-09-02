@@ -14,21 +14,23 @@ def train(model, loader, eval, optimizer, hook = const(False)):
     print("training:")
     stats = 0
 
+
+
     model.train()
-    with tqdm(total=len(loader) * loader.batch_size) as bar:
+    with tqdm() as bar:
         for n, data in enumerate(loader):
+            optimizer.zero_grad()
+
             if hook(n, len(loader)): break
 
-            optimizer.zero_grad()
             result = eval(model, data)
             result.error.backward()
             optimizer.step()
             stats += result.statistics
 
             bar.update(result.statistics.size)
-
-            del result
-            gc.collect()
+            if bar.total is None:
+                bar.total = len(loader) * result.statistics.size
 
     return stats
 
@@ -38,17 +40,18 @@ def test(model, loader, eval, hook = const(False)):
     stats = 0
 
     model.eval()
-    for n, data in enumerate(tqdm(loader)):
+    with torch.no_grad():
+        for n, data in enumerate(tqdm(loader)):
 
-        if hook(n, len(loader)): break
+            if hook(n, len(loader)): break
 
-        result = eval(model, data)
-        stats += result.statistics
+            result = eval(model, data)
+            stats += result.statistics
 
-        del result
-        gc.collect()
+            del result
+            gc.collect()
 
-    return stats
+        return stats
 
 
 def test_images(model, files, eval):

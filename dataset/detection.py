@@ -44,31 +44,41 @@ def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
 
-def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, crop_boxes=False):
+def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
     cw, ch = dest_size
 
     def apply(d):
 
         scale = random_log(*scale_range)
-        flip = random.uniform(0, 1) > 0.5
+        flip = flips and (random.uniform(0, 1) > 0.5)
+        vertical_flip = vertical_flips and (random.uniform(0, 1) > 0.5)
+        transpose = transposes and (random.uniform(0, 1) > 0.5)
+
         sx, sy = random_mean(1, non_uniform_scale) * scale, random_mean(1, non_uniform_scale) * scale
 
-        image, labels = d['image'], d['labels']
+        image, input_labels, input_boxes = d['image'], d['labels'], d['boxes']
+
+
+        if transpose:
+            image = image.transpose(0, 1)
+            input_boxes = box.transpose(input_boxes)
 
         input_size = (image.size(1), image.size(0))
         region_size = (cw / sx, ch / sy)
 
         x, y = 0, 0
-        boxes = d['boxes'].new()
+        boxes = input_boxes.new()
+        labels = input_labels.new()
 
         while boxes.size(0) == 0:
             x, y = transforms.random_region(input_size, region_size, border)
             if flip:
-                boxes = box.transform(d['boxes'], (-region_size[0] -x, -y), (-sx, sy))
+                boxes = box.transform(input_boxes, (-region_size[0] -x, -y), (-sx, sy))
             else:
-                boxes = box.transform(d['boxes'], (-x, -y), (sx, sy))
+                boxes = box.transform(input_boxes, (-x, -y), (sx, sy))
 
-            boxes, labels = box.filter_hidden(boxes, d['labels'], (0, 0), dest_size, min_visible=min_visible)
+
+            boxes, labels = box.filter_hidden(boxes, input_labels, (0, 0), dest_size, min_visible=min_visible)
             if crop_boxes:
                 box.clamp(boxes, (0, 0), dest_size)
 
@@ -87,16 +97,18 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
 
 
 def load_training(args, dataset, collate_fn=default_collate):
+    n = round(args.epoch_size / args.image_samples)
     return DataLoader(dataset,
         num_workers=args.num_workers,
         batch_size=1 if args.full_size else args.batch_size,
-        sampler=RepeatSampler(args.epoch_size, len(dataset)) if args.epoch_size else RandomSampler(dataset),
+        sampler=RepeatSampler(n, len(dataset)) if args.epoch_size else RandomSampler(dataset),
         collate_fn=collate_fn)
 
 
 def sample_training(args, images, loader, transform, collate_fn=default_collate):
+
     dataset = direct.Loader(loader, transform)
-    sampler = direct.RandomSampler(images, args.epoch_size) if args.epoch_size else direct.ListSampler(images)
+    sampler = direct.RandomSampler(images, round(args.epoch_size / args.image_samples)) if args.epoch_size else direct.ListSampler(images)
 
     return DataLoader(dataset,
         num_workers=args.num_workers,
@@ -113,6 +125,7 @@ def encode_targets(encoder, crop_boxes=False):
     def f(d):
         image = d['image']
         targets = encoder.encode(image, d['boxes'], d['labels'], crop_boxes=crop_boxes)
+
         return {
             'image':image,
             'targets': targets,
@@ -127,7 +140,9 @@ def transform_training(args, encoder=None):
     s = 1 / args.down_scale
     result_size = int(args.image_size * s)
 
-    crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale), non_uniform_scale = 0.1)
+    crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale),
+        non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips)
+
     adjust_colors = over('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
 
     encode = identity if encoder is None else  encode_targets(encoder, args.crop_boxes)
