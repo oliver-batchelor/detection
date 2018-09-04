@@ -8,7 +8,7 @@ import detection.models as models
 
 train_parameters = Struct (
     optimizer = group('optimizer settings',
-        lr              = param(1.0,    help='learning rate'),
+        lr              = param(0.1,    help='learning rate'),
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
         fine_tuning     = param(0.1,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
@@ -37,7 +37,7 @@ detection_parameters = Struct (
 
         full_size   = param(False, help='train always on full size images rather than sampling a patch'),
         transposes  = param(False, help='enable image transposes in training'),
-        flips          = param(False, help='enable horizontal image flips in training'),
+        flips          = param(True, help='enable horizontal image flips in training'),
         vertical_flips = param(False, help='enable vertical image flips in training'),
 
         image_samples   = param(1,      help='number of training samples to extract from each loaded image')

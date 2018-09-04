@@ -5,12 +5,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 import itertools
-import torchvision.models as m
 from torchvision.models import resnet, densenet, vgg
+
+from pretrainedmodels.models import senet
+import pretrainedmodels
+
 
 
 import models.common as c
-
 
 from tools import Struct
 
@@ -24,8 +26,11 @@ def make_encoder(name, depth = None):
 
 
 def get_layers(name):
-    model = m.__dict__[name](pretrained=True)
+    settings = pretrainedmodels.pretrained_settings[name]
+    model = pretrainedmodels.__dict__[name](pretrained='imagenet')
 
+    if isinstance(model, senet.SENet):
+        return senet_layers(model)
     if isinstance(model, resnet.ResNet):
         return resnet_layers(model)
     elif isinstance(model, densenet.DenseNet):
@@ -51,11 +56,22 @@ def encoder_sizes(encoder):
 
     return [t.size(1) for t in skips]
 
-def resnet_layers(resnet):
-    layer0 = nn.Sequential(resnet.conv1, resnet.bn1, nn.ReLU(inplace=True))
-    layer1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=2, padding=1), resnet.layer1)
 
-    layers = [c.Identity(), layer0, layer1, resnet.layer2, resnet.layer3, resnet.layer4]
+def senet_layers(model):
+    *layer0_modules, pool0 = model.layer0
+
+    layer0 = nn.Sequential(*layer0_modules)
+    layer1 = nn.Sequential(pool0, model.layer1)
+
+    layers = [c.Identity(), layer0, layer1, model.layer2, model.layer3, model.layer4]
+    return layers
+
+
+def resnet_layers(model):
+    layer0 = nn.Sequential(model.conv1, model.bn1, nn.ReLU(inplace=True))
+    layer1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=2, padding=1), model.layer1)
+
+    layers = [c.Identity(), layer0, layer1, model.layer2, model.layer3, model.layer4]
     return layers
 
 

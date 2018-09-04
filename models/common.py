@@ -17,9 +17,6 @@ def reverse(xs):
 
 
 
-
-
-
 def map_modules(m, type, f):
     if isinstance(m, type):
         return f(m)

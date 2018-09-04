@@ -17,7 +17,8 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel,  \
 
 import torch.nn.init as init
 from tools import Struct
-from tools.parameters import param
+
+from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 
 
 def image_size(inputs):
@@ -124,6 +125,14 @@ class FCN(nn.Module):
         self.trained_modules = nn.ModuleList(trained)
         self.new_modules = nn.ModuleList(extra + [self.reduce, self.decoder, self.classifiers, self.localisers])
 
+        def set_momentum(m):
+            if isinstance(m, nn.BatchNorm2d):
+                m.momentum = 0.2
+
+
+        self.apply(set_momentum)
+
+
         init_weights(self.new_modules)
         #replace_batchnorms(self, 16)
 
@@ -212,9 +221,17 @@ models = {
 if __name__ == '__main__':
 
     _, *cmd_args = sys.argv
-    args = tools.parse_params(models, cmd_args)
 
-    model, _ = create_fcn(args, 2, 3)
+    model_params = {k: v.parameters for k, v in models.items()}
+    parameters = Struct(model= choice('fcn', model_params))
+
+    parser = make_parser('Object detection', parameters)
+    args = Struct(**parser.parse_args().__dict__)
+
+    model_args = parse_choice("model", parameters.model, args.model)
+
+
+    model, _ = create_fcn(model_args.parameters, Struct(num_classes = 2, input_channels = 3))
 
     x = Variable(torch.FloatTensor(4, 3, 600, 600))
     out = model.cuda()(x.cuda())

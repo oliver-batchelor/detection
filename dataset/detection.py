@@ -52,12 +52,10 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         scale = random_log(*scale_range)
         flip = flips and (random.uniform(0, 1) > 0.5)
         vertical_flip = vertical_flips and (random.uniform(0, 1) > 0.5)
+
         transpose = transposes and (random.uniform(0, 1) > 0.5)
-
         sx, sy = random_mean(1, non_uniform_scale) * scale, random_mean(1, non_uniform_scale) * scale
-
         image, input_labels, input_boxes = d['image'], d['labels'], d['boxes']
-
 
         if transpose:
             image = image.transpose(0, 1)
@@ -70,21 +68,24 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         boxes = input_boxes.new()
         labels = input_labels.new()
 
+        sx = sx * (-1 if flip else 1)
+        sy = sy * (-1 if vertical_flip else 1)
+
         while boxes.size(0) == 0:
             x, y = transforms.random_region(input_size, region_size, border)
-            if flip:
-                boxes = box.transform(input_boxes, (-region_size[0] -x, -y), (-sx, sy))
-            else:
-                boxes = box.transform(input_boxes, (-x, -y), (sx, sy))
 
+            x_start = x + (region_size[0] if flip else 0)
+            y_start = y + (region_size[1] if vertical_flip else 0)
 
+            boxes = box.transform(input_boxes, (-x_start, -y_start), (sx, sy))
             boxes, labels = box.filter_hidden(boxes, input_labels, (0, 0), dest_size, min_visible=min_visible)
+            
             if crop_boxes:
                 box.clamp(boxes, (0, 0), dest_size)
 
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
-        t = transforms.make_affine(dest_size, centre, scale=(sx * (-1 if flip else 1), sy))
+        t = transforms.make_affine(dest_size, centre, scale=(sx, sy))
 
         return {**d,
                 'image': transforms.warp_affine(image, t, dest_size),
@@ -108,11 +109,11 @@ def load_training(args, dataset, collate_fn=default_collate):
 def sample_training(args, images, loader, transform, collate_fn=default_collate):
 
     dataset = direct.Loader(loader, transform)
-    sampler = direct.RandomSampler(images, round(args.epoch_size / args.image_samples)) if args.epoch_size else direct.ListSampler(images)
+    sampler = direct.RandomSampler(images, (args.epoch_size // args.image_samples)) if args.epoch_size else direct.ListSampler(images)
 
     return DataLoader(dataset,
         num_workers=args.num_workers,
-        batch_size=1 if args.full_size else args.batch_size,
+        batch_size=1 if args.full_size else (args.batch_size // args.image_samples),
         sampler=sampler,
         collate_fn=collate_fn)
 
