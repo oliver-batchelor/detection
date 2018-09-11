@@ -221,7 +221,8 @@ def encode(boxes, labels, anchor_boxes, match_thresholds=(0.4, 0.5)):
       loc_targets: (tensor) encoded bounding boxes, sized [m, 4].
       class_targets: (tensor) encoded class labels, sized [m].
     '''
-    if labels.dim() == 0:
+
+    if boxes.dim() == 1:
         n = anchor_boxes.size(0)
         class_targets = torch.LongTensor(n).fill_(0) # all negative labels
         loc_targets = torch.FloatTensor(n, 4).fill_(0) # will be ignored for negative label anyway

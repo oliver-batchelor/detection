@@ -40,7 +40,9 @@ detection_parameters = Struct (
         flips          = param(True, help='enable horizontal image flips in training'),
         vertical_flips = param(False, help='enable vertical image flips in training'),
 
-        image_samples   = param(1,      help='number of training samples to extract from each loaded image')
+        image_samples   = param(1,      help='number of training samples to extract from each loaded image'),
+
+        allow_empty = param(0.2,    help='when image crop is empty, train with probability')
     ),
 
     match = group('match thresholds',

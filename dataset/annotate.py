@@ -30,10 +30,19 @@ def decode_image(data, config):
 
     def decode_obj(obj):
         tag, shape = split_tagged(obj['shape'])
+        label = class_mapping[obj['label']]
+
         if tag == 'BoxShape':
             return {
-                'label' : class_mapping[obj['label']],
+                'label' : label,
                 'box'   : [*shape['lower'], *shape['upper']]
+            }
+        elif tag == 'CircleShape':
+            x, y, r = *shape['centre'], shape['radius']
+
+            return {
+                'label' : label,
+                'box'   : [x - r, y - r, x + r, y + r]
             }
         else:
             # Ignore unsupported annotation for now

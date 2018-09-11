@@ -50,7 +50,7 @@ def unpack(targets, predictions):
 
     size_of = lambda t: (t.size(0), t.size(1))
     sizes = list(map(size_of, [loc_target, class_target, loc_pred, class_pred]))
-    assert all_eq (sizes), "total_loss: number of targets and predictions differ"
+    assert all_eq (sizes), "total_loss: number of targets and predictions differ, " + str(sizes)
 
     pos_mask = (class_target > 0).unsqueeze(2).expand_as(loc_pred)
     loc_pred, loc_target = loc_pred[pos_mask], loc_target[pos_mask]

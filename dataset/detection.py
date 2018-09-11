@@ -44,7 +44,7 @@ def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
 
-def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
+def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, allow_empty=0.0, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
     cw, ch = dest_size
 
     def apply(d):
@@ -64,14 +64,15 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         input_size = (image.size(1), image.size(0))
         region_size = (cw / sx, ch / sy)
 
-        x, y = 0, 0
+        x, y = transforms.random_region(input_size, region_size, border)
+
         boxes = input_boxes.new()
         labels = input_labels.new()
 
         sx = sx * (-1 if flip else 1)
         sy = sy * (-1 if vertical_flip else 1)
 
-        while boxes.size(0) == 0:
+        while boxes.size(0) == 0 and input_boxes.size(0) > 0:
             x, y = transforms.random_region(input_size, region_size, border)
 
             x_start = x + (region_size[0] if flip else 0)
@@ -79,7 +80,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
 
             boxes = box.transform(input_boxes, (-x_start, -y_start), (sx, sy))
             boxes, labels = box.filter_hidden(boxes, input_labels, (0, 0), dest_size, min_visible=min_visible)
-            
+
             if crop_boxes:
                 box.clamp(boxes, (0, 0), dest_size)
 
@@ -142,7 +143,8 @@ def transform_training(args, encoder=None):
     result_size = int(args.image_size * s)
 
     crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale),
-        non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips)
+        non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips,
+        crop_boxes=args.crop_boxes, allow_empty=args.allow_empty)
 
     adjust_colors = over('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
 

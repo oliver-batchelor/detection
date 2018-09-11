@@ -215,7 +215,9 @@ def run_trainer(args, conn = None, env = None):
         if len(env.dataset.test_images) > 0:
             nms_params = args.subset('nms_threshold',  'class_threshold', 'max_detections')
 
-            stats = trainer.test(model, env.dataset.test(args), evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
+            stats = trainer.test(model, env.dataset.test(args),
+                evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
+                
             score = evaluate.summarize_test("test", stats, env.epoch)
 
         if score >= env.best and has_training:
