@@ -41,8 +41,8 @@ class Encoder:
 
     def anchors(self, input_size, crop_boxes=False):
         def layer_size(i):
-            scale = 2 ** i
-            return (max(1, math.ceil(input_size[0] / scale)), max(1, math.ceil(input_size[1] / scale)))
+            stride = 2 ** i
+            return (max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
         input_args = (input_size, crop_boxes)
 
@@ -183,10 +183,13 @@ class FCN(nn.Module):
 parameters = Struct(
         base_name = param ("resnet18", help = "name of pretrained resnet to use"),
         features  = param (64, help = "fixed size features in new conv layers"),
-        first     = param (3, help = "first layer of anchor boxes, anchor size = 2^(n + 2)"),
+        first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
         last      = param (7, help = "last layer of anchor boxes"),
+
+        anchor_scale = param (4, help = "anchor scale relative to box stride"),
         shared    = param (False, help = "share weights between network heads at different levels"),
-        square    = param (False, help = "restrict box outputs (and anchors) to square")
+        square    = param (False, help = "restrict box outputs (and anchors) to square"),
+
     )
 
 def extra_layer(inp, features):
@@ -201,12 +204,12 @@ def split_at(xs, n):
     return xs[:n], xs[n:]
 
 
-def anchor_sizes(start, end, square=False):
+def anchor_sizes(start, end, anchor_scale=4, square=False):
 
     aspects = [1] if square else [1/2, 1, 2]
     scales = [1, pow(2, 1/3), pow(2, 2/3)]
 
-    return [box.anchor_sizes(2 ** (i + 2), aspects, scales) for i in range(start, end + 1)]
+    return [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
 
 
 def extend_layers(layers, start, end, features=32):
@@ -221,14 +224,16 @@ def extend_layers(layers, start, end, features=32):
 
 def create_fcn(args, dataset_args):
     assert dataset_args.input_channels == 3
-    assert dataset_args.num_classes >= 1
+
+    num_classes = len(dataset_args.classes)
+    assert num_classes >= 1
 
     assert args.first <= args.last
 
     backbone, extra = extend_layers(pretrained.get_layers(args.base_name), args.first, args.last, features=args.features)
-    box_sizes = anchor_sizes(args.first, args.last, square=args.square)
+    box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
-    return FCN(backbone, extra, box_sizes, num_classes=dataset_args.num_classes, features=args.features, shared=args.shared, square=args.square), \
+    return FCN(backbone, extra, box_sizes, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
            Encoder(args.first, box_sizes)
 
 models = {

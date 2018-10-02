@@ -3,6 +3,7 @@ import time
 import os
 import json
 import copy
+import random
 
 import torch
 import torch.optim as optim
@@ -46,26 +47,29 @@ class NotFound(Exception):
 def try_load(model, model_path, model_args):
     try:
         loaded = torch.load(model_path)
-        if loaded['params'] == model_args:
-            print("loaded model matches, using loading weights" )
+        loaded_args = loaded['params']
+
+        if loaded_args.dataset == model_args.dataset:
+            print("dataset matches: using loading weights" )
+            print(loaded['params'])
 
             model.load_state_dict(loaded['state'])
-            return loaded['score'], loaded['epoch']
-
+            return loaded['score'], loaded['epoch'], loaded_args
         else:
-            print(loaded['params'])
-            print("loaded model parameters differ, ignoring" )
+
+            print("loaded model dataset parameters differ" )
 
     except: FileNotFoundError
-    return 0.0, 0
+    return 0.0, 0, model_args
 
 
 
 def initialise(config, dataset, args):
     data_root = config['root']
+    classes = {c['id'] : {'shape':c['name']['shape']} for c in dataset.classes}
 
     model_args = Struct (
-        dataset = Struct(num_classes = len(dataset.classes), input_channels = 3),
+        dataset = Struct(classes = classes, input_channels = 3),
         model   = args.model
     )
 
@@ -76,7 +80,7 @@ def initialise(config, dataset, args):
     model, encoder = tools.create(models, model_args.model, model_args.dataset)
 
     if not args.no_load:
-        best, epoch = try_load(model, output_path, model_args)
+        best, epoch, model_args = try_load(model, output_path, model_args)
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
     best_model = copy.deepcopy(model)
@@ -90,15 +94,8 @@ def encode_box(box):
     return {'lower':lower, 'upper':upper}
 
 
-def detect_request(env, file, nms_params, device):
-    path = os.path.join(env.data_root, file)
-
-    if not os.path.isfile(path):
-        raise NotFound(file)
-
+def evaluate_image(env, image, nms_params, device):
     env.best_model.to(device)
-
-    image = env.dataset.load_testing(path, env.args)
     boxes, labels, confs = evaluate.evaluate_image(env.best_model, image, env.encoder, nms_params, device)
 
     n = len(boxes)
@@ -115,6 +112,16 @@ def detect_request(env, file, nms_params, device):
         }
 
     return list(map(detection, zip(boxes, labels, confs)))
+
+def detect_request(env, file, nms_params, device):
+    path = os.path.join(env.data_root, file)
+
+    if not os.path.isfile(path):
+        raise NotFound(file)
+
+    image = env.dataset.load_testing(path, env.args)
+    return evaluate_image(env, image, nms_params, device)
+
 
 
 
@@ -217,7 +224,7 @@ def run_trainer(args, conn = None, env = None):
 
             stats = trainer.test(model, env.dataset.test(args),
                 evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
-                
+
             score = evaluate.summarize_test("test", stats, env.epoch)
 
         if score >= env.best and has_training:
@@ -244,6 +251,9 @@ def run_main():
 
     p, conn = None, None
     env = None
+
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     if args.remote:
         print("connecting to: " + args.remote)

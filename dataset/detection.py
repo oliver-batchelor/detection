@@ -224,3 +224,7 @@ class DetectionDataset:
     def test(self, args, collate_fn=default_collate):
         images = FlatList(list(self.test_images.values()), loader = load_boxes, transform = transform_testing(args))
         return load_testing(args, images, collate_fn=collate_fn)
+
+    def test_training(self, args, collate_fn=default_collate):
+        images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_testing(args))
+        return load_testing(args, images, collate_fn=collate_fn)

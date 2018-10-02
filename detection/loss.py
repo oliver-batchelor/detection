@@ -72,4 +72,5 @@ def total_bce(targets, predictions, balance=5, gamma=2, alpha=0.25, eps=1e-6):
     class_loss = focal_loss_bce(class_target, class_pred, gamma=gamma, alpha=alpha)
     loc_loss = F.smooth_l1_loss(loc_pred, loc_target, reduction='sum')
 
-    return class_loss / (n + 1.0), loc_loss * balance / (n + 1.0), n
+    #return class_loss / (n + 1.0), loc_loss * balance / (n + 1.0), n
+    return class_loss / balance, loc_loss, n
