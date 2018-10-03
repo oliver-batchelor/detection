@@ -31,7 +31,7 @@ def image_size(inputs):
     return inputs
 
 
-class Encoder:
+class BoxEncoder:
     def __init__(self, start_layer, box_sizes):
         self.anchor_cache = {}
 
@@ -53,9 +53,9 @@ class Encoder:
         return self.anchor_cache[input_args]
 
 
-    def encode(self, inputs, boxes, labels, crop_boxes=False, match_thresholds=(0.4, 0.5)):
+    def encode(self, inputs, shapes, labels, crop_boxes=False, match_thresholds=(0.4, 0.5)):
         inputs = image_size(inputs)
-        return box.encode(boxes, labels, self.anchors(inputs, crop_boxes), match_thresholds)
+        return box.encode(shapes['boxes'], labels, self.anchors(inputs, crop_boxes), match_thresholds)
 
 
     def decode(self, inputs, loc_pred, class_pred):
@@ -64,45 +64,73 @@ class Encoder:
         inputs = image_size(inputs)
         anchor_boxes = self.anchors(inputs).type_as(loc_pred)
 
-        return box.decode(loc_pred, class_pred, anchor_boxes)
+        return {'boxes':box.decode(loc_pred, class_pred, anchor_boxes)}
 
-    def nms(self, boxes, labels, confs, nms_params=box.nms_defaults):
-        return box.filter_nms(boxes, labels, confs, **nms_params)
+    def nms(self, shapes, labels, confs, nms_params=box.nms_defaults):
+        shapes = dict(shapes)
+        shapes['boxes'] = box.filter_nms(shapes['boxes'], labels, confs, **nms_params)
 
-    #
-    # def decode_batch(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
-    #     assert loc_pred.dim() == 3 and class_pred.dim() == 3
-    #
-    #     if torch.is_tensor(inputs):
-    #         assert(inputs.dim() == 4)
-    #         inputs = inputs.size(2), inputs.size(1)
-    #
-    #     assert len(inputs) == 2
-    #     return [self.decode(inputs, l, c, nms_params=nms_params) for l, c in zip(loc_pred, class_pred)]
+        return shapes
 
 
 
 
 
-class FCN(nn.Module):
+def initialise_bn(module):
+    def set_momentum(m):
+        if isinstance(m, nn.BatchNorm2d):
+            m.momentum = 0.2
+    module.apply(set_momentum)
 
-    def __init__(self, trained, extra, box_sizes, features=32, num_classes=2, shared=False, square=False):
+def initialise_weights(module):
+
+    def set_weights(m):
+        # b = -math.log((1 - prior_prob)/prior_prob)
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+            init.normal_(m.weight, std=0.01)
+        if hasattr(m, 'bias') and m.bias is not None:
+            init.constant_(m.bias, 0)
+
+
+    module.apply(set_weights)
+
+
+
+class BaseFCN(nn.Module):
+
+    def __init__(self, trained, extra, features=32):
         super().__init__()
 
         self.encoder = pretrained.make_cascade(trained + extra)
-        self.box_sizes = box_sizes
 
         encoded_sizes = pretrained.encoder_sizes(self.encoder)
         self.reduce = Parallel([Conv(size, features, 1) for size in encoded_sizes])
-        self.square = square
 
         def make_decoder():
             decoder = Residual(basic_block(features, features))
             return Decode(features, decoder)
 
         self.decoder = UpCascade([make_decoder() for i in encoded_sizes])
+        self.size = trained + extra
 
-        assert len(trained + extra) == len(box_sizes), "FCN: layers and box sizes differ in length"
+        self.trained_modules = nn.ModuleList(trained)
+        self.new_modules = nn.ModuleList(extra + [self.reduce, self.decoder])
+
+        initialise_bn(self)
+        initialise_weights(self.new_modules)
+
+
+    def forward(self, input):
+        return self.decoder(self.reduce(self.encoder(input)))
+
+
+class Outputs(nn.Module):
+
+    def __init__(self, box_sizes, features=32, num_classes=2, shared=False, shape_outputs=4):
+        super().__init__()
+
+        self.box_sizes = box_sizes
+        self.shape_outputs  = shape_outputs
 
         def output(n):
             return nn.Sequential(
@@ -111,7 +139,6 @@ class FCN(nn.Module):
                 Conv(features, n, 1, bias=True))
 
         self.num_classes = num_classes
-
         if shared:
             num_boxes = len(box_sizes[0])
             assert all(len(boxes) == num_boxes for boxes in box_sizes), "FCN: for shared heads, number of boxes must be equal on all layers"
@@ -119,35 +146,14 @@ class FCN(nn.Module):
         else:
             self.classifiers = Parallel([output(len(boxes) * self.num_classes) for boxes in self.box_sizes])
 
-        self.localisers = Parallel([output(len(boxes) * (3 if square else 4)) for boxes in self.box_sizes])
+        self.localisers = Parallel([output(len(boxes) * self.shape_outputs) for boxes in self.box_sizes])
 
-
-        self.trained_modules = nn.ModuleList(trained)
-        self.new_modules = nn.ModuleList(extra + [self.reduce, self.decoder, self.classifiers, self.localisers])
-
-        def set_momentum(m):
-            if isinstance(m, nn.BatchNorm2d):
-                m.momentum = 0.2
-
-
-        self.apply(set_momentum)
-
-
-        def set_weights(m):
-            # b = -math.log((1 - prior_prob)/prior_prob)
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
-                init.normal_(m.weight, std=0.01)
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias, 0)
-
-        self.new_modules.apply(set_weights)
-
-        #replace_batchnorms(self, 16)
+        initialise_bn(self)
+        initialise_weights(self)
 
 
 
-    def forward(self, input):
-        layers = self.decoder(self.reduce(self.encoder(input)))
+    def forward(self, layers):
         def join(layers, n):
 
             def permute(layer):
@@ -156,21 +162,27 @@ class FCN(nn.Module):
 
             return torch.cat(list(map(permute, layers)), 1)
 
-        # def make_rect(layer):
-        #     # Duplicate the size output for x and y together
-        #     layers = [layer, layer.narrow(1, 2, 1)]
-        #     print(layer.size(), layer.narrow(1, 2, 1).size())
-        #
-        #     return torch.cat(layers, dim=1)
-
         conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
-        locs = join(self.localisers(layers), 3 if self.square else 4)
-
-        if self.square:
-            locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
-
+        locs = join(self.localisers(layers), self.shape_outputs)
 
         return (locs, conf)
+
+
+
+class FCN(nn.Module):
+    def __init__(self, base_fcn, outputs):
+        super().__init__()
+
+        self.trained_modules = base_fcn.trained_modules
+        self.new_modules = nn.ModuleList([base_fcn.new_modules, outputs])
+
+        self.base_fcn = base_fcn
+        self.outputs = outputs
+
+    def forward(self, inputs):
+        features = self.base_fcn(inputs)
+        return self.outputs(features)
+
 
     def parameter_groups(self, lr, fine_tuning=0.1):
         return [
@@ -187,9 +199,7 @@ parameters = Struct(
         last      = param (7, help = "last layer of anchor boxes"),
 
         anchor_scale = param (4, help = "anchor scale relative to box stride"),
-        shared    = param (False, help = "share weights between network heads at different levels"),
-        square    = param (False, help = "restrict box outputs (and anchors) to square"),
-
+        shared    = param (False, help = "share weights between network heads at different levels")
     )
 
 def extra_layer(inp, features):
@@ -203,13 +213,17 @@ def extra_layer(inp, features):
 def split_at(xs, n):
     return xs[:n], xs[n:]
 
-
-def anchor_sizes(start, end, anchor_scale=4, square=False):
-
-    aspects = [1] if square else [1/2, 1, 2]
-    scales = [1, pow(2, 1/3), pow(2, 2/3)]
-
+def make_anchor_sizes(start, end, aspects, scales, anchor_scale=4):
     return [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
+
+def anchor_sizes(start, end, anchor_scale=4):
+    return make_anchor_sizes(start, end,
+        aspects = [1/2, 1, 2], scales = [1, pow(2, 1/3), pow(2, 2/3)], anchor_scale=anchor_scale)
+
+
+def anchor_sizes_square(start, end, anchor_scale=4):
+    return make_anchor_sizes(start, end,
+        aspects = [1], scales = [1, pow(2, 1/3), pow(2, 2/3)], anchor_scale=anchor_scale)
 
 
 def extend_layers(layers, start, end, features=32):
@@ -222,22 +236,29 @@ def extend_layers(layers, start, end, features=32):
     return [nn.Sequential(*initial), *rest], [*extra_layers]
 
 
-def create_fcn(args, dataset_args):
+def base_fcn(args):
+    assert args.first <= args.last
+    backbone, extra = extend_layers(pretrained.get_layers(args.base_name),
+        args.first, args.last, features=args.features)
+
+    return BaseFCN(backbone, extra, features=args.features)
+
+
+def box_fcn(args, dataset_args):
     assert dataset_args.input_channels == 3
 
     num_classes = len(dataset_args.classes)
     assert num_classes >= 1
 
-    assert args.first <= args.last
+    box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale)
+    outputs = Outputs(box_sizes, num_classes=num_classes, features=args.features, shared=args.shared, shape_outputs=4)
+    network = FCN(base_fcn(args), outputs)
 
-    backbone, extra = extend_layers(pretrained.get_layers(args.base_name), args.first, args.last, features=args.features)
-    box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
+    return network, BoxEncoder(args.first, box_sizes)
 
-    return FCN(backbone, extra, box_sizes, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
-           Encoder(args.first, box_sizes)
 
 models = {
-    'fcn' : Struct(create=create_fcn, parameters=parameters)
+    'fcn' : Struct(create=box_fcn, parameters=parameters)
   }
 
 
@@ -256,7 +277,7 @@ if __name__ == '__main__':
     model_args = parse_choice("model", parameters.model, args.model)
 
 
-    model, _ = create_fcn(model_args.parameters, Struct(num_classes = 2, input_channels = 3))
+    model, _ = box_fcn(model_args.parameters, Struct(num_classes = 2, input_channels = 3))
 
     x = Variable(torch.FloatTensor(4, 3, 600, 600))
     out = model.cuda()(x.cuda())
