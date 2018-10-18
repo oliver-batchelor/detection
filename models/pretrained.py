@@ -1,5 +1,7 @@
 import sys
 import torch
+
+import os.path as path
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -10,6 +12,7 @@ from torchvision.models import resnet, densenet, vgg
 from pretrainedmodels.models import senet
 import pretrainedmodels
 
+from models.cifar.wrn import WideResNet
 
 
 import models.common as c
@@ -25,21 +28,52 @@ def make_encoder(name, depth = None):
     return make_cascade(layers)
 
 
-def get_layers(name):
-    settings = pretrainedmodels.pretrained_settings[name]
-    model = pretrainedmodels.__dict__[name](pretrained='imagenet')
 
-    if isinstance(model, senet.SENet):
-        return senet_layers(model)
-    if isinstance(model, resnet.ResNet):
-        return resnet_layers(model)
-    elif isinstance(model, densenet.DenseNet):
-        return densenet_layers(model)
-    elif isinstance(model, vgg.VGG):
-        return vgg_layers(model)
-    else:
-        assert false, "unsupported model type " + name
 
+def create_wrn(filename, depth, num_classes=100, widen_factor=1):
+    def f ():
+        model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor)
+        model = nn.DataParallel(model).cpu()
+
+        model_path = path.join('weights', filename)
+        progress = torch.load(model_path)
+
+        model.load_state_dict(progress['state_dict'])
+        model = model.module
+
+        layer0 = nn.Sequential(model.conv1, model.block1)
+        return [layer0, model.block2, model.block3]
+    return f
+
+
+def create_imagenet(name):
+    def f():
+
+        settings = pretrainedmodels.pretrained_settings[name]
+        model = pretrainedmodels.__dict__[name](pretrained='imagenet')
+
+        if isinstance(model, senet.SENet):
+            return senet_layers(model)
+        if isinstance(model, resnet.ResNet):
+            return resnet_layers(model)
+        elif isinstance(model, densenet.DenseNet):
+            return densenet_layers(model)
+        elif isinstance(model, vgg.VGG):
+            return vgg_layers(model)
+        else:
+            assert false, "unsupported model type " + name
+    return f
+
+
+models = {
+    'resnet18':create_imagenet('resnet18'),
+    'resnet34':create_imagenet('resnet34'),
+    'resnet50':create_imagenet('resnet50'),
+    'se_resnet50':create_imagenet('se_resnet50'),
+    'se_resnext50':create_imagenet('se_resnext50_32x4d'),
+    'wrn22-6': create_wrn('WRN-22-6.pth', depth=22, num_classes=100, widen_factor=6),
+    'wrn28-10': create_wrn('WRN-28-10.pth', depth=28, num_classes=100, widen_factor=10)
+}
 
 
 def make_cascade(layers):

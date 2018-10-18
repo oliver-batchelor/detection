@@ -11,10 +11,7 @@ def const(a):
 
 
 def train(model, loader, eval, optimizer, hook = const(False)):
-    print("training:")
     stats = 0
-
-
 
     model.train()
     with tqdm() as bar:
@@ -36,7 +33,6 @@ def train(model, loader, eval, optimizer, hook = const(False)):
 
 
 def test(model, loader, eval, hook = const(False)):
-    print("testing:")
     stats = 0
 
     model.eval()

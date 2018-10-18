@@ -44,23 +44,39 @@ class NotFound(Exception):
         self.filename = filename
 
 
-def try_load(model, model_path, model_args):
-    try:
-        loaded = torch.load(model_path)
-        loaded_args = loaded['params']
+def show_differences(d1, d2, desc1, desc2):
+    unequal_keys = []
+    unequal_keys.extend(set(d1.keys()).symmetric_difference(set(d2.keys())))
+    for k in d1.keys():
+        if d1.get(k, '-') != d2.get(k, '-'):
+            unequal_keys.append(k)
+    if unequal_keys:
+        print ('key', '\t' + desc1, desc2)
+        for k in set(unequal_keys):
+            print (str(k)+'\t'+d1.get(k, '-')+'\t '+d2.get(k, '-'))
 
-        if loaded_args.dataset == model_args.dataset:
-            print("dataset matches: using loading weights" )
-            print(loaded['params'])
 
-            model.load_state_dict(loaded['state'])
-            return loaded['score'], loaded['epoch'], loaded_args
-        else:
+def try_load(model_path, model, model_args, no_load=False):
+    best = Struct (model = copy.deepcopy(model), score = 0.0, epoch = 0)
+    current = Struct (model = model, score = 0.0, epoch = 0)
 
-            print("loaded model dataset parameters differ" )
+    if not no_load:
+        try:
+            loaded = torch.load(model_path)
+            if loaded.args.dataset == model_args.dataset:
+                print("loaded model dataset parameters match, resuming")
+                return loaded.best, loaded.current, model_args
+            else:
+                print("loaded model dataset parameters differ")
+                show_differences(model_args.dataset.__dict__,  loaded_args.dataset.__dict__, "args", "loaded")
 
-    except: FileNotFoundError
-    return 0.0, 0, model_args
+
+        except (FileNotFoundError, AttributeError):
+            pass
+
+
+    return best, current, model_args
+
 
 
 
@@ -70,20 +86,21 @@ def initialise(config, dataset, args):
 
     model_args = Struct (
         dataset = Struct(classes = classes, input_channels = 3),
-        model   = args.model
+        model   = args.model,
+        version = 1
     )
 
-    best = 0.0
     epoch = 0
 
     output_path = os.path.join(data_root, args.run_name, "model.pth")
     model, encoder = tools.create(models, model_args.model, model_args.dataset)
 
-    if not args.no_load:
-        best, epoch, model_args = try_load(model, output_path, model_args)
+    best, current, model_args = try_load(output_path, model, model_args, args.no_load)
+    model, epoch = current.model, current.epoch
+
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
-    best_model = copy.deepcopy(model)
+
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
     return Struct(**locals())
@@ -214,6 +231,7 @@ def run_trainer(args, conn = None, env = None):
         has_training = len(env.dataset.train_images) > 0
 
         if has_training:
+            print("training {}:".format(env.epoch))
             stats = trainer.train(model, env.dataset.sample_train(args, env.encoder),
                         evaluate.eval_train(total_bce, device), env.optimizer, hook=train_update)
             evaluate.summarize_train("train", stats, env.epoch)
@@ -222,15 +240,18 @@ def run_trainer(args, conn = None, env = None):
         if len(env.dataset.test_images) > 0:
             nms_params = args.subset('nms_threshold',  'class_threshold', 'max_detections')
 
+            print("testing {}:".format(env.epoch))
             stats = trainer.test(model, env.dataset.test(args),
                 evaluate.eval_test(env.encoder, nms_params=nms_params, device=device), hook=test_update)
 
             score = evaluate.summarize_test("test", stats, env.epoch)
 
-        if score >= env.best and has_training:
-            tools.save(env.output_path, model, env.model_args, env.epoch, score)
-            env.best = score
-            env.best_model = copy.deepcopy(model)
+        current = Struct(model = copy.deepcopy(model), epoch = env.epoch, score = score)
+        if score >= env.best.score and has_training:
+            env.best = current
+
+        checkpoint = Struct(current = current, best = env.best, args = env.model_args)
+        torch.save(checkpoint, env.output_path)
 
 
         env.epoch = env.epoch + 1

@@ -179,12 +179,13 @@ class FCN(nn.Module):
         ]
 
 
+base_options = '|'.join(pretrained.models.keys())
 
 parameters = Struct(
-        base_name = param ("resnet18", help = "name of pretrained resnet to use"),
+        base_name = param ("resnet18", help = "name of pretrained resnet to use options: " + base_options),
         features  = param (64, help = "fixed size features in new conv layers"),
         first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
-        last      = param (7, help = "last layer of anchor boxes"),
+        last      = param (5, help = "last layer of anchor boxes"),
 
         anchor_scale = param (4, help = "anchor scale relative to box stride"),
         shared    = param (False, help = "share weights between network heads at different levels"),
@@ -229,8 +230,12 @@ def create_fcn(args, dataset_args):
     assert num_classes >= 1
 
     assert args.first <= args.last
+    assert args.base_name in pretrained.models, "base model not found: " + args.base_name + ", options: " + base_options
 
-    backbone, extra = extend_layers(pretrained.get_layers(args.base_name), args.first, args.last, features=args.features)
+    base_layers = pretrained.models[args.base_name]()
+    args.first = min(len(base_layers) - 1, args.first)
+
+    backbone, extra = extend_layers(base_layers, args.first, args.last, features=args.features)
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
     return FCN(backbone, extra, box_sizes, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
@@ -255,10 +260,14 @@ if __name__ == '__main__':
 
     model_args = parse_choice("model", parameters.model, args.model)
 
+    classes = {
+        0 : {'shape':'BoxShape'},
+        1 : {'shape':'BoxShape'}
+    }
 
-    model, _ = create_fcn(model_args.parameters, Struct(num_classes = 2, input_channels = 3))
+    model, _ = create_fcn(model_args.parameters, Struct(classes = classes, input_channels = 3))
 
-    x = Variable(torch.FloatTensor(4, 3, 600, 600))
+    x = Variable(torch.FloatTensor(4, 3, 400, 400))
     out = model.cuda()(x.cuda())
 
     [print(y.size()) for y in out]
