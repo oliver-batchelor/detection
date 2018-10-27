@@ -13,7 +13,7 @@ import models.pretrained as pretrained
 from detection import box
 
 from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared,  \
-            DecodeAdd, Decode,  basic_block, reduce_features, replace_batchnorms
+            DecodeAdd, Decode,  basic_block, reduce_features, replace_batchnorms, identity
 
 import torch.nn.init as init
 from tools import Struct
@@ -69,19 +69,6 @@ class Encoder:
     def nms(self, boxes, labels, confs, nms_params=box.nms_defaults):
         return box.filter_nms(boxes, labels, confs, **nms_params)
 
-    #
-    # def decode_batch(self, inputs, loc_pred, class_pred, nms_params=box.nms_defaults):
-    #     assert loc_pred.dim() == 3 and class_pred.dim() == 3
-    #
-    #     if torch.is_tensor(inputs):
-    #         assert(inputs.dim() == 4)
-    #         inputs = inputs.size(2), inputs.size(1)
-    #
-    #     assert len(inputs) == 2
-    #     return [self.decode(inputs, l, c, nms_params=nms_params) for l, c in zip(loc_pred, class_pred)]
-
-
-
 
 
 class FCN(nn.Module):
@@ -97,7 +84,12 @@ class FCN(nn.Module):
         self.square = square
 
         def make_decoder():
-            decoder = Residual(basic_block(features, features))
+            decoder = nn.Sequential (
+                Residual(basic_block(features, features)),
+                Residual(basic_block(features, features))
+            )
+            decoder = identity
+
             return Decode(features, decoder)
 
         self.decoder = UpCascade([make_decoder() for i in encoded_sizes])

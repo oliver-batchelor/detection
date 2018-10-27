@@ -64,7 +64,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         input_size = (image.size(1), image.size(0))
         region_size = (cw / sx, ch / sy)
 
-        x, y = transforms.random_region(input_size, region_size, border)
+        # x, y = transforms.random_region(input_size, region_size, border)
 
         boxes = input_boxes.new()
         labels = input_labels.new()
@@ -72,17 +72,18 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         sx = sx * (-1 if flip else 1)
         sy = sy * (-1 if vertical_flip else 1)
 
-        while boxes.size(0) == 0 and input_boxes.size(0) > 0:
-            x, y = transforms.random_region(input_size, region_size, border)
+        # while boxes.size(0) == 0 and input_boxes.size(0) > 0:
+        x, y = transforms.random_region(input_size, region_size, border)
 
-            x_start = x + (region_size[0] if flip else 0)
-            y_start = y + (region_size[1] if vertical_flip else 0)
+        x_start = x + (region_size[0] if flip else 0)
+        y_start = y + (region_size[1] if vertical_flip else 0)
 
+        if input_boxes.size(0) > 0:
             boxes = box.transform(input_boxes, (-x_start, -y_start), (sx, sy))
             boxes, labels = box.filter_hidden(boxes, input_labels, (0, 0), dest_size, min_visible=min_visible)
 
-            if crop_boxes:
-                box.clamp(boxes, (0, 0), dest_size)
+        if crop_boxes:
+            box.clamp(boxes, (0, 0), dest_size)
 
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)

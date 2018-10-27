@@ -178,7 +178,7 @@ def eval_test(encoder, nms_params=box.nms_defaults, device=torch.cuda.current_de
             scores = torch.FloatTensor([mAP(t) for t in thresholds])
 
 
-        stats = Struct(AP=scores.mean(), mAPs=scores, size=1)
+        stats = Struct(AP=scores.mean().item(), mAPs=scores, size=1)
         return Struct(statistics=stats)
 
     return f

@@ -69,6 +69,8 @@ models = {
     'resnet18':create_imagenet('resnet18'),
     'resnet34':create_imagenet('resnet34'),
     'resnet50':create_imagenet('resnet50'),
+    'vgg11':create_imagenet('vgg11_bn'),
+    'vgg13':create_imagenet('vgg13_bn'),
     'se_resnet50':create_imagenet('se_resnet50'),
     'se_resnext50':create_imagenet('se_resnext50_32x4d'),
     'wrn22-6': create_wrn('WRN-22-6.pth', depth=22, num_classes=100, widen_factor=6),

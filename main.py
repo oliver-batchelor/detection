@@ -44,38 +44,50 @@ class NotFound(Exception):
         self.filename = filename
 
 
-def show_differences(d1, d2, desc1, desc2):
+def show_differences(d1, d2, prefix=""):
     unequal_keys = []
     unequal_keys.extend(set(d1.keys()).symmetric_difference(set(d2.keys())))
     for k in d1.keys():
         if d1.get(k, '-') != d2.get(k, '-'):
             unequal_keys.append(k)
     if unequal_keys:
-        print ('key', '\t' + desc1, desc2)
         for k in set(unequal_keys):
-            print (str(k)+'\t'+d1.get(k, '-')+'\t '+d2.get(k, '-'))
+            v1 = d1.get(k, '-')
+            v2 = d2.get(k, '-')
+            if type(v1) != type(v2):
+                v1 = type(v1)
+                v2 = type(v2)
+
+            print ("{:20s} {:10s}, {:10s}".format(prefix + k, str(v1), str(v2)))
 
 
-def try_load(model_path, model, model_args, no_load=False):
+
+def load_state(model, info):
+    model.load_state_dict(info.state)
+    return Struct(model = model, score = info.score, epoch = info.epoch)
+
+
+def try_load(model_path):
+    try:
+        return torch.load(model_path)
+    except (FileNotFoundError, EOFError):
+        pass
+
+def load_checkpoint(model_path, model, model_args, no_load=False):
+    loaded = try_load(model_path)
+    if not (no_load or loaded is None):
+        if loaded.args == model_args:
+            print("loaded model dataset parameters match, resuming")
+
+            return load_state(copy.deepcopy(model), loaded.best), load_state(copy.deepcopy(model), loaded.current), True
+        else:
+            print("loaded model dataset parameters differ")
+            show_differences(model_args.__dict__,  loaded.args.__dict__)
+
     best = Struct (model = copy.deepcopy(model), score = 0.0, epoch = 0)
     current = Struct (model = model, score = 0.0, epoch = 0)
 
-    if not no_load:
-        try:
-            loaded = torch.load(model_path)
-            if loaded.args.dataset == model_args.dataset:
-                print("loaded model dataset parameters match, resuming")
-                return loaded.best, loaded.current, model_args
-            else:
-                print("loaded model dataset parameters differ")
-                show_differences(model_args.dataset.__dict__,  loaded_args.dataset.__dict__, "args", "loaded")
-
-
-        except (FileNotFoundError, AttributeError):
-            pass
-
-
-    return best, current, model_args
+    return best, current, False
 
 
 
@@ -87,33 +99,43 @@ def initialise(config, dataset, args):
     model_args = Struct (
         dataset = Struct(classes = classes, input_channels = 3),
         model   = args.model,
-        version = 1
+        version = 2
     )
 
-    epoch = 0
+    run = 0
 
     output_path = os.path.join(data_root, args.run_name, "model.pth")
     model, encoder = tools.create(models, model_args.model, model_args.dataset)
 
-    best, current, model_args = try_load(output_path, model, model_args, args.no_load)
+    best, current, resumed = load_checkpoint(output_path, model, model_args, args.no_load)
     model, epoch = current.model, current.epoch
 
-
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
-
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
     return Struct(**locals())
 
 
-def encode_box(box):
-    lower, upper =  box[:2].tolist(), box[2:].tolist()
-    return {'lower':lower, 'upper':upper}
+def encode_shape(box, config):
+    lower, upper =  box[:2], box[2:]
+
+    if config['shape'] == 'CircleConfig':
+
+        centre = ((lower + upper) * 0.5).tolist()
+        radius = ((upper - lower).sum().item() / 4)
+
+        circle_shape = {'centre':  centre, 'radius': radius}
+        return tagged('CircleShape', circle_shape)
+
+    elif config['shape'] == 'BoxConfig':
+        return tagged('BoxShape', {'lower':lower.tolist(), 'upper':upper.tolist()})
+
+    assert False, "unsupported shape config: " + config['shape']
 
 
 def evaluate_image(env, image, nms_params, device):
-    env.best_model.to(device)
-    boxes, labels, confs = evaluate.evaluate_image(env.best_model, image, env.encoder, nms_params, device)
+    model = env.best.model
+    boxes, labels, confs = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
     n = len(boxes)
     assert n == len(labels) and n == len(confs)
@@ -122,9 +144,13 @@ def evaluate_image(env, image, nms_params, device):
 
     def detection(args):
         box, label, conf = args
+
+        object_class = classes[label.item()]
+        config = object_class['name']
+
         return {
-            'bounds' : encode_box(box.cpu()),
-            'label'  : classes[label.item()]['id'],
+            'shape' : encode_shape(box.cpu(), config),
+            'label'  : object_class['id'],
             'confidence' : conf.item()
         }
 
@@ -160,9 +186,10 @@ def run_trainer(args, conn = None, env = None):
 
 
     def send_command(command, data):
-        str = json.dumps(tagged(command, data))
-        conn.send(str)
 
+        if conn is not None:
+            str = json.dumps(tagged(command, data))
+            conn.send(str)
 
     def process_command(str):
         nonlocal env, device
@@ -171,12 +198,11 @@ def run_trainer(args, conn = None, env = None):
             tag, data = split_tagged(json.loads(str))
             print("recieved command: " + tag)
 
-            if tag == 'TrainerDataset':
+            if tag == 'TrainerInit':
 
                 config, dataset = decode_dataset(data)
                 env = initialise(config, dataset, args)
 
-                raise Reset(env)
 
             elif tag == 'TrainerUpdate':
                 file, image_data = data
@@ -189,7 +215,7 @@ def run_trainer(args, conn = None, env = None):
 
 
             elif tag == 'TrainerDetect':
-                clientId, image, nms_prefs = data
+                reqId, image, nms_prefs = data
 
                 nms_params = {
                     'nms_threshold'     :   nms_prefs['nms'],
@@ -198,11 +224,12 @@ def run_trainer(args, conn = None, env = None):
                 }
 
                 if env is not None:
-                    result = detect_request(env, image, nms_params, device)
-                    send_command('TrainerDetections', (clientId, image, result))
+
+                    results = detect_request(env, image, nms_params, device)
+                    send_command('TrainerDetections', (reqId, image, results, (env.run, env.best.epoch)))
 
                 else:
-                    send_command('TrainerReqError', [clientId, "model not available yet"])
+                    send_command('TrainerReqError', [reqId, image, "model not available yet"])
 
             else:
                 send_command('TrainerError', "unknown command: " + tag)
@@ -211,7 +238,6 @@ def run_trainer(args, conn = None, env = None):
         except (JSONDecodeError) as err:
             send_command('TrainerError', repr(err))
             return None
-
 
     def poll_command():
         if conn and conn.poll():
@@ -246,25 +272,26 @@ def run_trainer(args, conn = None, env = None):
 
             score = evaluate.summarize_test("test", stats, env.epoch)
 
-        current = Struct(model = copy.deepcopy(model), epoch = env.epoch, score = score)
-        if score >= env.best.score and has_training:
-            env.best = current
+        if has_training:
+            is_best = score >= env.best.score
+            if is_best:
+                env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
 
-        checkpoint = Struct(current = current, best = env.best, args = env.model_args)
-        torch.save(checkpoint, env.output_path)
+            current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
+            best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
+            save_checkpoint = Struct(current = current, best = best, args = env.model_args, run = env.run)
+            torch.save(save_checkpoint, env.output_path)
 
-        env.epoch = env.epoch + 1
+            send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
+            env.epoch = env.epoch + 1
 
 
     while(True):
-        try:
-            if env is not None:
-                training_cycle()
-            poll_command()
+        if env is not None:
+            training_cycle()
+        poll_command()
 
-        except Reset as reset:
-            env   = reset.env
 
 def run_main():
     args = arguments.get_arguments()
@@ -284,6 +311,7 @@ def run_main():
         print("loading from: " + args.input)
 
         config, dataset = load_dataset(args.input)
+
         env = initialise(config, dataset, args)
 
     try:
