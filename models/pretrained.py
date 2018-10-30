@@ -115,8 +115,9 @@ def vgg_layers(model):
     layers = []
     current = nn.Sequential()
 
-    for i, m in enumerate(model.features._modules.values()):
+    for i, m in enumerate(model._features):
         if isinstance(m, nn.MaxPool2d):
+            m.ceil_mode = True
             layers.append(current)
             current = nn.Sequential(m)
         else:

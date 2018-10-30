@@ -11,16 +11,7 @@ def cat(*xs, dim=0):
         return xs if torch.is_tensor(xs) else torch.FloatTensor([xs])
     return torch.cat([to_tensor(x) for x in xs], dim)
 
-def rev_cummax(v):
-    for i in range(v.size(0) - 1, 0, -1):
-        v[i - 1] = max(v[i - 1], v[i])
 
-    return v
-
-def area_under_curve(xs, ys):
-    i = (xs[1:] != xs[:-1]).nonzero().squeeze(1)
-
-    return ((xs[i + 1] - xs[i]) * ys[i + 1]).sum().item()
 
 
 def match_boxes(boxes_pred, labels_pred, confidence, boxes_target, labels_target,  threshold=0.5, eps=1e-7):
@@ -63,6 +54,18 @@ def match_boxes(boxes_pred, labels_pred, confidence, boxes_target, labels_target
         matches.append(match)
 
     return matches
+
+
+def rev_cummax(v):
+    for i in range(v.size(0) - 1, 0, -1):
+        v[i - 1] = max(v[i - 1], v[i])
+
+    return v
+
+def area_under_curve(xs, ys):
+    i = (xs[1:] != xs[:-1]).nonzero().squeeze(1)
+
+    return ((xs[i + 1] - xs[i]) * ys[i + 1]).sum().item()
 
 
 def compute_mAP(true_positives, num_targets, eps=1e-7):

@@ -14,10 +14,10 @@ def connection(conn, url, reconnect_time=0.5):
     async def recv_loop(socket):
         while True:
             try:
-                str = await socket.recv()
-                conn.send(str)
-            except (ConnectionClosed, IncompleteReadError):
-                break
+                in_str = await socket.recv()
+                conn.send(in_str)
+            except (ConnectionClosed, IncompleteReadError) as e:
+                print(e)
 
 
     async def send_loop(socket):
@@ -26,7 +26,8 @@ def connection(conn, url, reconnect_time=0.5):
 
         while True:
             msg = await loop.run_in_executor(executor, conn.recv)
-            if msg is None: break
+            if msg is None: 
+                break
             await socket.send(msg)
 
     async def run():

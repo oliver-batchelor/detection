@@ -44,6 +44,7 @@ def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
     return errs.sum()
 
 
+
 def unpack(targets, predictions):
     loc_target, class_target =  targets
     loc_pred, class_pred = predictions

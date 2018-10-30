@@ -13,6 +13,9 @@ from tools.image import cv, index_map
 # import imports.voc as voc
 
 from tools import Struct
+from tools.image.index_map import default_colors
+
+from dataset.annotate import decode_dataset
 
 classes = \
     ['person', 'bicycle', 'car', 'motorcycle',
@@ -39,6 +42,19 @@ classes = \
 # def to_coco(name):
 #     return coco_mapping[name] if name in coco_mapping else name
 
+# def load_coco(filename):
+#     with open(filename, "r") as file:
+#         str = file.read()
+#         return decode_dataset(json.loads(str))
+#     raise Exception('load_file: file not readable ' + filename)
+
+
+def concat(xs):
+    return list(itertools.chain.from_iterable(xs))
+
+
+def tagged(tag, contents):
+    return {'tag':tag, 'contents':contents}
 
 def export_coco(input, subset, target_category='Train', class_inputs=None):
     ann_file = '%s/annotations/instances_%s.json'%(input, subset)
@@ -50,15 +66,19 @@ def export_coco(input, subset, target_category='Train', class_inputs=None):
 
     cats = coco.loadCats(cat_ids)
     class_names = [cat['name'] for cat in cats]
-    class_map = {cat['id']:cat['name'] for cat in cats}
+    class_map = {
+        cat['id']: {
+            'name':cat['name'],
+            'colour':default_colors[int(cat['id']) % 255],
+            'shape':'BoxConfig'
+        } for cat in cats
+    }
 
     if classes and (not len(classes) == len(class_names)):
-         for c in class_inputs:
-             if not (c in class_names):
-                 print("missing class " + c)
+         for name in class_inputs:
+             assert name in class_names, "class not found: " + name
 
 
-    concat = lambda xs: list(itertools.chain.from_iterable(xs))
     image_ids = concat([coco.getImgIds(catIds=[cat]) for cat in cat_ids])
 
     print("found images: ", len(image_ids))
@@ -72,22 +92,20 @@ def export_coco(input, subset, target_category='Train', class_inputs=None):
         def export_ann(ann):
             x, y, w, h = ann['bbox']
             return {
-              'tag':'ObjBox',
-              'classId': ann['category_id'],
-              'bounds': {
-                'lower': [x, y],
-                'upper': [x + w, y + h]
-              }
+              'label': ann['category_id'],
+              'confirm': True,
+              'detection': None,
+              'shape': tagged('ObjBox', {'lower': [x, y], 'upper': [x + w, y + h]  })
             }
 
         anns = coco.loadAnns(coco.getAnnIds(id, catIds=cat_ids))
-        instances = [export_ann(ann) for ann in anns]
+        annotations = [export_ann(ann) for ann in anns]
 
         return {
             'imageFile':input_image,
             'imageSize':[info['width'], info['height']],
             'category':target_category,
-            'instances':instances
+            'annotations':annotations
         }
 
     images = list(map(convert, image_ids))
@@ -105,7 +123,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Pascal VOC, view dataset')
 
-    parser.add_argument('--input', default='workspace/coco',
+    parser.add_argument('--input', default='/home/oliver/storage/coco',
                         help='input image path')
 
     parser.add_argument('--output', default=None, required=True,
@@ -137,6 +155,7 @@ if __name__ == '__main__':
         'images' : sum([subset['images'] for subset in exports.values()], [])
     }
 
+    ds = decode_dataset(all)
 
     with open(args.output, 'w') as outfile:
         json.dump(all, outfile, sort_keys=True, indent=4, separators=(',', ': '))

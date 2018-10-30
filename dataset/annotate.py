@@ -52,6 +52,7 @@ def decode_image(data, config):
 
     return {
         'file':path.join(config['root'], data['imageFile']),
+        'imageSize': data['imageSize'],
         'boxes': torch.FloatTensor(pluck('box', objs)),
         'labels': torch.LongTensor(pluck('label', objs)),
         'category': data['category']
@@ -68,3 +69,7 @@ def decode_dataset(data):
         return filterDict( { i['imageFile']:decode_image(i, config) for i in data['images'] if i['category'] == cat })
 
     return config, DetectionDataset(classes=classes, train_images=imageCat('Train'), test_images=imageCat('Test'))
+
+def init_dataset(config):
+    classes = [{'id':int(k), 'name':v} for k, v in config['classes'].items()]
+    return config, DetectionDataset(classes=classes)

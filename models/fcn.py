@@ -139,7 +139,10 @@ class FCN(nn.Module):
 
 
     def forward(self, input):
-        layers = self.decoder(self.reduce(self.encoder(input)))
+        layers = self.encoder(input)
+        # [print(layer.size()) for layer in layers]
+
+        layers = self.decoder(self.reduce(layers))
         def join(layers, n):
 
             def permute(layer):
@@ -174,16 +177,15 @@ class FCN(nn.Module):
 base_options = '|'.join(pretrained.models.keys())
 
 parameters = Struct(
-        base_name = param ("resnet18", help = "name of pretrained resnet to use options: " + base_options),
-        features  = param (64, help = "fixed size features in new conv layers"),
-        first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
-        last      = param (5, help = "last layer of anchor boxes"),
+    base_name = param ("resnet18", help = "name of pretrained resnet to use options: " + base_options),
+    features  = param (64, help = "fixed size features in new conv layers"),
+    first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
+    last      = param (7, help = "last layer of anchor boxes"),
 
-        anchor_scale = param (4, help = "anchor scale relative to box stride"),
-        shared    = param (False, help = "share weights between network heads at different levels"),
-        square    = param (False, help = "restrict box outputs (and anchors) to square"),
-
-    )
+    anchor_scale = param (4, help = "anchor scale relative to box stride"),
+    shared    = param (False, help = "share weights between network heads at different levels"),
+    square    = param (False, help = "restrict box outputs (and anchors) to square"),
+  )
 
 def extra_layer(inp, features):
     return nn.Sequential(

@@ -10,7 +10,7 @@ import torch.optim as optim
 
 from json.decoder import JSONDecodeError
 
-from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, load_dataset
+from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, init_dataset
 from detection.models import models
 from detection.loss import total_bce
 
@@ -110,6 +110,8 @@ def initialise(config, dataset, args):
     best, current, resumed = load_checkpoint(output_path, model, model_args, args.no_load)
     model, epoch = current.model, current.epoch
 
+    running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
+
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
@@ -178,6 +180,22 @@ def adjust_learning_rate(lr, optimizer):
         param_group['lr'] = modified
 
 
+def flatten_parameters(model):
+    return torch.cat([param.data.view(-1) for param in model.parameters()], 0)
+
+def load_flattened(model, flattened):
+    offset = 0
+    for param in model.parameters():
+
+        data = flattened[offset:offset + param.nelement()].view(param.size())
+        param.data.copy_(data)
+        offset += param.nelement()
+
+    return model
+
+
+def append_window(x, xs, window):
+    return [x, *xs][:window]
 
 
 def run_trainer(args, conn = None, env = None):
@@ -200,7 +218,7 @@ def run_trainer(args, conn = None, env = None):
 
             if tag == 'TrainerInit':
 
-                config, dataset = decode_dataset(data)
+                config, dataset = init_dataset(data)
                 env = initialise(config, dataset, args)
 
 
@@ -240,27 +258,37 @@ def run_trainer(args, conn = None, env = None):
             return None
 
     def poll_command():
-        if conn and conn.poll():
+        while conn and conn.poll():
             cmd = conn.recv()
             process_command(cmd)
 
     def train_update(n, total):
-        lr = log_lerp((args.lr, args.lr * 0.1), n / total) if args.lr > 0 else 0
+        lr = log_lerp((args.lr, args.lr * args.lr_epoch_decay), n / total) if args.lr > 0 else 0
+
         adjust_learning_rate(lr, env.optimizer)
         poll_command()
 
     def test_update(n, total):
         poll_command()
 
-    def training_cycle():
+    def training_cycle():      
         model = env.model.to(device)
-        has_training = len(env.dataset.train_images) > 0
 
-        if has_training:
-            print("training {}:".format(env.epoch))
-            stats = trainer.train(model, env.dataset.sample_train(args, env.encoder),
-                        evaluate.eval_train(total_bce, device), env.optimizer, hook=train_update)
-            evaluate.summarize_train("train", stats, env.epoch)
+        print("training {}:".format(env.epoch))
+        stats = trainer.train(model, env.dataset.sample_train(args, env.encoder),
+                    evaluate.eval_train(total_bce, device), env.optimizer, hook=train_update)
+        evaluate.summarize_train("train", stats, env.epoch)
+
+        # Save parameters for model averaging
+        training_params = flatten_parameters(model).cpu()
+
+        if env.epoch >= args.average_start:
+            env.running_average = append_window(training_params, env.running_average, args.average_window)
+
+            # print(type(sum(env.running_average)))
+
+            # Replace model with averaged model for purposes of testing
+            load_flattened(model, sum(env.running_average) / len(env.running_average))
 
         score = 0
         if len(env.dataset.test_images) > 0:
@@ -272,25 +300,29 @@ def run_trainer(args, conn = None, env = None):
 
             score = evaluate.summarize_test("test", stats, env.epoch)
 
-        if has_training:
-            is_best = score >= env.best.score
-            if is_best:
-                env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
+        
+        is_best = score >= env.best.score
+        if is_best:
+            env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
 
-            current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
-            best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
+        load_flattened(model, training_params) # Restore parameters
 
-            save_checkpoint = Struct(current = current, best = best, args = env.model_args, run = env.run)
-            torch.save(save_checkpoint, env.output_path)
+        current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
+        best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
-            send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
-            env.epoch = env.epoch + 1
+        save_checkpoint = Struct(current = current, best = best, args = env.model_args, run = env.run)
+        torch.save(save_checkpoint, env.output_path)
+
+        send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
+        env.epoch = env.epoch + 1
 
 
     while(True):
-        if env is not None:
+        if env is not None and len(env.dataset.train_images) > 0:
             training_cycle()
         poll_command()
+
+ 
 
 
 def run_main():
@@ -308,9 +340,16 @@ def run_main():
         p, conn = connection.connect('ws://' + args.remote)
 
     if args.input:
-        print("loading from: " + args.input)
 
-        config, dataset = load_dataset(args.input)
+        print("loading from: " + args.input)
+        
+        if args.dataset == 'annotate':
+            config, dataset = load_dataset(args.input)
+        elif args.dataset == 'coco':
+            config, dataset = load_coco(args.input, restrict=args.restrict)
+        else:
+            assert False, "unknown dataset type: " + args.dataset
+        
 
         env = initialise(config, dataset, args)
 

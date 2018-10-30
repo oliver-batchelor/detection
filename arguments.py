@@ -14,6 +14,10 @@ train_parameters = Struct (
         momentum        = param(0.5,    help='SGD momentum'),
     ),
 
+    average_start  = param(2,    help='start weight averaging after epochs'),
+    average_window = param(1,    help='use a window of size for averaging, 1 = no averaging'),
+
+
     seed            = param(1,      help='random seed'),
     batch_size      = param(4,     help='input batch size for training'),
     epoch_size      = param(1024,   help='epoch size for training'),
@@ -65,7 +69,10 @@ parameters = detection_parameters.merge(train_parameters)
 parser = make_parser('Object detection', parameters)
 
 parser.add_argument('--input', default=None, help='input path to dataset')
-parser.add_argument('--dataset', default='annotate', help='dataset type options are (annotate)')
+parser.add_argument('--dataset', default='annotate', help='dataset type options are (annotate|coco)')
+
+parser.add_argument('--restrict', default='annotate', help='restrict classes to a subset of classes, comma separated')
+
 
 parser.add_argument('--remote', default=None, help='host for connection to annotate server')
 
