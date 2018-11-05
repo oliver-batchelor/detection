@@ -3,7 +3,8 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from tools import tensor
+from tools import tensor, Struct
+
 
 
 def one_hot(labels, num_classes):
@@ -45,33 +46,35 @@ def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
 
 
 
-def unpack(targets, predictions):
-    loc_target, class_target =  targets
-    loc_pred, class_pred = predictions
+def mask_valid(target, prediction):
+    # loc_target, class_target =  target
+    # loc_pred, class_pred = prediction
 
     size_of = lambda t: (t.size(0), t.size(1))
-    sizes = list(map(size_of, [loc_target, class_target, loc_pred, class_pred]))
-    assert all_eq (sizes), "total_loss: number of targets and predictions differ, " + str(sizes)
+    sizes = list(map(size_of, [target.locations, target.classes, prediction.locations, prediction.classes]))
+    assert all_eq (sizes), "total_loss: number of target and prediction differ, " + str(sizes)
 
-    pos_mask = (class_target > 0).unsqueeze(2).expand_as(loc_pred)
-    loc_pred, loc_target = loc_pred[pos_mask], loc_target[pos_mask]
+    num_classes = prediction.classes.size(2)
 
-    valid_mask = class_target >= 0
+    pos_mask = (target.classes > 0).unsqueeze(2).expand_as(prediction.locations)
+    valid_mask = target.classes >= 0
+    prediction_mask = valid_mask.unsqueeze(2).expand_as(prediction.classes)
 
-    num_classes = class_pred.size(2)
-    class_target = class_target[valid_mask]
+    target = Struct(
+        locations = target.locations[pos_mask], 
+        classes   = target.classes[valid_mask])
 
-    valid_mask = valid_mask.unsqueeze(2).expand_as(class_pred)
-    class_pred = class_pred[valid_mask].view(-1, num_classes)
+    prediction = Struct(
+        locations = prediction.locations[pos_mask],
+        classes   = prediction.classes[prediction_mask].view(-1, num_classes))
 
-    return class_target, class_pred, loc_target, loc_pred, pos_mask.detach().cpu().sum().item()
+    return (target, prediction)
 
 
-def total_bce(targets, predictions, balance=5, gamma=2, alpha=0.25, eps=1e-6):
-    class_target, class_pred, loc_target, loc_pred, n = unpack(targets, predictions)
+def total_bce(target, prediction, balance=5, gamma=2, alpha=0.25, eps=1e-6):
+    target, prediction = mask_valid(target, prediction)
 
-    class_loss = focal_loss_bce(class_target, class_pred, gamma=gamma, alpha=alpha)
-    loc_loss = F.smooth_l1_loss(loc_pred, loc_target, reduction='sum')
+    class_loss = focal_loss_bce(target.classes, prediction.classes, gamma=gamma, alpha=alpha)
+    loc_loss = F.smooth_l1_loss(prediction.locations, target.locations, reduction='sum')
 
-    #return class_loss / (n + 1.0), loc_loss * balance / (n + 1.0), n
-    return class_loss / balance, loc_loss, n
+    return Struct(classes = class_loss / balance, locations = loc_loss)

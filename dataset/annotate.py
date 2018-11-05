@@ -5,7 +5,7 @@ import json
 import torch
 from dataset.detection import DetectionDataset
 
-from tools import filterMap, pluck, filterNone
+from tools import filterMap, pluck, filterNone, Struct, Tensors
 
 def load_dataset(filename):
     with open(filename, "r") as file:
@@ -50,13 +50,16 @@ def decode_image(data, config):
 
     objs = filterMap(decode_obj, data['annotations'])
 
-    return {
-        'file':path.join(config['root'], data['imageFile']),
-        'imageSize': data['imageSize'],
-        'boxes': torch.FloatTensor(pluck('box', objs)),
-        'labels': torch.LongTensor(pluck('label', objs)),
-        'category': data['category']
-    }
+    boxes = pluck('box', objs)
+    target = Tensors (boxes = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+                      labels = torch.LongTensor(pluck('label', objs)))
+
+
+    return Struct(
+        file = path.join(config['root'], data['imageFile']),
+        target = target,
+        category = data['category']
+    )
 
 def filterDict(d):
     return {k: v for k, v in d.items() if v is not None}

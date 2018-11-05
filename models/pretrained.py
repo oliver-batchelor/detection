@@ -97,9 +97,10 @@ def senet_layers(model):
     *layer0_modules, pool0 = model.layer0
 
     layer0 = nn.Sequential(*layer0_modules)
-    layer1 = nn.Sequential(pool0, model.layer1)
+    layer1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=2, padding=1), model.layer1)
 
     layers = [c.Identity(), layer0, layer1, model.layer2, model.layer3, model.layer4]
+
     return layers
 
 
@@ -108,6 +109,7 @@ def resnet_layers(model):
     layer1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=2, padding=1), model.layer1)
 
     layers = [c.Identity(), layer0, layer1, model.layer2, model.layer3, model.layer4]
+
     return layers
 
 

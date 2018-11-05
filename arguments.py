@@ -10,7 +10,7 @@ train_parameters = Struct (
     optimizer = group('optimizer settings',
         lr              = param(0.1,    help='learning rate'),
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
-        fine_tuning     = param(0.1,    help='fine tuning as proportion of learning rate'),
+        fine_tuning     = param(1.0,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
     ),
 
@@ -25,7 +25,11 @@ train_parameters = Struct (
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),
 
+    bn_momentum    = param(0.1, "momentum for batch normalisation modules"),
+
     no_load         = param(False,   help="don't attempt to load previously saved model"),
+    restore_best    = param(False,   help="restore weights from best validation model"),
+
     run_name        = param('training', help='name for training run')
 )
 
@@ -37,7 +41,7 @@ detection_parameters = Struct (
         gamma       = param(0.15,  help='variation in gamma (brightness) when training'),
         channel_gamma       = param(0.1,  help='variation per channel gamma when training'),
         image_size  = param(440,   help='size of patches to train on'),
-        down_scale  = param(1,     help='down scale of image_size to test/train on'),
+        down_scale  = param(1.0,     help='down scale of image_size to test/train on'),
 
         full_size   = param(False, help='train always on full size images rather than sampling a patch'),
         transposes  = param(False, help='enable image transposes in training'),
@@ -64,12 +68,14 @@ detection_parameters = Struct (
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
 )
 
+
+
 parameters = detection_parameters.merge(train_parameters)
 
 parser = make_parser('Object detection', parameters)
 
 parser.add_argument('--input', default=None, help='input path to dataset')
-parser.add_argument('--dataset', default='annotate', help='dataset type options are (annotate|coco)')
+parser.add_argument('--coco', default=None, help='load coco from path as input')
 
 parser.add_argument('--restrict', default='annotate', help='restrict classes to a subset of classes, comma separated')
 
@@ -79,7 +85,6 @@ parser.add_argument('--remote', default=None, help='host for connection to annot
 def get_arguments():
     args = Struct(**parser.parse_args().__dict__)
 
-    if args.model:
-         args.model = parse_choice("model", parameters.model, args.model)
+    args.model = parse_choice("model", parameters.model, args.model)
 
     return args

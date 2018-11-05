@@ -29,8 +29,8 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
     cv.putText(image, "mAP@0.5 " + str(eval.mAP), (0, int(24 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
 
 
-    def overlay_predictions():
-        for (label, box, confidence) in eval.predictions:
+    def overlay_prediction():
+        for (label, box, confidence) in eval.prediction:
             if confidence < threshold:
                 break
 
@@ -38,14 +38,14 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
             draw_box(image, box, scale=scale, confidence=confidence, name=label_class['name'], color=to_rgb(label_class['colour']))
 
 
-    def overlay_targets():
-        for (label, box) in eval.targets:
+    def overlay_target():
+        for (label, box) in eval.target:
             label_class = classes[label]['name']
             draw_box(image, box, scale=scale, name=label_class['name'], color=to_rgb(label_class['colour']))
 
 
     def overlay_anchors():
-        overlay_targets()
+        overlay_target()
 
         for (label, box) in eval.anchors:
             label_class = classes[label]['name']
@@ -53,7 +53,7 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
 
 
     def overlay_matches():
-        unmatched = dict(enumerate(eval.targets))
+        unmatched = dict(enumerate(eval.target))
 
         for m in eval.matches:
             if m.confidence < threshold: break
@@ -62,7 +62,7 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
                 del unmatched[m.match]
 
 
-        for (i, (label, box)) in enumerate(eval.targets):
+        for (i, (label, box)) in enumerate(eval.target):
             label_class = classes[label]['name']
             color = (255, 0, 0) if i in unmatched else (0, 255, 0)
 
@@ -80,15 +80,15 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
 
 
 
-    targets = {
+    target = {
         'matches'       : overlay_matches,
-        'predictions'   : overlay_predictions,
+        'prediction'   : overlay_prediction,
         'anchors'       : overlay_anchors,
-        'targets'       : overlay_targets
+        'target'       : overlay_target
     }
 
-    assert (mode in targets), "overlay: invalid mode " + mode + ", expected one of " + str(targets.keys())
-    targets[mode]()
+    assert (mode in target), "overlay: invalid mode " + mode + ", expected one of " + str(target.keys())
+    target[mode]()
 
     return image
 

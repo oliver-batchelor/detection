@@ -64,14 +64,14 @@ if __name__ == '__main__':
         return (boxes, labels)
 
     target_boxes = [random_target() for i in range(0, batches)]
-    targets =  [encoder.encode(dim, boxes, labels) for boxes, labels in target_boxes]
+    target =  [encoder.encode(dim, boxes, labels) for boxes, labels in target_boxes]
 
-    loc_targets = Variable(torch.stack([loc for loc, _ in targets]).cuda())
-    class_targets = Variable(torch.stack([classes for _, classes in targets]).cuda())
+    loc_target = Variable(torch.stack([loc for loc, _ in target]).cuda())
+    class_target = Variable(torch.stack([classes for _, classes in target]).cuda())
 
-    # print((loc_targets, class_targets), (loc_preds, class_preds))
+    # print((loc_target, class_target), (loc_preds, class_preds))
 
-    print(loss.total_loss( (loc_targets, class_targets), (loc_preds, class_preds) ))
+    print(loss.total_loss( (loc_target, class_target), (loc_preds, class_preds) ))
 
     detections = encoder.decode_batch(images.detach(), loc_preds.detach(), class_preds.detach())
 

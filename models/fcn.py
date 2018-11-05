@@ -16,7 +16,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, reduce_features, replace_batchnorms, identity
 
 import torch.nn.init as init
-from tools import Struct
+from tools import Struct, Tensors
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 
@@ -29,6 +29,8 @@ def image_size(inputs):
 
     assert (len(inputs) == 2)
     return inputs
+
+
 
 
 class Encoder:
@@ -53,21 +55,23 @@ class Encoder:
         return self.anchor_cache[input_args]
 
 
-    def encode(self, inputs, boxes, labels, crop_boxes=False, match_thresholds=(0.4, 0.5)):
+    def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5)):
         inputs = image_size(inputs)
-        return box.encode(boxes, labels, self.anchors(inputs, crop_boxes), match_thresholds)
+
+        return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds)
 
 
-    def decode(self, inputs, loc_pred, class_pred):
-        assert loc_pred.dim() == 2 and class_pred.dim() == 2
+    def decode(self, inputs, prediction):
+        assert prediction.locations.dim() == 2 and prediction.classes.dim() == 2
 
         inputs = image_size(inputs)
-        anchor_boxes = self.anchors(inputs).type_as(loc_pred)
+        anchor_boxes = self.anchors(inputs).type_as(prediction.locations)
 
-        return box.decode(loc_pred, class_pred, anchor_boxes)
+        confidence, labels = prediction.classes.max(1)
+        return Tensors(boxes = box.decode(prediction.locations, anchor_boxes), confidence = confidence, labels = labels)
 
-    def nms(self, boxes, labels, confs, nms_params=box.nms_defaults):
-        return box.filter_nms(boxes, labels, confs, **nms_params)
+    def nms(self, prediction, nms_params=box.nms_defaults):
+        return box.filter_nms(prediction, **nms_params)
 
 
 
@@ -84,13 +88,13 @@ class FCN(nn.Module):
         self.square = square
 
         def make_decoder():
-            decoder = nn.Sequential (
-                Residual(basic_block(features, features)),
-                Residual(basic_block(features, features))
-            )
+            # decoder = nn.Sequential (
+            #     Residual(basic_block(features, features)),
+            #     Residual(basic_block(features, features))
+            # )
             decoder = identity
 
-            return Decode(features, decoder)
+            return Decode(features, module=decoder)
 
         self.decoder = UpCascade([make_decoder() for i in encoded_sizes])
 
@@ -117,13 +121,6 @@ class FCN(nn.Module):
         self.trained_modules = nn.ModuleList(trained)
         self.new_modules = nn.ModuleList(extra + [self.reduce, self.decoder, self.classifiers, self.localisers])
 
-        def set_momentum(m):
-            if isinstance(m, nn.BatchNorm2d):
-                m.momentum = 0.2
-
-
-        self.apply(set_momentum)
-
 
         def set_weights(m):
             # b = -math.log((1 - prior_prob)/prior_prob)
@@ -140,7 +137,9 @@ class FCN(nn.Module):
 
     def forward(self, input):
         layers = self.encoder(input)
-        # [print(layer.size()) for layer in layers]
+
+        # sizes = [(layer.size(2), layer.size(3)) for layer in layers]
+        # print((input.size(2), input.size(3)), sizes)
 
         layers = self.decoder(self.reduce(layers))
         def join(layers, n):
@@ -164,8 +163,7 @@ class FCN(nn.Module):
         if self.square:
             locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
 
-
-        return (locs, conf)
+        return Struct( locations = locs, classes = conf )
 
     def parameter_groups(self, lr, fine_tuning=0.1):
         return [
@@ -259,9 +257,9 @@ if __name__ == '__main__':
         1 : {'shape':'BoxShape'}
     }
 
-    model, _ = create_fcn(model_args.parameters, Struct(classes = classes, input_channels = 3))
+    model, encoder = create_fcn(model_args.parameters, Struct(classes = classes, input_channels = 3))
 
-    x = Variable(torch.FloatTensor(4, 3, 400, 400))
+    x = Variable(torch.FloatTensor(4, 3, 370, 500))
     out = model.cuda()(x.cuda())
 
     [print(y.size()) for y in out]

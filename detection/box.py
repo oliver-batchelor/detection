@@ -2,10 +2,13 @@
 # https://github.com/amdegroot/ssd.pytorch.git
 
 
+from tools import Struct, Tensors
+
 import torch
 from enum import Enum
 import math
 import gc
+
 
 def split(boxes):
     return boxes[..., :2],  boxes[..., 2:]
@@ -36,36 +39,29 @@ def transform(boxes, offset, scale):
 
 
 def transpose(boxes):
-    if boxes.size(0) > 0:
-        x1, y1, x2, y2 = split4(boxes)
-        return torch.stack([y1, x1, y2, x2], boxes.dim() - 1)
-    else:
-        return boxes
+    x1, y1, x2, y2 = split4(boxes)
+    return torch.stack([y1, x1, y2, x2], boxes.dim() - 1)
 
 
-def subset(boxes, labels, inds):
-    if inds.dim() > 1:
-        inds = inds.squeeze(1)
-        return torch.index_select(boxes, 0, inds), torch.index_select(labels, 0, inds)
-
-    return torch.Tensor(), torch.LongTensor()
 
 
-def filter_invalid(boxes, labels):
+
+def filter_invalid(target):
+    boxes = target.boxes
+
     valid = (boxes[:, 2] - boxes[:, 0] > 0) & (boxes[:, 3] - boxes[:, 1] > 0)
-    return subset(boxes, labels, valid.nonzero())
+    return target[valid.nonzero().squeeze(1)]
+
+def filter_hidden(target, lower, upper, min_visible=0.0):
+    bounds = torch.Tensor([[*lower, *upper]])
+    overlaps = (intersect(bounds, target.boxes) / area(target.boxes)).squeeze(0)
+    return target.index_select(overlaps.gt(min_visible).nonzero().squeeze(1))
+
 
 
 def area(boxes):
     x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
     return (x2-x1) * (y2-y1)
-
-
-def filter_hidden(boxes, labels, lower, upper, min_visible=0.0):
-    bounds = torch.Tensor([[*lower, *upper]])
-    overlaps = (intersect(bounds, boxes) / area(boxes)).squeeze(0)
-    return subset(boxes, labels, overlaps.gt(min_visible).nonzero())
-
 
 def clamp(boxes, lower, upper):
 
@@ -119,7 +115,7 @@ nms_defaults = {
 }
 
 
-def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
     '''Non maximum suppression.
     Args:
       boxes: (tensor) bounding boxes in point form, sized [n,4].
@@ -132,40 +128,40 @@ def nms(boxes, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=10
     Reference:
       https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/nms/py_cpu_nms.py
     '''
+
+    boxes = prediction.boxes
     x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
     areas = (x2-x1) * (y2-y1)
 
-    _, order = confs.sort(0, descending=True)
+    _, order = prediction.confidence.sort(0, descending=True)
 
     keep = []
     while order.numel() > 0 and len(keep) < max_detections:
-        i = order[0].item()
+        i, rest = order[0].item(), order[1:]
 
-        score = confs[i]
+        score = prediction.confidence[i]
         if score < class_threshold:
             break
 
         keep.append(i)
 
-        if order.numel() == 1:
-            break
+        if rest.numel() > 0:
 
-        xx1 = x1[order[1:]].clamp(min=x1[i])
-        yy1 = y1[order[1:]].clamp(min=y1[i])
-        xx2 = x2[order[1:]].clamp(max=x2[i])
-        yy2 = y2[order[1:]].clamp(max=y2[i])
+            xx1 = x1[rest].clamp(min=x1[i])
+            yy1 = y1[rest].clamp(min=y1[i])
+            xx2 = x2[rest].clamp(max=x2[i])
+            yy2 = y2[rest].clamp(max=y2[i])
 
-        w = (xx2-xx1).clamp(min=0)
-        h = (yy2-yy1).clamp(min=0)
-        inter = w * h
-        ovr = inter / areas[order[1:]].clamp(max=areas[i])
+            w = (xx2-xx1).clamp(min=0)
+            h = (yy2-yy1).clamp(min=0)
+            inter = w * h
+            ovr = inter / areas[rest].clamp(max=areas[i])
 
-        ids = (ovr <= nms_threshold).nonzero()
-        if ids.numel() == 0:
-            break
+            ids = (ovr <= nms_threshold).nonzero()
+            if ids.numel() == 0:
+                break
 
-        ids = ids.squeeze(1)
-        order = order[ids+1]
+            order = order[ids.squeeze(1) + 1]
 
 
     return torch.LongTensor(keep)
@@ -206,7 +202,9 @@ def anchor_sizes(size, aspects, scales):
 
     return [anchor(size * scale, ar) for scale in scales for ar in aspects]
 
-def encode(boxes, labels, anchor_boxes, match_thresholds=(0.4, 0.5)):
+
+
+def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5)):
     '''Encode target bounding boxes and class labels.
     We obey the Faster RCNN box coder:
       tx = (x - anchor_x) / anchor_w
@@ -214,95 +212,93 @@ def encode(boxes, labels, anchor_boxes, match_thresholds=(0.4, 0.5)):
       tw = log(w / anchor_w)
       th = log(h / anchor_h)
     Args:
-      boxes: (tensor) ground truth bounding boxes in point form, sized [n, 4].
-      labels: (tensor) object class labels, sized [n].
+      target: {
+         boxes: (tensor) ground truth bounding boxes in point form, sized [n, 4].
+         labels: (tensor) object class labels, sized [n].
+      }
       anchor_boxes: (tensor) bounding boxes in extents form, sized [m, 4].
     Returns:
-      loc_targets: (tensor) encoded bounding boxes, sized [m, 4].
-      class_targets: (tensor) encoded class labels, sized [m].
+      locations: (tensor) encoded bounding boxes, sized [m, 4].
+      classes: (tensor) encoded class labels, sized [m].
     '''
+    n = anchor_boxes.size(0)
 
-    if boxes.dim() == 1:
-        n = anchor_boxes.size(0)
-        class_targets = torch.LongTensor(n).fill_(0) # all negative labels
-        loc_targets = torch.FloatTensor(n, 4).fill_(0) # will be ignored for negative label anyway
-        return loc_targets, class_targets
+    if target.boxes.size(0) == 0:
+        return Struct (
+            locations   = torch.FloatTensor(n, 4).fill_(0), 
+            classes     = torch.LongTensor(n).fill_(0)) # all negative labels
 
-    match_neg, match_pos = match_thresholds
-
-    assert match_pos >= match_neg
-
-    ious = iou(point_form(anchor_boxes), boxes)
+    ious = iou(point_form(anchor_boxes), target.boxes)
     max_ious, max_ids = ious.max(1)
 
-    boxes = boxes[max_ids]
+    return Struct (
+        locations = encode_boxes(target.boxes[max_ids], anchor_boxes),
+        classes   = encode_classes(target.labels, max_ious, max_ids, match_thresholds=match_thresholds)
+    )
+
+
+def encode_classes(labels, max_ious, max_ids, match_thresholds=(0.4, 0.5)):
+
+    match_neg, match_pos = match_thresholds
+    assert match_pos >= match_neg
+
+    class_target = 1 + labels[max_ids]
+    class_target[max_ious <= match_neg] = 0 # negative label is 0
+
+    ignore = (max_ious > match_neg) & (max_ious <= match_pos)  # ignore ious between [0.4,0.5]
+    class_target[ignore] = -1  # mark ignored to -1
+
+    return class_target
+
+def encode_boxes(boxes, anchor_boxes):
 
     boxes_pos, boxes_size = split(extents_form(boxes))
     anchor_pos, anchor_size = split(anchor_boxes)
 
     loc_pos = (boxes_pos - anchor_pos) / anchor_size
     loc_size = torch.log(boxes_size/anchor_size)
-    loc_targets = torch.cat([loc_pos,loc_size], 1)
-
-    class_targets = 1 + labels[max_ids]
-    class_targets[max_ious <= match_neg] = 0 # negative label is 0
-
-    ignore = (max_ious > match_neg) & (max_ious <= match_pos)  # ignore ious between [0.4,0.5]
-    class_targets[ignore] = -1  # mark ignored to -1
-
-    return loc_targets, class_targets
+    return torch.cat([loc_pos,loc_size], 1)
 
 
 
-def decode(loc_preds, class_preds, anchor_boxes):
-    '''Decode (encoded) predictions and anchor boxes to give detected boxes.
+
+
+
+
+def decode(prediction, anchor_boxes):
+    '''Decode (encoded) prediction and anchor boxes to give detected boxes.
     Args:
-      loc_preds: (tensor) box predictions in encoded form, sized [n, 4].
-      class_preds: (tensor) object class predictions, sized [n].
+      preditction: (tensor) box prediction in encoded form, sized [n, 4].
       anchor_boxes: (tensor) bounding boxes in extents form, sized [m, 4].
     Returns:
       boxes: (tensor) detected boxes in point form, sized [k, 4].
       labels: (tensor) detected class labels [k].
     '''
 
-    #num_classes = class_preds.size(1)
-    #confs = F.normalize(class_preds, dim=1).narrow(1, 1, num_classes)
-
-    loc_pos, loc_size = split(loc_preds)
+    loc_pos, loc_size = split(prediction)
     anchor_pos, anchor_size = split(anchor_boxes)
 
     pos = loc_pos * anchor_size + anchor_pos
     sizes = loc_size.exp() * anchor_size
 
-    boxes = point_form(torch.cat([pos, sizes], 1))
-    confs, labels = class_preds.max(1)
+    return point_form(torch.cat([pos, sizes], 1))
 
-    return (boxes, labels, confs)
 
-nms_defaults = {
-    'nms_threshold':0.5,
-    'class_threshold':0.05,
-    'max_detections':100
-}
 
-def filter_preds(keep, boxes, labels, confs):
-    if(keep.dim() > 0):
-        return boxes[keep], labels[keep], confs[keep]
-    else:
-        return boxes.new(), labels.new(), confs.new()
 
-def filter_nms(boxes, labels, confs, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
-    inds = nms(boxes, confs, nms_threshold=nms_threshold, class_threshold=class_threshold, \
-        max_detections=max_detections).type_as(labels)
 
-    return filter_preds(inds, boxes, labels, confs)
+def filter_nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+    inds = nms(prediction, nms_threshold=nms_threshold, class_threshold=class_threshold, \
+        max_detections=max_detections).type_as(prediction.labels)
+
+    return prediction.index_select(inds)
 
 
 def decode_nms(loc_preds, class_preds, anchor_boxes, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
     assert loc_preds.dim() == 2 and class_preds.dim() == 2
 
-    boxes, labels, confs = decode(loc_preds, class_preds, anchor_boxes)
-    inds = nms(boxes, confs, nms_threshold=nms_threshold, class_threshold=class_threshold, \
-        max_detections=max_detections).type_as(labels)
+    prediction = decode(loc_preds, class_preds, anchor_boxes)
+    inds = nms(prediction, nms_threshold=nms_threshold, class_threshold=class_threshold, \
+        max_detections=max_detections).type_as(prediction.labels)
 
-    return filter_preds(inds, boxes, labels, confs)
+    return prediction.index_select(inds)

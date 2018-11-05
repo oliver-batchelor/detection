@@ -56,7 +56,7 @@ def concat(xs):
 def tagged(tag, contents):
     return {'tag':tag, 'contents':contents}
 
-def export_coco(input, subset, target_category='Train', class_inputs=None):
+def export_subset(input, subset, target_category='Train', class_inputs=None):
     ann_file = '%s/annotations/instances_%s.json'%(input, subset)
 
     coco=COCO(ann_file)
@@ -95,7 +95,7 @@ def export_coco(input, subset, target_category='Train', class_inputs=None):
               'label': ann['category_id'],
               'confirm': True,
               'detection': None,
-              'shape': tagged('ObjBox', {'lower': [x, y], 'upper': [x + w, y + h]  })
+              'shape': tagged('BoxShape', {'lower': [x, y], 'upper': [x + w, y + h]  })
             }
 
         anns = coco.loadAnns(coco.getAnnIds(id, catIds=cat_ids))
@@ -119,6 +119,25 @@ def export_coco(input, subset, target_category='Train', class_inputs=None):
     }
 
 
+
+def export_coco(input_path, classes):   
+    subsets = [('train2017', 'Train'), ('val2017', 'Test')]
+    exports = {subset : export_subset(input_path,  subset = subset, target_category= category, class_inputs = classes) for subset, category in subsets}
+
+
+    return {
+        'config' : exports['train2017']['config'],
+        'images' : sum([subset['images'] for subset in exports.values()], [])
+    }
+
+
+def load_coco(input_path, classes):
+    coco = export_coco(input_path, classes)
+    return decode_dataset(coco)
+
+
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Pascal VOC, view dataset')
@@ -139,23 +158,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    classes = None
-    if args.restrict:
-        classes = args.restrict.split(",")
 
-    # elif args.voc:
-    #     classes = list(map(to_coco, voc.voc_classes[1:]))
-
-    subsets = [('train2017', 'Train'), ('val2017', 'Test')]
-    exports = {subset : export_coco(args.input,  subset = subset, target_category= category, class_inputs = classes) for subset, category in subsets}
-
-
-    all = {
-        'config' : exports['train2017']['config'],
-        'images' : sum([subset['images'] for subset in exports.values()], [])
-    }
-
-    ds = decode_dataset(all)
+    classes = args.restrict.split(",") if args.restrict else None
+    coco = export_coco(args.input, classes)
 
     with open(args.output, 'w') as outfile:
         json.dump(all, outfile, sort_keys=True, indent=4, separators=(',', ': '))
