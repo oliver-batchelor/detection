@@ -72,7 +72,7 @@ def load_state(model, info):
 def try_load(model_path):
     try:
         return torch.load(model_path)
-    except (FileNotFoundError, EOFError):
+    except (FileNotFoundError, EOFError, RuntimeError):
         pass
 
 def load_checkpoint(model_path, model, model_args, args):
@@ -145,26 +145,24 @@ def encode_shape(box, config):
 
 def evaluate_image(env, image, nms_params, device):
     model = env.best.model
-    boxes, labels, confs = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
+    prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
-    n = len(boxes)
-    assert n == len(labels) and n == len(confs)
+    n = len(bbox)
+    assert n == len(label) and n == len(confs)
 
     classes = env.dataset.classes
 
-    def detection(args):
-        box, label, conf = args
-
-        object_class = classes[label.item()]
+    def detection(p):
+        object_class = classes[p.label]
         config = object_class['name']
 
         return {
-            'shape' : encode_shape(box.cpu(), config),
+            'shape' : encode_shape(p.bbox.cpu(), config),
             'label'  : object_class['id'],
-            'confidence' : conf.item()
+            'confidence' : p.confidence
         }
 
-    return list(map(detection, zip(boxes, labels, confs)))
+    return list(map(detection, prediction.sequence()))
 
 def detect_request(env, file, nms_params, device):
     path = os.path.join(env.data_root, file)
@@ -298,10 +296,10 @@ def run_trainer(args, conn = None, env = None):
 
     def training_cycle():      
         model = env.model.to(device)
-
-        print("estimating statistics {}:".format(env.epoch))
-        stats = trainer.test(env.dataset.sample_train(args, env.encoder), evaluate.eval_stats(env.dataset.classes, device=device))
-        evaluate.summarize_stats(stats, env.epoch)
+       
+        # print("estimating statistics {}:".format(env.epoch))
+        # stats = trainer.test(env.dataset.sample_train(args, env.encoder), evaluate.eval_stats(env.dataset.classes, device=device))
+        # evaluate.summarize_stats(stats, env.epoch)
 
 
         print("training {}:".format(env.epoch))

@@ -68,7 +68,7 @@ def test_images(files, eval):
 
     for (image_file, mask_file) in tqdm(files):
         data = dataset.load_rgb(image_file)
-        labels = dataset.load_labels(mask_file)
+        label = dataset.load_label(mask_file)
 
         results.append((image_file, eval(data)))
 

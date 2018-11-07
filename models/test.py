@@ -60,11 +60,11 @@ if __name__ == '__main__':
         num_boxes = random.randint(1, 50)
         boxes = torch.Tensor ([random_box(dim, num_classes) for b in range(0, num_boxes)])
         boxes = box.point_form(boxes)
-        labels = torch.LongTensor(num_boxes).random_(0, num_classes)
-        return (boxes, labels)
+        label = torch.LongTensor(num_boxes).random_(0, num_classes)
+        return (boxes, label)
 
     target_boxes = [random_target() for i in range(0, batches)]
-    target =  [encoder.encode(dim, boxes, labels) for boxes, labels in target_boxes]
+    target =  [encoder.encode(dim, boxes, label) for boxes, label in target_boxes]
 
     loc_target = Variable(torch.stack([loc for loc, _ in target]).cuda())
     class_target = Variable(torch.stack([classes for _, classes in target]).cuda())
@@ -76,20 +76,20 @@ if __name__ == '__main__':
     detections = encoder.decode_batch(images.detach(), loc_preds.detach(), class_preds.detach())
 
     classes = {}
-    for i, (boxes, labels, confs), (target_boxes, target_labels) in zip(images.detach(), detections, target_boxes):
-        score = evaluate.mAP(boxes, labels, confs, target_boxes.type_as(boxes), target_labels.type_as(labels), threshold = 0.1)
+    for i, (boxes, label, confs), (target_boxes, target_label) in zip(images.detach(), detections, target_boxes):
+        score = evaluate.mAP(boxes, label, confs, target_boxes.type_as(boxes), target_label.type_as(label), threshold = 0.1)
 
         print(score)
 
         # noise = target_boxes.clone().uniform_(-20, 30)
-        # score = evaluate.mAP(target_boxes + noise, target_labels, torch.arange(target_labels.size(0)), target_boxes, target_labels, threshold=0.5)
+        # score = evaluate.mAP(target_boxes + noise, target_label, torch.arange(target_label.size(0)), target_boxes, target_label, threshold=0.5)
         # print(score)
 
 
 
 
         # i = i.permute(1, 2, 0)
-        # key = cv.display(display.overlay(i, boxes, labels, confidence=confs))
+        # key = cv.display(display.overlay(i, boxes, label, confidence=confs))
         # if(key == 27):
         #     break
 
@@ -99,6 +99,6 @@ if __name__ == '__main__':
 
 
     #loss = MultiBoxLoss(num_classes)
-    #target = (Variable(boxes.cuda()), Variable(labels.cuda()))
+    #target = (Variable(boxes.cuda()), Variable(label.cuda()))
 
     #print(loss(out, target))

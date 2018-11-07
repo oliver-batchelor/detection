@@ -15,7 +15,7 @@ from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import tensor, Struct, Tensors
+from tools import tensor, Struct, Table
 
 from detection import box
 import collections
@@ -24,16 +24,15 @@ import collections
 def collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
-    error_msg = "batch must contain tensors, numbers, dicts or lists; found {}"
+    error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
     elem_type = type(batch[0])
 
-    
-    if isinstance(batch[0], Struct):
+    if type(batch[0]) is Table:
+        d =  {key: torch.cat([d[key] for d in batch]) for key in batch[0]}
+        return Table(**d) 
+    if type(batch[0]) is Struct:
         d =  {key: collate([d[key] for d in batch]) for key in batch[0]}
         return Struct(**d)
-    if isinstance(batch[0], Tensors):
-        d =  {key: torch.cat([d[key] for d in batch]) for key in batch[0]}
-        return Tensors(**d)        
     elif isinstance(batch[0], str):
         return batch        
     elif isinstance(batch[0], collections.abc.Mapping):
@@ -63,17 +62,18 @@ def scale(scale):
     def apply(d):
         image, target = d.image, d.target
 
-        boxes = box.transform(target.boxes, (0, 0), (scale, scale))
+        bbox = box.transform(target.bbox, (0, 0), (scale, scale))
         return d.extend(
                 image   = transforms.resize_scale(image, scale),
-                target = Struct(boxes = boxes, labels = target.labels))
+                target = Struct(bbox = bbox, label = target.label))
     return apply
 
 def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
 
-def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, allow_empty=0.0, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
+def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, 
+                allow_empty=0.0, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
     cw, ch = dest_size
 
     def apply(d):
@@ -88,29 +88,26 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
 
         if transpose:
             image = image.transpose(0, 1)
-            input_boxes = box.transpose(input_boxes)
+            input_target.bbox = box.transpose(input_target.bbox)
 
         input_size = (image.size(1), image.size(0))
         region_size = (cw / sx, ch / sy)
 
-        # x, y = transforms.random_region(input_size, region_size, border)
-       # target = Struct(boxes = input_target.boxes.new(0, 4),  labels = input_target.labels.new(0))
-
         sx = sx * (-1 if flip else 1)
         sy = sy * (-1 if vertical_flip else 1)
 
-        # while boxes.size(0) == 0 and input_boxes.size(0) > 0:
+        # while bbox.size(0) == 0 and input_bbox.size(0) > 0:
         x, y = transforms.random_region(input_size, region_size, border)
 
         x_start = x + (region_size[0] if flip else 0)
         y_start = y + (region_size[1] if vertical_flip else 0)
 
 
-        target = input_target.extend(boxes = box.transform(input_target.boxes, (-x_start, -y_start), (sx, sy)))
+        target = input_target.extend(bbox = box.transform(input_target.bbox, (-x_start, -y_start), (sx, sy)))
         target = box.filter_hidden(target, (0, 0), dest_size, min_visible=min_visible)
 
         if crop_boxes:
-            box.clamp(target.boxes, (0, 0), dest_size)
+            box.clamp(target.bbox, (0, 0), dest_size)
 
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
@@ -157,7 +154,7 @@ def encode_target(encoder, crop_boxes=False):
         return Struct(
             image   = d.image,
             encoding = encoding,
-            lengths = len(d.target.labels)
+            lengths = len(d.target.label)
         )
     return f
 
@@ -170,7 +167,7 @@ def transform_training(args, encoder=None):
 
     crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale),
         non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips,
-        crop_boxes=args.crop_boxes, allow_empty=args.allow_empty)
+        min_visible=args.min_visible, crop_boxes=args.crop_boxes, allow_empty=args.allow_empty)
 
     adjust_colors = over_struct('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
 

@@ -11,29 +11,34 @@ def cat(*xs, dim=0):
         return xs if torch.is_tensor(xs) else torch.FloatTensor([xs])
     return torch.cat([to_tensor(x) for x in xs], dim)
 
+def max_1d(t):
+    assert t.dim() == 1
+    x, i = t.max(0)
+    return x.item(), i.item()
 
 
 
 def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
-    n = prediction.labels.size(0)
+    n = prediction.label.size(0)
     matches = []
 
-    for i in range(0, n):
-        p = prediction.index_select(i)
-        match = Struct(box = p.boxes, label = p.label, confidence = p.confidence, iou = 0, match = None)
+    ious = box.iou(prediction.bbox, target.bbox)
+
+    for i, p in enumerate(prediction.sequence()):
+        match = None
         if ious.size(1) > 0:
-            iou, j = map(Tensor.item, ious[i].max(0))
+            iou, j = max_1d(ious[i])
             
-            label = target.labels[j]
+            label = target.label[j]
             matches_box = iou > threshold
             
             if matches_box:
                 ious[:, j] = 0  # mark target overlaps to 0 so they won't be selected twice
 
-                if p.labels == label:
-                    match = match.extend(iou = iou, match = j)
+                if p.label == label:
+                    match = (j, iou)
 
-        matches.append(match)
+        matches.append(p.extend(match = match))
     return matches
 
 
@@ -68,26 +73,27 @@ def mAP_matches(matches, num_target, eps=1e-7):
 
 
 def match_positives(pred, target, threshold=0.5, eps=1e-7):
+    assert pred.label.dim() == 1 and target.label.dim() == 1
 
-    n = pred.labels.size(0)
-    m = target.labels.size(0)
+    n = pred.label.size(0)
+    m = target.label.size(0)
 
     if m == 0 or n == 0:
         return compute_mAP(torch.FloatTensor(n).zero_(), m, eps=1e-7)
 
-    ious = box.iou(pred.boxes, target.boxes)
+    ious = box.iou(pred.bbox, target.bbox)
     true_positives = torch.FloatTensor(n).zero_()
 
     for i in range(0, n):
         iou, j = ious[i].max(0)
         iou = iou.item()
 
-        label = target.labels[j.item()]
+        label = target.label[j.item()]
 
         if iou > threshold:
             ious[:, j] = 0  # mark target overlaps to 0 so they won't be selected twice
 
-            if pred.labels[i].item() == label:
+            if pred.label[i].item() == label:
                 true_positives[i] = 1
 
     return true_positives
@@ -100,7 +106,7 @@ def mAP(images, threshold=0.5, eps=1e-7):
     true_positives = torch.cat([match_positives(i.prediction, i.target, threshold) for i in images])
     confidence    = torch.cat([i.prediction.confidence for i in images])
     
-    n = sum(i.target.labels.size(0) for i in images)
+    n = sum(i.target.label.size(0) for i in images)
 
     confidence, order = confidence.sort(0, descending=True)
     true_positives = true_positives[order]

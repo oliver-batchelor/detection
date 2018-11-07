@@ -7,9 +7,9 @@ from tools import tensor, Struct
 
 
 
-def one_hot(labels, num_classes):
-    t = labels.new(labels.size(0), num_classes + 1).zero_()
-    t.scatter_(1, labels.unsqueeze(1), 1)
+def one_hot(label, num_classes):
+    t = label.new(label.size(0), num_classes + 1).zero_()
+    t.scatter_(1, label.unsqueeze(1), 1)
 
     return t[:, 1:]
 
@@ -51,22 +51,22 @@ def mask_valid(target, prediction):
     # loc_pred, class_pred = prediction
 
     size_of = lambda t: (t.size(0), t.size(1))
-    sizes = list(map(size_of, [target.locations, target.classes, prediction.locations, prediction.classes]))
+    sizes = list(map(size_of, [target.location, target.classification, prediction.location, prediction.classification]))
     assert all_eq (sizes), "total_loss: number of target and prediction differ, " + str(sizes)
 
-    num_classes = prediction.classes.size(2)
+    num_classes = prediction.classification.size(2)
 
-    pos_mask = (target.classes > 0).unsqueeze(2).expand_as(prediction.locations)
-    valid_mask = target.classes >= 0
-    prediction_mask = valid_mask.unsqueeze(2).expand_as(prediction.classes)
+    pos_mask = (target.classification > 0).unsqueeze(2).expand_as(prediction.location)
+    valid_mask = target.classification >= 0
+    prediction_mask = valid_mask.unsqueeze(2).expand_as(prediction.classification)
 
     target = Struct(
-        locations = target.locations[pos_mask], 
-        classes   = target.classes[valid_mask])
+        location = target.location[pos_mask], 
+        classification   = target.classification[valid_mask])
 
     prediction = Struct(
-        locations = prediction.locations[pos_mask],
-        classes   = prediction.classes[prediction_mask].view(-1, num_classes))
+        location = prediction.location[pos_mask],
+        classification   = prediction.classification[prediction_mask].view(-1, num_classes))
 
     return (target, prediction)
 
@@ -74,7 +74,7 @@ def mask_valid(target, prediction):
 def total_bce(target, prediction, balance=5, gamma=2, alpha=0.25, eps=1e-6):
     target, prediction = mask_valid(target, prediction)
 
-    class_loss = focal_loss_bce(target.classes, prediction.classes, gamma=gamma, alpha=alpha)
-    loc_loss = F.smooth_l1_loss(prediction.locations, target.locations, reduction='sum')
+    class_loss = focal_loss_bce(target.classification, prediction.classification, gamma=gamma, alpha=alpha)
+    loc_loss = F.smooth_l1_loss(prediction.location, target.location, reduction='sum')
 
-    return Struct(classes = class_loss / balance, locations = loc_loss)
+    return Struct(classification = class_loss / balance, location = loc_loss)

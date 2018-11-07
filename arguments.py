@@ -64,7 +64,7 @@ detection_parameters = Struct (
         max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
     ),
 
-    min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
+    min_visible     = param (0.2, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
 )
 

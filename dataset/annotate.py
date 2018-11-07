@@ -5,7 +5,7 @@ import json
 import torch
 from dataset.detection import DetectionDataset
 
-from tools import filterMap, pluck, filterNone, Struct, Tensors
+from tools import filterMap, pluck, filterNone, Struct, Table
 
 def load_dataset(filename):
     with open(filename, "r") as file:
@@ -51,8 +51,8 @@ def decode_image(data, config):
     objs = filterMap(decode_obj, data['annotations'])
 
     boxes = pluck('box', objs)
-    target = Tensors (boxes = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
-                      labels = torch.LongTensor(pluck('label', objs)))
+    target = Table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+                      label = torch.LongTensor(pluck('label', objs)))
 
 
     return Struct(

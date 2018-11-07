@@ -28,23 +28,12 @@ def eval_forward(device=torch.cuda.current_device()):
 
     return f
 
-def show_shapes(x):
-
-    if type(x) == Tensor:
-        return tuple([*x.size(), x.dtype])
-    elif type(x) == list:
-        return list(map(show_shapes, x))
-    elif type(x) == tuple:
-        return tuple(map(show_shapes, x))
-    elif isinstance(x, Mapping):
-        return {k : show_shapes(v) for k, v in x.items()}
-    else:
-        return str(x)
 
 
-def count_classes(labels, num_classes):
 
-    class_counts = (labels + 1).view(-1).bincount(minlength = num_classes + 2)   
+def count_classes(label, num_classes):
+
+    class_counts = (label + 1).view(-1).bincount(minlength = num_classes + 2)   
     
     return Struct(
         ignored  = class_counts[0].item(),
@@ -52,16 +41,17 @@ def count_classes(labels, num_classes):
         classes = class_counts[2:],
 
         positive = class_counts[2:].sum().item(),
-        total = labels.numel()
+        total = label.numel()
     )
 
 
 def batch_stats(batch):
-    assert(batch.size(3) == 3)
+    assert(batch.dim() == 4 and batch.size(3) == 3)
+  
     batch = batch.float().div_(255)
+    flat = batch.view(-1, 3)  
 
-    flat = batch.view(-1, 3)
-    return Struct(mean=flat.mean(0).cpu(), std=flat.std(0).cpu())
+    return batch.size(0) * Struct(mean=flat.mean(0).cpu(), std=flat.std(0).cpu())
 
 
 def eval_stats(classes, device=torch.cuda.current_device()):
@@ -71,19 +61,20 @@ def eval_stats(classes, device=torch.cuda.current_device()):
         return Struct(
             image = batch_stats(image),
             boxes=data.lengths.sum().item(),
-            box_counts=count_classes(data.encoding.classes.to(device), len(classes)),
+            box_counts=count_classes(data.encoding.classification.to(device), len(classes)),
             size = image.size(0)
         )
     return f
 
+def mean_results(results):
+    total = reduce(operator.add, results)
+    return total / total.size
+
 
 def summarize_stats(results, epoch, globals={}):
-    stats = reduce(operator.add, results)
-
-    avg = stats / stats.size
+    avg = mean_results(results)
     counts = avg.box_counts
     
-
     print ("image: mean = {}, std = {}".format(str(avg.image.mean), str(avg.image.std)))
     print("instances: {:.2f}, anchors {:.2f}, anchors/instance {:.2f}, positive {:.2f},  ignored {:.2f}, negative {:.2f} "
         .format(avg.boxes, counts.total, counts.positive / avg.boxes, counts.positive, counts.ignored, counts.negative ))
@@ -97,12 +88,11 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
     def f(data):
 
         image = data.image.to(device)
-        norm_data, stats = normalize_batch(image)
+        norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
         losses = loss_func(data.encoding.map(Tensor.to, device), prediction)
         total = sum(losses.values())
-
 
         stats = Struct(error=total.item(), losses = losses.map(Tensor.item),
             size=data.image.size(0), 
@@ -114,15 +104,12 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
     return f
 
 def summarize_train(name, results, epoch, globals={}):
-    stats = reduce(operator.add, results)
-
-    avg = reduce(operator.add, results) / stats.size
-    matches = avg.box_counts.classes.sum().item()
+    avg = mean_results(results)
 
     loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.losses.items())])
 
     print(name + ' epoch: {}\t (instances : {:.2f}) \tloss: {} = {:.6f}'
-        .format(epoch, avg.instances, matches, loss_str, avg.error))
+        .format(epoch, avg.instances, loss_str, avg.error))
 
     return avg.error
 
@@ -200,9 +187,9 @@ def find_split_config(image, max_pixels=None):
 #         splits = split_image(image, n, overlap)
 
 #         outputs = [evaluate_decode(model, image, encoder, device=device, offset=offset) for offset, image in splits]
-#         boxes, labels, confs = zip(*outputs)
+#         boxes, label, confs = zip(*outputs)
 
-#         return encoder.nms(torch.cat(boxes, 0), torch.cat(labels, 0), torch.cat(confs, 0), nms_params=nms_params)
+#         return encoder.nms(torch.cat(boxes, 0), torch.cat(label, 0), torch.cat(confs, 0), nms_params=nms_params)
 
 
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
@@ -232,7 +219,7 @@ def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
     p = encoder.decode(image, preds)
 
     offset = torch.Tensor([*offset, *offset]).to(device)
-    return p.extend(boxes = p.boxes + offset)
+    return p.extend(bbox = p.bbox + offset)
 
 
 
@@ -240,7 +227,12 @@ def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.cur
 
     def f(data):
         prediction = evaluate_image(model, data.image.squeeze(0), encoder, nms_params=nms_params, device=device)
-        return Struct (file = data.file, target = data.target.to(prediction.device()), prediction = prediction, size = data.image.size(0))
+
+        return Struct (
+            file = data.file, 
+            target = data.target.map(Tensor.to, device), 
+            prediction = prediction, 
+            size = data.image.size(0))
     return f
 
 def summarize_test(name, results, epoch, globals={}):

@@ -16,7 +16,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, reduce_features, replace_batchnorms, identity
 
 import torch.nn.init as init
-from tools import Struct, Tensors
+from tools import Struct, Table
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 
@@ -62,16 +62,16 @@ class Encoder:
 
 
     def decode(self, inputs, prediction):
-        assert prediction.locations.dim() == 2 and prediction.classes.dim() == 2
+        assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
         inputs = image_size(inputs)
-        anchor_boxes = self.anchors(inputs).type_as(prediction.locations)
+        anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
-        confidence, labels = prediction.classes.max(1)
-        return Tensors(boxes = box.decode(prediction.locations, anchor_boxes), confidence = confidence, labels = labels)
+        confidence, label = prediction.classification.max(1)
+        return Table(bbox = box.decode(prediction.location, anchor_boxes), confidence = confidence, label = label)
 
     def nms(self, prediction, nms_params=box.nms_defaults):
-        return box.filter_nms(prediction, **nms_params)
+        return box.nms(prediction, **nms_params)
 
 
 
@@ -163,7 +163,7 @@ class FCN(nn.Module):
         if self.square:
             locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
 
-        return Struct( locations = locs, classes = conf )
+        return Struct( location = locs, classification = conf )
 
     def parameter_groups(self, lr, fine_tuning=0.1):
         return [
