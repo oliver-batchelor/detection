@@ -140,7 +140,7 @@ def load_coco(input_path, classes):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Pascal VOC, view dataset')
+    parser = argparse.ArgumentParser(description='Microsoft COCO, export dataset')
 
     parser.add_argument('--input', default='/home/oliver/storage/coco',
                         help='input image path')
@@ -150,7 +150,7 @@ if __name__ == '__main__':
 
 
     parser.add_argument('--restrict', default=None,
-                    help='restrict to single label when converting dataset')
+                    help='restrict to classes (comma sep) when converting dataset')
 
     # parser.add_argument('--voc', action='store_true', default=False,
     #                     help='use voc subset of classes')

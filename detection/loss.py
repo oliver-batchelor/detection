@@ -71,7 +71,7 @@ def mask_valid(target, prediction):
     return (target, prediction)
 
 
-def total_bce(target, prediction, balance=5, gamma=2, alpha=0.25, eps=1e-6):
+def total_bce(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6):
     target, prediction = mask_valid(target, prediction)
 
     class_loss = focal_loss_bce(target.classification, prediction.classification, gamma=gamma, alpha=alpha)

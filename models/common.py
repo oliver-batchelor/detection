@@ -156,16 +156,63 @@ class Conv(nn.Module):
         return self.conv(self.activation(self.norm(inputs)))
 
 
+class LocalSE(nn.Module):
+
+    def __init__(self, features, kernel = 7):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(features, features, 1)
+        self.conv2 = nn.Conv2d(features, features, 1)
+        self.kernel = kernel
+        self.norm = nn.BatchNorm2d(features)
+
+
+    def forward(self, inputs):
+        x = F.avg_pool2d(inputs, self.kernel, stride=1, padding=self.kernel//2)
+
+        x = self.norm(self.conv1(x))
+        x = F.relu(x, inplace=True)
+        x = torch.sigmoid(self.conv2(x))
+
+        return inputs * x
+
+
+class GlobalSE(nn.Module):
+
+    def __init__(self, features):
+        super().__init__()
+
+        self.conv1 = Conv(features, features, 1)
+        self.conv2 = Conv(features, features, 1)
+
+
+    def forward(self, inputs):
+        avg = F.adaptive_avg_pool2d(inputs, (1, 1)) 
+
+        x = self.conv1(avg)
+        x = torch.sigmoid(self.conv2(x))
+
+        return inputs * x
+
+
 def dropout(p=0.0):
     return nn.Dropout2d(p=p) if p > 0 else Lift(identity)
 
-def basic_block(in_size, out_size):
-    unit = nn.Sequential(Conv(in_size, out_size, activation=identity), Conv(out_size, out_size), nn.BatchNorm2d(out_size))
-    return Residual(unit)
 
-def bottleneck_block(in_size, out_size):
-    unit = nn.Sequential(Conv(in_size, out_size//4, 1, activation=identity), Conv(out_size//4, out_size, 3), nn.BatchNorm2d(out_size))
-    return Residual(unit)
+def basic_block(in_size, out_size):
+    return nn.Sequential(
+        Conv(in_size, out_size, activation=identity), 
+        Conv(out_size, out_size), 
+        nn.BatchNorm2d(out_size)
+    )
+    
+
+def se_block(in_size, out_size):
+    return nn.Sequential(
+        basic_block(in_size, out_size),
+        GlobalSE(out_size)
+    )
+
 
 def reduce_features(in_size, out_size, steps=2, kernel=1):
     def interp(i):
@@ -184,6 +231,20 @@ def unbalanced_add(x, y):
         y = y.narrow(0, 1, x.size(1))
 
     return x + y
+
+
+class Bias2d(nn.Module):
+    def __init__(self, features, inplace=False):
+        self.bias = Parameter(torch.Tensor(out_channels))
+        self.inplace = inplace
+
+    def forward(input):
+
+        if self.inplace:
+            return input.add_(self.bias)
+        else:
+            return input + self.bias
+
 
 
 class Upscale(nn.Module):
@@ -211,6 +272,7 @@ class DecodeAdd(nn.Module):
             return self.module(skip + upscaled)
 
         return self.module(skip)
+
 
 class Decode(nn.Module):
     def __init__(self, features, module=None, scale_factor=2):

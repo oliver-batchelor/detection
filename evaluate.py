@@ -235,18 +235,27 @@ def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.cur
             size = data.image.size(0))
     return f
 
-def summarize_test(name, results, epoch, globals={}):
 
+def percentiles(t, n=100):
+    assert t.dim() == 1
+    return torch.from_numpy(np.percentile(t.numpy(), np.arange(0, n)))
+
+
+def AP(results):
     thresholds = [0.5 + inc * 0.05 for inc in range(0, 10)]
-
-    def mAP(iou):
-        _, _, score = evaluate.mAP(results, threshold = iou)
-        return score
     
-    scores = torch.FloatTensor([mAP(t) for t in thresholds])    
+    compute_mAP = evaluate.mAP_at(results)
+    mAPs = [compute_mAP(t).mAP for t in thresholds]
 
-    mAPs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in scores])
-    ap = scores.mean().item()
+    return Struct(
+        mAPs = mAPs,
+        AP = sum(mAPs) / len(mAPs)
+    )
+    
 
-    print(name + ' epoch: {}\t AP: {:.2f}\t mAPs@[0.5-0.95]: [{}]'.format(epoch, ap * 100, mAPs))
-    return ap
+def summarize_test(name, results, epoch, globals={}):
+    summary = AP(results)
+    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in summary.mAPs])
+
+    print(name + ' epoch: {}\t AP: {:.2f}\t mAPs@[0.5-0.95]: [{}]'.format(epoch, summary.AP * 100, mAP_strs))
+    return summary.AP

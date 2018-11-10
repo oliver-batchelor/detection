@@ -13,7 +13,7 @@ import models.pretrained as pretrained
 from detection import box
 
 from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared,  \
-            DecodeAdd, Decode,  basic_block, reduce_features, replace_batchnorms, identity
+            DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
 from tools import Struct, Table
@@ -83,9 +83,8 @@ class FCN(nn.Module):
         self.encoder = pretrained.make_cascade(trained + extra)
         self.box_sizes = box_sizes
 
-        encoded_sizes = pretrained.encoder_sizes(self.encoder)
-        self.reduce = Parallel([Conv(size, features, 1) for size in encoded_sizes])
-        self.square = square
+        def make_reducer(size):
+            return Conv(size, features, 1)
 
         def make_decoder():
             # decoder = nn.Sequential (
@@ -93,8 +92,12 @@ class FCN(nn.Module):
             #     Residual(basic_block(features, features))
             # )
             decoder = identity
-
             return Decode(features, module=decoder)
+
+
+        encoded_sizes = pretrained.encoder_sizes(self.encoder)
+        self.reduce = Parallel([make_reducer(size) for size in encoded_sizes])
+        self.square = square
 
         self.decoder = UpCascade([make_decoder() for i in encoded_sizes])
 
@@ -126,6 +129,7 @@ class FCN(nn.Module):
             # b = -math.log((1 - prior_prob)/prior_prob)
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
                 init.normal_(m.weight, std=0.01)
+                #init.constant_(m.weight, 0)
             if hasattr(m, 'bias') and m.bias is not None:
                 init.constant_(m.bias, 0)
 
