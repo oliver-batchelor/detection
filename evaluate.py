@@ -12,7 +12,7 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import Struct, tensor
+from tools import Struct, tensor, show_shapes
 
 import detection.box as box
 from detection import evaluate
@@ -91,10 +91,10 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
-        losses = loss_func(data.encoding.map(Tensor.to, device), prediction)
+        losses = loss_func(data.encoding._map(Tensor.to, device), prediction)
         total = sum(losses.values())
 
-        stats = Struct(error=total.item(), losses = losses.map(Tensor.item),
+        stats = Struct(error=total.item(), losses = losses._map(Tensor.item),
             size=data.image.size(0), 
             instances=data.lengths.sum().item(),
         )
@@ -209,7 +209,7 @@ def evaluate_raw(model, image, device):
         return p.detach()[0]
 
     norm_data = normalize_batch(image).to(device)
-    predictions = model(norm_data).map(detach)
+    predictions = model(norm_data)._map(detach)
 
     gc.collect()
     return predictions
@@ -219,7 +219,7 @@ def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
     p = encoder.decode(image, preds)
 
     offset = torch.Tensor([*offset, *offset]).to(device)
-    return p.extend(bbox = p.bbox + offset)
+    return p._extend(bbox = p.bbox + offset)
 
 
 
@@ -227,10 +227,11 @@ def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.cur
 
     def f(data):
         prediction = evaluate_image(model, data.image.squeeze(0), encoder, nms_params=nms_params, device=device)
+        # target = data.target._map(Tensor.squeeze, 0)
 
         return Struct (
             file = data.file, 
-            target = data.target.map(Tensor.to, device), 
+            target = data.target._map(Tensor.to, device), 
             prediction = prediction, 
             size = data.image.size(0))
     return f
@@ -243,7 +244,7 @@ def percentiles(t, n=100):
 
 def AP(results):
     thresholds = [0.5 + inc * 0.05 for inc in range(0, 10)]
-    
+
     compute_mAP = evaluate.mAP_at(results)
     mAPs = [compute_mAP(t).mAP for t in thresholds]
 

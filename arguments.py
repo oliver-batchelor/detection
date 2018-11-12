@@ -1,7 +1,7 @@
 
 import argparse
 
-from tools.parameters import param, make_parser, choice, parse_choice, group
+from tools.parameters import param, parse_args, choice, parse_choice, group
 from tools import Struct
 
 import detection.models as models
@@ -69,22 +69,36 @@ detection_parameters = Struct (
 )
 
 
+input_choices = Struct(
+    json = Struct(
+        path          = param(type="str", help = "path to exported json annotation file", required=True)),
+    coco = Struct(
+        path          = param("/home/oliver/storage/coco", help = "path to exported json annotation file")),
+    voc = Struct(
+        path          = param("/home/oliver/storage/voc", help = "path to exported json annotation file"),
+        preset        = param("test2007", help='preset configuration of testing/training set used options test2007|val2012')
+    )
+)
 
-parameters = detection_parameters.merge(train_parameters)
+def input_parameters(choices, default = None):
+    return Struct(
+        keep_classes = param(type="str", help = "further filter the classes, but keep empty images"),
+        subset       = param(type="str", help = "use a subset of loaded classes, filter images with no anntations"),
+        input        = choice(default=default, options=choices, help='input method'),
+    )
 
-parser = make_parser('Object detection', parameters)
+input_remote = input_choices._extend(
+    remote = Struct (host = param("localhost:2160", help = "hostname of remote connection"))
+)
 
-parser.add_argument('--input', default=None, help='input path to dataset')
-parser.add_argument('--coco', default=None, help='load coco from path as input')
+parameters = detection_parameters._merge(train_parameters)._merge(input_parameters(input_remote, 'remote'))
 
-parser.add_argument('--restrict', default='annotate', help='restrict classes to a subset of classes, comma separated')
-
-
-parser.add_argument('--remote', default=None, help='host for connection to annotate server')
 
 def get_arguments():
-    args = Struct(**parser.parse_args().__dict__)
+    args = parse_args(parameters, "trainer", "object detection parameters")
 
     args.model = parse_choice("model", parameters.model, args.model)
+    args.input = parse_choice("input", parameters.input, args.input)
+
 
     return args

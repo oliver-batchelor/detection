@@ -16,6 +16,7 @@ def load_dataset(filename):
 
 
 
+
 def split_tagged(tagged):
     return tagged['tag'], tagged['contents'] if 'contents' in tagged else None
 
@@ -72,6 +73,7 @@ def decode_dataset(data):
         return filterDict( { i['imageFile']:decode_image(i, config) for i in data['images'] if i['category'] == cat })
 
     return config, DetectionDataset(classes=classes, train_images=imageCat('Train'), test_images=imageCat('Test'))
+
 
 def init_dataset(config):
     classes = [{'id':int(k), 'name':v} for k, v in config['classes'].items()]

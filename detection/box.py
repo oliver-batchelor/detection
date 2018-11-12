@@ -57,7 +57,7 @@ def filter_invalid(target):
 def filter_hidden(target, lower, upper, min_visible=0.0):
     bounds = torch.Tensor([[*lower, *upper]])
     overlaps = (intersect(bounds, target.bbox) / area(target.bbox)).squeeze(0)
-    return target.index_select(overlaps.gt(min_visible).nonzero().squeeze(1))
+    return target._index_select(overlaps.gt(min_visible).nonzero().squeeze(1))
 
 
 
@@ -120,13 +120,13 @@ nms_defaults = {
 def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
     if class_threshold > 0:
         inds = (prediction.confidence >= class_threshold).nonzero().squeeze(1)
-        prediction = prediction.index_select(inds)
+        prediction = prediction._index_select(inds)
 
     inds = extern.nms(prediction.bbox, prediction.confidence, nms_threshold)[:max_detections]
-    prediction =  prediction.index_select(inds)
+    prediction =  prediction._index_select(inds)
 
 
-    return prediction.sort_on('confidence', descending=True)
+    return prediction._sort_on('confidence', descending=True)
 
     
 

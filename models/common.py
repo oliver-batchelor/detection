@@ -72,20 +72,13 @@ class Cascade(nn.Sequential):
         return cascade(self._modules.values(), input)
 
 
-# class StepDown(nn.Module):
-#     def __init__(self, in_size, out_size, steps=1, kernel=3, bias=False, activation=nn.ReLU(inplace=True)):
-#
-#         sizes = []
-#
-#         self.module = nn.Sequential()
-
 
 
 class UpCascade(nn.Module):
     def __init__(self, *decoders):
         super(UpCascade, self).__init__()
 
-        self.decoders = nn.ModuleList(*decoders)
+        self.decoders = nn.Sequential(*decoders)
 
     def forward(self, inputs):
 
@@ -104,11 +97,11 @@ class UpCascade(nn.Module):
 class Parallel(nn.Module):
     def __init__(self, *modules):
         super(Parallel, self).__init__()
-        self.mods = nn.ModuleList(*modules)
+        self.parallel = nn.Sequential(*modules)
 
     def forward(self, inputs):
-        assert len(inputs) == len(self.mods)
-        return [m(i) for m, i in zip(self.mods, inputs)]
+        assert len(inputs) == len(self.parallel)
+        return [m(i) for m, i in zip(self.parallel, inputs)]
 
 
 class Shared(nn.Module):

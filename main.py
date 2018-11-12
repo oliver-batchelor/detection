@@ -12,14 +12,16 @@ import torch.optim as optim
 from json.decoder import JSONDecodeError
 
 from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, init_dataset
+from dataset.imports import load_dataset
+
 from detection.models import models
 from detection.loss import total_bce
 
 from tools.model import tools
 
-from tools.parameters import default_parameters
+from tools.parameters import default_parameters, get_choice
 from tools import Struct
-from imports.coco import load_coco
+
 
 import connection
 import trainer
@@ -203,18 +205,8 @@ def load_flattened(model, flattened):
 def append_window(x, xs, window):
     return [x, *xs][:window]
 
+           
 
-def initialise_from(args):
-    if args.input:
-        print("loading from: " + args.input)
-        config, dataset = load_dataset(args.input)
-        return initialise(config, dataset, args)
-
-    if args.coco:
-        print("loading coco from: " + args.coco)
-        classes = args.restrict.split(",") if args.restrict else None
-        config, dataset = load_coco(args.coco, classes=classes)
-        return initialise(config, dataset, args)
 
 def set_bn_momentum(model, mom):
     for m in model.modules():
@@ -323,7 +315,7 @@ def run_trainer(args, conn = None, env = None):
 
         score = 0
         if len(env.dataset.test_images) > 0:
-            nms_params = args.subset('nms_threshold',  'class_threshold', 'max_detections')
+            nms_params = args._subset('nms_threshold',  'class_threshold', 'max_detections')
 
             print("testing {}:".format(env.epoch))
             test_stats = trainer.test(env.dataset.test(args),
@@ -359,7 +351,7 @@ def run_trainer(args, conn = None, env = None):
 
 def run_main():
     args = arguments.get_arguments()
-    pp.pprint(args.to_dicts())
+    pp.pprint(args._to_dicts())
 
     p, conn = None, None
     env = None
@@ -367,11 +359,14 @@ def run_main():
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    if args.remote:
-        print("connecting to: " + args.remote)
-        p, conn = connection.connect('ws://' + args.remote)
+    choice, input_args = get_choice(args.input)
 
-    env = initialise_from(args)
+    if choice == 'remote':
+        print("connecting to: " + input_args.host)
+        p, conn = connection.connect('ws://' + input_args.host)
+    else:
+        config, dataset = load_dataset(args)
+        env = initialise(config, dataset, args)
 
 
     try:

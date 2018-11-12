@@ -25,25 +25,28 @@ def collate(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
+
+    elem = batch[0]
     elem_type = type(batch[0])
 
-    if type(batch[0]) is Table:
-        d =  {key: torch.cat([d[key] for d in batch]) for key in batch[0]}
+
+    if elem_type is Table:
+        d =  {key: torch.cat([d[key] for d in batch]) for key in elem}
         return Table(**d) 
-    if type(batch[0]) is Struct:
-        d =  {key: collate([d[key] for d in batch]) for key in batch[0]}
+    if elem_type is Struct:
+        d =  {key: collate([d[key] for d in batch]) for key in elem}
         return Struct(**d)
-    elif isinstance(batch[0], str):
+    elif isinstance(elem, str):
         return batch        
-    elif isinstance(batch[0], collections.abc.Mapping):
-        return {key: collate([d[key] for d in batch]) for key in batch[0]}
-    elif isinstance(batch[0], collections.abc.Sequence):
+    elif isinstance(elem, collections.abc.Mapping):
+        return {key: collate([d[key] for d in batch]) for key in elem}
+    elif isinstance(elem, collections.abc.Sequence):
         transposed = zip(*batch)
         return [collate(samples) for samples in transposed]
     else:
         return default_collate(batch) 
 
-    raise TypeError((error_msg.format(type(batch[0]))))
+    raise TypeError(error_msg.format(elem_type))
 
 
 
@@ -51,7 +54,7 @@ def collate(batch):
 
 def load_boxes(image):
     img = cv.imread_color(image.file)
-    return image.extend(image = img)
+    return image._extend(image = img)
 
 
 def random_mean(mean, magnitude):
@@ -60,12 +63,10 @@ def random_mean(mean, magnitude):
 
 def scale(scale):
     def apply(d):
-        image, target = d.image, d.target
-
-        bbox = box.transform(target.bbox, (0, 0), (scale, scale))
-        return d.extend(
-                image   = transforms.resize_scale(image, scale),
-                target = Struct(bbox = bbox, label = target.label))
+        bbox = box.transform(d.target.bbox, (0, 0), (scale, scale))
+        return d._extend(
+                image   = transforms.resize_scale(d.image, scale),
+                target = d.target._extend(bbox = bbox))
     return apply
 
 def random_log(l, u):
@@ -103,7 +104,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         y_start = y + (region_size[1] if vertical_flip else 0)
 
 
-        target = input_target.extend(bbox = box.transform(input_target.bbox, (-x_start, -y_start), (sx, sy)))
+        target = input_target._extend(bbox = box.transform(input_target.bbox, (-x_start, -y_start), (sx, sy)))
         target = box.filter_hidden(target, (0, 0), dest_size, min_visible=min_visible)
 
         if crop_boxes:
@@ -113,7 +114,7 @@ def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
         t = transforms.make_affine(dest_size, centre, scale=(sx, sy))
 
-        return d.extend(
+        return d._extend(
                 image = transforms.warp_affine(image, t, dest_size),
                 target = target
             )

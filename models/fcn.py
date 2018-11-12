@@ -19,6 +19,7 @@ import torch.nn.init as init
 from tools import Struct, Table
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
+from collections import OrderedDict
 
 
 def image_size(inputs):
@@ -29,7 +30,6 @@ def image_size(inputs):
 
     assert (len(inputs) == 2)
     return inputs
-
 
 
 
@@ -75,13 +75,33 @@ class Encoder:
 
 
 
+def init_weights(m):
+    if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+        init.normal_(m.weight, std=0.01)
+    if hasattr(m, 'bias') and m.bias is not None:
+        init.constant_(m.bias, 0)
+
+
+def check_equal(*elems):
+    first, *rest = elems
+    return all(first == elem for elem in rest)
+
+
 class FCN(nn.Module):
 
-    def __init__(self, trained, extra, box_sizes, features=32, num_classes=2, shared=False, square=False):
+    def __init__(self, backbone, box_sizes, layer_names, features=32, num_classes=2, shared=False, square=False):
         super().__init__()
-
-        self.encoder = pretrained.make_cascade(trained + extra)
+       
         self.box_sizes = box_sizes
+        self.num_classes = num_classes
+
+        assert check_equal(len(backbone), len(layer_names), len(box_sizes)), "FCN: layers and box sizes differ in length"
+
+        def named(modules):
+            assert len(modules) == len(layer_names)
+            return OrderedDict(zip(layer_names, modules))
+
+        self.backbone = Cascade(named(backbone))
 
         def make_reducer(size):
             return Conv(size, features, 1)
@@ -95,13 +115,12 @@ class FCN(nn.Module):
             return Decode(features, module=decoder)
 
 
-        encoded_sizes = pretrained.encoder_sizes(self.encoder)
-        self.reduce = Parallel([make_reducer(size) for size in encoded_sizes])
+        encoded_sizes = pretrained.encoder_sizes(self.backbone)
+        self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
         self.square = square
 
-        self.decoder = UpCascade([make_decoder() for i in encoded_sizes])
+        self.decoder = UpCascade(named([make_decoder() for i in encoded_sizes]))
 
-        assert len(trained + extra) == len(box_sizes), "FCN: layers and box sizes differ in length"
 
         def output(n):
             return nn.Sequential(
@@ -109,42 +128,23 @@ class FCN(nn.Module):
                 Residual(basic_block(features, features)),
                 Conv(features, n, 1, bias=True))
 
-        self.num_classes = num_classes
 
         if shared:
             num_boxes = len(box_sizes[0])
             assert all(len(boxes) == num_boxes for boxes in box_sizes), "FCN: for shared heads, number of boxes must be equal on all layers"
             self.classifiers = Shared(output(num_boxes * self.num_classes))
         else:
-            self.classifiers = Parallel([output(len(boxes) * self.num_classes) for boxes in self.box_sizes])
+            self.classifiers = Parallel(named([output(len(boxes) * self.num_classes) for boxes in self.box_sizes]))
 
-        self.localisers = Parallel([output(len(boxes) * (3 if square else 4)) for boxes in self.box_sizes])
+        self.localisers = Parallel(named([output(len(boxes) * (3 if square else 4)) for boxes in self.box_sizes]))
 
-
-        self.trained_modules = nn.ModuleList(trained)
-        self.new_modules = nn.ModuleList(extra + [self.reduce, self.decoder, self.classifiers, self.localisers])
-
-
-        def set_weights(m):
-            # b = -math.log((1 - prior_prob)/prior_prob)
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
-                init.normal_(m.weight, std=0.01)
-                #init.constant_(m.weight, 0)
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias, 0)
-
-        self.new_modules.apply(set_weights)
-
-        #replace_batchnorms(self, 16)
-
+        self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
+        nn.ModuleList(self.new_modules).apply(init_weights)
 
 
     def forward(self, input):
-        layers = self.encoder(input)
-
-        # sizes = [(layer.size(2), layer.size(3)) for layer in layers]
-        # print((input.size(2), input.size(3)), sizes)
-
+        layers = self.backbone(input)
+  
         layers = self.decoder(self.reduce(layers))
         def join(layers, n):
 
@@ -153,13 +153,6 @@ class FCN(nn.Module):
               return out.view(out.size(0), -1, n)
 
             return torch.cat(list(map(permute, layers)), 1)
-
-        # def make_rect(layer):
-        #     # Duplicate the size output for x and y together
-        #     layers = [layer, layer.narrow(1, 2, 1)]
-        #     print(layer.size(), layer.narrow(1, 2, 1).size())
-        #
-        #     return torch.cat(layers, dim=1)
 
         conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
         locs = join(self.localisers(layers), 3 if self.square else 4)
@@ -170,9 +163,10 @@ class FCN(nn.Module):
         return Struct( location = locs, classification = conf )
 
     def parameter_groups(self, lr, fine_tuning=0.1):
+
         return [
-            {'params': self.trained_modules.parameters(), 'lr':lr, 'modifier': fine_tuning},
-            {'params': self.new_modules.parameters(), 'lr':lr, 'modifier': 1.0}
+            {'params': self.backbone.parameters(), 'lr':lr, 'modifier': fine_tuning},
+            {'params': nn.ModuleList(self.new_modules).parameters(), 'lr':lr, 'modifier': 1.0}
         ]
 
 
@@ -190,12 +184,17 @@ parameters = Struct(
   )
 
 def extra_layer(inp, features):
-    return nn.Sequential(
+    layer = nn.Sequential(
         *([Conv(inp, features, 1)] if inp != features else []),
         Residual(basic_block(features, features)),
         Residual(basic_block(features, features)),
         Conv(features, features, stride=2)
     )
+
+    layer.apply(init_weights)
+    return layer
+
+
 
 def split_at(xs, n):
     return xs[:n], xs[n:]
@@ -211,12 +210,12 @@ def anchor_sizes(start, end, anchor_scale=4, square=False):
 
 def extend_layers(layers, start, end, features=32):
     features_in = pretrained.layer_sizes(layers)[-1]
-
     num_extra = max(0, end + 1 - len(layers))
-    extra_layers = [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
+
+    layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
 
     initial, rest =  layers[:start + 1], layers[start + 1:end + 1:]
-    return [nn.Sequential(*initial), *rest], [*extra_layers]
+    return [nn.Sequential(*initial), *rest]
 
 
 def create_fcn(args, dataset_args):
@@ -229,18 +228,18 @@ def create_fcn(args, dataset_args):
     assert args.base_name in pretrained.models, "base model not found: " + args.base_name + ", options: " + base_options
 
     base_layers = pretrained.models[args.base_name]()
-    args.first = min(len(base_layers) - 1, args.first)
 
-    backbone, extra = extend_layers(base_layers, args.first, args.last, features=args.features)
+    backbone = extend_layers(base_layers, args.first, args.last, features=args.features)
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
-    return FCN(backbone, extra, box_sizes, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
+    names = ["layer" + str(n) for n in range(args.first, args.last + 1)]
+
+    return FCN(backbone, box_sizes, names, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
            Encoder(args.first, box_sizes)
 
 models = {
     'fcn' : Struct(create=create_fcn, parameters=parameters)
   }
-
 
 
 

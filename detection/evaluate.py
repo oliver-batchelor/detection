@@ -95,7 +95,7 @@ def positives_iou(labels_pred, labels_target, ious, threshold=0.5):
 
 def match_positives(pred, target):
     assert pred.label.dim() == 1 and target.label.dim() == 1
-    n, m = pred.size, target.size
+    n, m = pred._size, target._size
 
     if m == 0 or n == 0:
         return torch.FloatTensor(n).zero_()
