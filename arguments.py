@@ -28,6 +28,8 @@ train_parameters = Struct (
     bn_momentum    = param(0.1, "momentum for batch normalisation modules"),
 
     no_load         = param(False,   help="don't attempt to load previously saved model"),
+    dry_run         = param(False,   help="run for testing only (don't store results or log progress)"),
+
     restore_best    = param(False,   help="restore weights from best validation model"),
 
     run_name        = param('training', help='name for training run')
@@ -80,18 +82,21 @@ input_choices = Struct(
     )
 )
 
-def input_parameters(choices, default = None):
+def make_input_parameters(default = None, choices = input_choices):
     return Struct(
         keep_classes = param(type="str", help = "further filter the classes, but keep empty images"),
         subset       = param(type="str", help = "use a subset of loaded classes, filter images with no anntations"),
         input        = choice(default=default, options=choices, help='input method'),
     )
 
-input_remote = input_choices._extend(
-    remote = Struct (host = param("localhost:2160", help = "hostname of remote connection"))
-)
 
-parameters = detection_parameters._merge(train_parameters)._merge(input_parameters(input_remote, 'remote'))
+
+
+input_remote = make_input_parameters('remote', input_choices._extend(
+    remote = Struct (host = param("localhost:2160", help = "hostname of remote connection"))
+))
+
+parameters = detection_parameters._merge(train_parameters)._merge(input_remote)
 
 
 def get_arguments():

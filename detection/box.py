@@ -118,6 +118,7 @@ nms_defaults = {
 }
 
 def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+
     if class_threshold > 0:
         inds = (prediction.confidence >= class_threshold).nonzero().squeeze(1)
         prediction = prediction._index_select(inds)

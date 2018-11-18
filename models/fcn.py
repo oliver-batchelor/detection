@@ -78,8 +78,10 @@ class Encoder:
 def init_weights(m):
     if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
         init.normal_(m.weight, std=0.01)
-    if hasattr(m, 'bias') and m.bias is not None:
-        init.constant_(m.bias, 0)
+        if hasattr(m, 'bias') and m.bias is not None:
+            init.constant_(m.bias, 0)
+            init.constant_(m.weight, 0)
+
 
 
 def check_equal(*elems):
@@ -89,19 +91,20 @@ def check_equal(*elems):
 
 class FCN(nn.Module):
 
-    def __init__(self, backbone, box_sizes, layer_names, features=32, num_classes=2, shared=False, square=False):
+    def __init__(self, backbone, box_sizes, layer_names, fine_tune = [], features=32, num_classes=2, shared=False, square=False):
         super().__init__()
        
         self.box_sizes = box_sizes
         self.num_classes = num_classes
+        self.square = square
 
-        assert check_equal(len(backbone), len(layer_names), len(box_sizes)), "FCN: layers and box sizes differ in length"
+        assert check_equal(len(layer_names), len(box_sizes)), "FCN: layers and box sizes differ in length"
 
         def named(modules):
             assert len(modules) == len(layer_names)
             return OrderedDict(zip(layer_names, modules))
 
-        self.backbone = Cascade(named(backbone))
+        self.backbone = backbone
 
         def make_reducer(size):
             return Conv(size, features, 1)
@@ -117,7 +120,6 @@ class FCN(nn.Module):
 
         encoded_sizes = pretrained.encoder_sizes(self.backbone)
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
-        self.square = square
 
         self.decoder = UpCascade(named([make_decoder() for i in encoded_sizes]))
 
@@ -141,9 +143,12 @@ class FCN(nn.Module):
         self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
         nn.ModuleList(self.new_modules).apply(init_weights)
 
+        self.fine_tune = fine_tune
+
 
     def forward(self, input):
         layers = self.backbone(input)
+
   
         layers = self.decoder(self.reduce(layers))
         def join(layers, n):
@@ -163,11 +168,20 @@ class FCN(nn.Module):
         return Struct( location = locs, classification = conf )
 
     def parameter_groups(self, lr, fine_tuning=0.1):
-
+        
         return [
             {'params': self.backbone.parameters(), 'lr':lr, 'modifier': fine_tuning},
             {'params': nn.ModuleList(self.new_modules).parameters(), 'lr':lr, 'modifier': 1.0}
         ]
+
+        # fine_tune = {p:True for m in self.fine_tune for p in  m.parameters()}
+        # normal = [p for p in self.parameters() if p not in fine_tune]
+        
+        # return [
+        #     {'params': fine_tune.keys(), 'lr':lr, 'modifier': fine_tuning},
+        #     {'params': normal, 'lr':lr, 'modifier': 1.0}
+        # ]
+
 
 
 base_options = '|'.join(pretrained.models.keys())
@@ -208,14 +222,15 @@ def anchor_sizes(start, end, anchor_scale=4, square=False):
     return [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
 
 
-def extend_layers(layers, start, end, features=32):
+def extend_layers(layers, size, features=32):
+
     features_in = pretrained.layer_sizes(layers)[-1]
-    num_extra = max(0, end + 1 - len(layers))
+    num_extra = max(0, size - len(layers))
 
     layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
+    return layers[:size]
 
-    initial, rest =  layers[:start + 1], layers[start + 1:end + 1:]
-    return [nn.Sequential(*initial), *rest]
+
 
 
 def create_fcn(args, dataset_args):
@@ -229,12 +244,13 @@ def create_fcn(args, dataset_args):
 
     base_layers = pretrained.models[args.base_name]()
 
-    backbone = extend_layers(base_layers, args.first, args.last, features=args.features)
+    layer_names = ["layer" + str(n) for n in range(0, args.last + 1)]
+    layers = extend_layers(base_layers, args.last + 1, features=args.features*2)
+
+    backbone = Cascade(OrderedDict(zip(layer_names, layers)), drop_initial = args.first)
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
-    names = ["layer" + str(n) for n in range(args.first, args.last + 1)]
-
-    return FCN(backbone, box_sizes, names, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
+    return FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
            Encoder(args.first, box_sizes)
 
 models = {

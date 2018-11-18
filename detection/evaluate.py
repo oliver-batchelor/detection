@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from detection import box
-from tools import Struct
+from tools import Struct, const
 
 def cat(*xs, dim=0):
     def to_tensor(xs):
@@ -24,7 +24,7 @@ def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
 
     ious = box.iou(prediction.bbox, target.bbox)
 
-    for i, p in enumerate(prediction.sequence()):
+    for i, p in enumerate(prediction._sequence()):
         match = None
         if ious.size(1) > 0:
             iou, j = max_1d(ious[i])
@@ -38,7 +38,7 @@ def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
                 if p.label == label:
                     match = (j, iou)
 
-        matches.append(p.extend(match = match))
+        matches.append(p._extend(match = match))
     return matches
 
 
@@ -98,7 +98,7 @@ def match_positives(pred, target):
     n, m = pred._size, target._size
 
     if m == 0 or n == 0:
-        return torch.FloatTensor(n).zero_()
+        return const(torch.FloatTensor(n).zero_())
 
     ious = box.iou(pred.bbox, target.bbox)
     return lambda threshold: positives_iou(pred.label, target.label, ious, threshold=threshold)

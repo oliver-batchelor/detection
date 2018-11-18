@@ -20,7 +20,7 @@ from detection.loss import total_bce
 from tools.model import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import Struct
+from tools import Struct, logger, show_shapes
 
 
 import connection
@@ -65,11 +65,36 @@ def show_differences(d1, d2, prefix=""):
             print ("{:20s} {:10s}, {:10s}".format(prefix + k, str(v1), str(v2)))
 
 
+def copy_partial(dest, src):
+    assert src.dim() == dest.dim()
+
+    for d in range(0, src.dim()):
+
+        if src.size(d) > dest.size(d):
+            src = src.narrow(d, 0, dest.size(d))
+        else:
+            dest = dest.narrow(d, 0, src.size(d))
+
+    dest.copy_(src)
+
+def load_state_partial(model, src):
+    dest = model.state_dict()
+
+    for k, dest_param in dest.items():
+        source_param = src[k]
+
+        if source_param.dim() == dest_param.dim():
+            copy_partial(dest_param, source_param)
+                
+
+
 
 def load_state(model, info):
-    model.load_state_dict(info.state)
+    load_state_partial(model, info.state)
     return Struct(model = model, score = info.score, epoch = info.epoch)
 
+def new_state(model):
+    return Struct (model = model, score = 0.0, epoch = 0)
 
 def try_load(model_path):
     try:
@@ -79,22 +104,24 @@ def try_load(model_path):
 
 def load_checkpoint(model_path, model, model_args, args):
     loaded = try_load(model_path)
+
     if not (args.no_load or loaded is None):
+        current = load_state(model, loaded.best if args.restore_best else loaded.current)       
+        best = load_state(copy.deepcopy(model), loaded.best)        
+
         if loaded.args == model_args:
             print("loaded model dataset parameters match, resuming")
 
-            best = load_state(copy.deepcopy(model), loaded.best)
-            current = load_state(model, loaded.best if args.restore_best else loaded.current)
-
-            return best, current, True
         else:
-            print("loaded model dataset parameters differ")
+            print("loaded model dataset parameters differ, loading partial")
             show_differences(model_args.__dict__,  loaded.args.__dict__)
 
-    best = Struct (model = copy.deepcopy(model), score = 0.0, epoch = 0)
-    current = Struct (model = model, score = 0.0, epoch = 0)
+            best.score = 0.0
+            best.epoch = current.epoch
+        
+        return best, current, True
 
-    return best, current, False
+    return new_state(copy.deepcopy(model)), new_state(model), False
 
 
 
@@ -111,16 +138,17 @@ def initialise(config, dataset, args):
 
     run = 0
 
-    output_path = os.path.join(data_root, args.run_name, "model.pth")
+    output_path, log = logger.make_experiment(data_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
+    model_path = os.path.join(output_path, "model.pth")
+
     model, encoder = tools.create(models, model_args.model, model_args.dataset)
 
     set_bn_momentum(model, args.bn_momentum)
 
-    best, current, resumed = load_checkpoint(output_path, model, model_args, args)
+    best, current, resumed = load_checkpoint(model_path, model, model_args, args)
     model, epoch = current.model, current.epoch
 
-
-    running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
+    # running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
@@ -146,14 +174,14 @@ def encode_shape(box, config):
 
 
 def evaluate_image(env, image, nms_params, device):
+    
+
     model = env.best.model
     prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
-    n = len(bbox)
-    assert n == len(label) and n == len(confs)
-
     classes = env.dataset.classes
 
+    
     def detection(p):
         object_class = classes[p.label]
         config = object_class['name']
@@ -297,21 +325,21 @@ def run_trainer(args, conn = None, env = None):
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
                     evaluate.eval_train(model.train(), total_bce,  device=device), env.optimizer, hook=train_update)
-        evaluate.summarize_train("train", train_stats, env.epoch)
+        evaluate.summarize_train("train", train_stats, env.epoch, log=env.log)
 
         # Save parameters for model averaging
         training_params = flatten_parameters(model).cpu()
 
-        is_averaging = env.epoch >= args.average_start and args.average_window > 1
-        if is_averaging:
-            print("averaging:".format(env.epoch))
-            env.running_average = append_window(training_params, env.running_average, args.average_window)
+        # is_averaging = env.epoch >= args.average_start and args.average_window > 1
+        # if is_averaging:
+        #     print("averaging:".format(env.epoch))
+        #     env.running_average = append_window(training_params, env.running_average, args.average_window)
 
-            # Replace model with averaged model for purposes of testing
-            load_flattened(model, sum(env.running_average) / len(env.running_average))
+        #     # Replace model with averaged model for purposes of testing
+        #     load_flattened(model, sum(env.running_average) / len(env.running_average))
 
-            trainer.update_bn(env.dataset.sample_train(args.extend(batch_size = 16, epoch_size = 128), env.encoder), 
-                evaluate.eval_forward(model.train(), device))
+        #     trainer.update_bn(env.dataset.sample_train(args.extend(batch_size = 16, epoch_size = 128), env.encoder), 
+        #         evaluate.eval_forward(model.train(), device))
 
         score = 0
         if len(env.dataset.test_images) > 0:
@@ -321,20 +349,20 @@ def run_trainer(args, conn = None, env = None):
             test_stats = trainer.test(env.dataset.test(args),
                 evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=test_update)
 
-            score = evaluate.summarize_test("test", test_stats, env.epoch)
+            score = evaluate.summarize_test("test", test_stats, env.epoch, log=env.log)
         
         is_best = score >= env.best.score
         if is_best:
             env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
 
-        if is_averaging:
-            load_flattened(model, training_params) # Restore parameters
+        # if is_averaging:
+        #     load_flattened(model, training_params) # Restore parameters
 
         current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
         best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
         save_checkpoint = Struct(current = current, best = best, args = env.model_args, run = env.run)
-        torch.save(save_checkpoint, env.output_path)
+        torch.save(save_checkpoint, env.model_path)
 
         send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1

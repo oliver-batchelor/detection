@@ -30,7 +30,7 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
 
 
     def overlay_prediction():
-        for prediction in eval.prediction.sequence():
+        for prediction in eval.prediction._sequence():
             if prediction.confidence < threshold:
                 break
 
@@ -40,7 +40,7 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
 
     def overlay_target():
 
-        for target in eval.target.sequence():
+        for target in eval.target._sequence():
             label_class = classes[target.label]['name']
             draw_box(image, target.bbox, scale=scale, name=label_class['name'], color=to_rgb(label_class['colour']))
 
@@ -48,17 +48,15 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
     def overlay_anchors():
         overlay_target()
 
-        print(eval.anchors)
-
-        for (label, box) in eval.anchors:
-            label_class = classes[label]['name']
-            draw_box(image, box, scale=scale, color=to_rgb(label_class['colour']), thickness=1)
+        for anchor in eval.anchors:
+            label_class = classes[anchor.label]['name']
+            draw_box(image, anchor.bbox, scale=scale, color=to_rgb(label_class['colour']), thickness=1)
 
 
     def overlay_matches():
-        unmatched = dict(enumerate(eval.target.sequence()))
+        unmatched = dict(enumerate(eval.target._sequence()))
 
-        print(unmatched)
+        # print(unmatched)
 
         for m in eval.matches:
             if m.confidence < threshold: break
@@ -68,7 +66,7 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
                 del unmatched[k]
 
 
-        for (i, target) in enumerate(eval.target.sequence()):
+        for (i, target) in enumerate(eval.target._sequence()):
             label_class = classes[target.label]['name']
             color = (255, 0, 0) if i in unmatched else (0, 255, 0)
 

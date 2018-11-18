@@ -68,7 +68,7 @@ def eval_stats(classes, device=torch.cuda.current_device()):
 
 def mean_results(results):
     total = reduce(operator.add, results)
-    return total / total.size
+    return total / total.size, total
 
 
 def summarize_stats(results, epoch, globals={}):
@@ -91,10 +91,10 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
-        losses = loss_func(data.encoding._map(Tensor.to, device), prediction)
-        total = sum(losses.values())
+        loss = loss_func(data.encoding._map(Tensor.to, device), prediction)
+        total = sum(loss.values())
 
-        stats = Struct(error=total.item(), losses = losses._map(Tensor.item),
+        stats = Struct(error=total.item(), loss = loss._map(Tensor.item),
             size=data.image.size(0), 
             instances=data.lengths.sum().item(),
         )
@@ -103,13 +103,19 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
 
     return f
 
-def summarize_train(name, results, epoch, globals={}):
-    avg = mean_results(results)
-
-    loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.losses.items())])
+def summarize_train(name, results, epoch, log):
+    avg, totals = mean_results(results)
+    loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.loss.items())])
 
     print(name + ' epoch: {}\t (instances : {:.2f}) \tloss: {} = {:.6f}'
         .format(epoch, avg.instances, loss_str, avg.error))
+
+
+    log.scalars("loss", avg.loss._extend(total = avg.error), global_step = epoch)
+    
+    # log.scalar("loss", avg.error)
+    # for name, loss in avg.losses:
+    #     log.scalar("loss/{}".format(name), loss)
 
     return avg.error
 
@@ -193,10 +199,14 @@ def find_split_config(image, max_pixels=None):
 
 
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
+
+
     model.eval()
     with torch.no_grad():
         prediction = evaluate_decode(model, image, encoder, device)
-        return encoder.nms(prediction, nms_params=nms_params)
+        return  encoder.nms(prediction, nms_params=nms_params)
+
+
 
 def evaluate_raw(model, image, device):
     if image.dim() == 3:
@@ -211,7 +221,7 @@ def evaluate_raw(model, image, device):
     norm_data = normalize_batch(image).to(device)
     predictions = model(norm_data)._map(detach)
 
-    gc.collect()
+    #gc.collect()
     return predictions
 
 def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
@@ -246,17 +256,21 @@ def AP(results):
     thresholds = [0.5 + inc * 0.05 for inc in range(0, 10)]
 
     compute_mAP = evaluate.mAP_at(results)
-    mAPs = [compute_mAP(t).mAP for t in thresholds]
+    mAP = [compute_mAP(t).mAP for t in thresholds]
 
     return Struct(
-        mAPs = mAPs,
-        AP = sum(mAPs) / len(mAPs)
+        mAP = mAP,
+        AP = sum(mAP) / len(mAP)
     )
     
 
-def summarize_test(name, results, epoch, globals={}):
+def summarize_test(name, results, epoch, log):
     summary = AP(results)
-    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in summary.mAPs])
+    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in summary.mAP])
 
-    print(name + ' epoch: {}\t AP: {:.2f}\t mAPs@[0.5-0.95]: [{}]'.format(epoch, summary.AP * 100, mAP_strs))
+    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}]'.format(epoch, summary.AP * 100, mAP_strs))
+
+    log.scalars(name, Struct(AP = summary.AP * 100.0, mAP50 = summary.mAP[0] * 100.0, mAP75 = summary.mAP[5] * 100.0), global_step = epoch)
     return summary.AP
+
+

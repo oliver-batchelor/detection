@@ -65,11 +65,14 @@ def cascade(modules, input):
     return outputs
 
 class Cascade(nn.Sequential):
-    def __init__(self, *args):
+    def __init__(self, *args, drop_initial=0):
         super(Cascade, self).__init__(*args)
+        self.drop = drop_initial
+
 
     def forward(self, input):
-        return cascade(self._modules.values(), input)
+        out = cascade(self._modules.values(), input)
+        return out[self.drop:]
 
 
 
