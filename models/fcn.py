@@ -69,20 +69,25 @@ class Encoder:
 
         confidence, label = prediction.classification.max(1)
         return Table(bbox = box.decode(prediction.location, anchor_boxes), confidence = confidence, label = label)
-
+        
     def nms(self, prediction, nms_params=box.nms_defaults):
         return box.nms(prediction, **nms_params)
 
 
 
 def init_weights(m):
-    if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+    if isinstance(m, nn.Conv2d):
+        init.normal_(m.weight, std=0.01)
+
+
+def init_classifier(m):
+    if isinstance(m, nn.Conv2d):
         init.normal_(m.weight, std=0.01)
         if hasattr(m, 'bias') and m.bias is not None:
-            init.constant_(m.bias, 0)
-            init.constant_(m.weight, 0)
-
-
+            prior_prob = 0.01
+            b = -math.log((1 - prior_prob)/prior_prob)
+            init.constant_(m.bias, b)
+            # init.constant_(m.bias, 0)
 
 def check_equal(*elems):
     first, *rest = elems
@@ -140,8 +145,10 @@ class FCN(nn.Module):
 
         self.localisers = Parallel(named([output(len(boxes) * (3 if square else 4)) for boxes in self.box_sizes]))
 
+
         self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
         nn.ModuleList(self.new_modules).apply(init_weights)
+        self.classifiers.apply(init_classifier)
 
         self.fine_tune = fine_tune
 
@@ -161,6 +168,7 @@ class FCN(nn.Module):
 
         conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
         locs = join(self.localisers(layers), 3 if self.square else 4)
+
 
         if self.square:
             locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)

@@ -47,8 +47,6 @@ def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
 
 
 def mask_valid(target, prediction):
-    # loc_target, class_target =  target
-    # loc_pred, class_pred = prediction
 
     size_of = lambda t: (t.size(0), t.size(1))
     sizes = list(map(size_of, [target.location, target.classification, prediction.location, prediction.classification]))
@@ -74,9 +72,9 @@ def mask_valid(target, prediction):
 def total_bce(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6):
     target, prediction = mask_valid(target, prediction)
 
-    n = prediction.location.size(0)
+    #n = prediction.location.size(0)
     
     class_loss = focal_loss_bce(target.classification, prediction.classification, gamma=gamma, alpha=alpha)
     loc_loss = F.smooth_l1_loss(prediction.location, target.location, reduction='sum')
 
-    return Struct(classification = class_loss / (n + 1), location = loc_loss * balance / (n + 1))
+    return Struct(classification = class_loss / balance, location = loc_loss)

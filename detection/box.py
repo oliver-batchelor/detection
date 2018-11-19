@@ -123,11 +123,63 @@ def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100)
         inds = (prediction.confidence >= class_threshold).nonzero().squeeze(1)
         prediction = prediction._index_select(inds)
 
-    inds = extern.nms(prediction.bbox, prediction.confidence, nms_threshold)[:max_detections]
-    prediction =  prediction._index_select(inds)
+    prediction = prediction._sort_on('confidence', descending=True)
+
+    inds = extern.nms(prediction.bbox, prediction.confidence, nms_threshold)
+    return prediction._index_select(inds)
 
 
-    return prediction._sort_on('confidence', descending=True)
+# def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+#     '''Non maximum suppression.
+#     Args:
+#       boxes: (tensor) bounding boxes in point form, sized [n,4].
+#       confs: (tensor) confidence scores, sized [n,].
+#       nms_threshold: (float) overlap iou threshold.
+#       class_threshold: (float) absolute threshold for confidence.
+#       max_detections: (float) max detections (for efficiency)
+#     Returns:
+#       keep: indices of boxes to keep
+#     Reference:
+#       https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/nms/py_cpu_nms.py
+#     '''
+
+#     if class_threshold > 0:
+#         inds = (prediction.confidence >= class_threshold).nonzero().squeeze(1)
+#         prediction = prediction._index_select(inds)
+
+
+#     boxes = prediction.bbox
+#     x1, y1, x2, y2 = boxes[:,0], boxes[:,1], boxes[:,2], boxes[:,3]
+#     areas = (x2-x1) * (y2-y1)
+
+#     _, order = prediction.confidence.sort(0, descending=True)
+
+#     keep = []
+#     while order.numel() > 0 and len(keep) < max_detections:
+#         i, rest = order[0].item(), order[1:]
+
+#         keep.append(i)
+
+#         if rest.numel() > 0:
+
+#             xx1 = x1[rest].clamp(min=x1[i])
+#             yy1 = y1[rest].clamp(min=y1[i])
+#             xx2 = x2[rest].clamp(max=x2[i])
+#             yy2 = y2[rest].clamp(max=y2[i])
+
+#             w = (xx2-xx1).clamp(min=0)
+#             h = (yy2-yy1).clamp(min=0)
+#             inter = w * h
+#             ovr = inter / areas[rest].clamp(max=areas[i])
+
+#             ids = (ovr <= nms_threshold).nonzero()
+#             if ids.numel() == 0:
+#                 break
+
+#             order = order[ids.squeeze(1) + 1]
+
+#     return prediction._index_select(torch.LongTensor(keep))
+
 
     
 
@@ -241,6 +293,7 @@ def decode(prediction, anchor_boxes):
 
     pos = loc_pos * anchor_size + anchor_pos
     sizes = loc_size.exp() * anchor_size
+    
 
     return point_form(torch.cat([pos, sizes], 1))
 
