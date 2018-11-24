@@ -6,7 +6,7 @@ from torch.autograd import Variable
 from detection import box
 from tools import Struct, const
 
-def cat(*xs, dim=0):
+def bookend(*xs, dim=0):
     def to_tensor(xs):
         return xs if torch.is_tensor(xs) else torch.FloatTensor([xs])
     return torch.cat([to_tensor(x) for x in xs], dim)
@@ -57,29 +57,44 @@ def area_under_curve(xs, ys):
 
 
 def compute_mAP(true_positives, num_target, eps=1e-7):
+
     false_positives = (1 - true_positives).cumsum(0)
     true_positives = true_positives.cumsum(0)
 
-    recall = true_positives / (num_target if num_target > 0 else 0)
+    recall = true_positives / (num_target if num_target > 0 else 1)
     precision = true_positives / (true_positives + false_positives).clamp(min = eps)
 
-    recall = cat(0.0, recall, 1.0)
-    precision = rev_cummax(cat(1.0, precision, 0.0))
+    recall = bookend(0.0, recall, 1.0)
+    precision = rev_cummax(bookend(1.0, precision, 0.0))
 
-    return Struct(recall = recall, precision = precision, mAP = area_under_curve(recall, precision))
+    false_positives = bookend(0, false_positives, 0)
+
+    true_positives = bookend(num_target, true_positives, 0)
+
+    return Struct(
+        recall = recall, 
+        precision = precision, 
+
+        false_positives = false_positives,
+        true_positives = true_positives,
+
+        false_negatives = num_target - true_positives,  
+        true_negatives = true_positives.clone().zero_(),
+
+        mAP = area_under_curve(recall, precision))
 
 def mAP_matches(matches, num_target, eps=1e-7):
     true_positives = torch.FloatTensor([0 if m.match is None else 1 for m in matches])
     return compute_mAP(true_positives, num_target, eps)
 
 
-def positives_iou(labels_pred, labels_target, ious, threshold=0.5):
+def _match_positives(labels_pred, labels_target, ious, threshold=0.5):
     n, m = labels_pred.size(0), labels_target.size(0)
     assert ious.size() == torch.Size([n, m]) 
     ious = ious.clone()
 
+    matches = torch.FloatTensor(n).zero_()
 
-    true_positives = torch.FloatTensor(n).zero_()
     for i in range(0, n):
         iou, j = ious[i].max(0)
         iou = iou.item()
@@ -87,9 +102,9 @@ def positives_iou(labels_pred, labels_target, ious, threshold=0.5):
         if iou > threshold:
             ious[:, j] = 0  # mark target overlaps to 0 so they won't be selected twice
             if labels_pred[i] == labels_target[j]:
-                true_positives[i] = 1
+                matches[i] = 1
 
-    return true_positives
+    return matches
 
 
 
@@ -101,21 +116,34 @@ def match_positives(pred, target):
         return const(torch.FloatTensor(n).zero_())
 
     ious = box.iou(pred.bbox, target.bbox)
-    return lambda threshold: positives_iou(pred.label, target.label, ious, threshold=threshold)
+    return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
 
 
 def mAP(images, threshold=0.5, eps=1e-7):   
     return mAP_at(images, eps)(threshold)
 
-def mAP_at(images, eps=1e-7):
-    confidence    = torch.cat([i.prediction.confidence for i in images])
+
+def mAP_classes(image_pairs, num_classes, eps=1e-7):
+    confidence    = torch.cat([i.prediction.confidence for i in image_pairs])
     confidence, order = confidence.sort(0, descending=True)    
 
-    matchers =  [match_positives(i.prediction, i.target) for i in images]
+    matchers =  [match_positives(i.prediction, i.target) for i in image_pairs]
 
-    n = sum(i.target.label.size(0) for i in images)
-    def f(threshold):
-        true_positives = torch.cat([match(threshold) for match in matchers])[order]
-        return compute_mAP(true_positives, n, eps=1e-7)
+    predicted_label = torch.cat([i.prediction.label for i in image_pairs])[order]
+    target_label = torch.cat([i.target.label for i in image_pairs])
+
+    num_targets = torch.bincount(target_label, minlength=num_classes)
+    
+    def f(threshold):      
+
+        matches = torch.cat([match(threshold) for match in matchers])[order]
+        def class_matches(i):
+            return matches[(predicted_label == i).nonzero().squeeze(1)]
+
+        return Struct(
+            total = compute_mAP(matches, target_label.size(0)), 
+            classes = [compute_mAP(class_matches(i), num_targets[i].item()) for i in range(0, num_classes)]
+        )
 
     return f
+

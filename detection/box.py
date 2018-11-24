@@ -236,6 +236,8 @@ def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5)):
     '''
     n = anchor_boxes.size(0)
 
+
+
     if target.bbox.size(0) == 0:
         return Struct (
             location   = torch.FloatTensor(n, 4).fill_(0), 

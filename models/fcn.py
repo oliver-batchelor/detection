@@ -84,7 +84,7 @@ def init_classifier(m):
     if isinstance(m, nn.Conv2d):
         init.normal_(m.weight, std=0.01)
         if hasattr(m, 'bias') and m.bias is not None:
-            prior_prob = 0.01
+            prior_prob = 0.001
             b = -math.log((1 - prior_prob)/prior_prob)
             init.constant_(m.bias, b)
             # init.constant_(m.bias, 0)

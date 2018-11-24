@@ -8,14 +8,14 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 
 
 import tools.dataset.direct as direct
-from tools import transpose, over_struct
+from tools import over_struct
 
 from tools.dataset.flat import FlatList
 from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import tensor, Struct, Table
+from tools import tensor, Struct, Table, cat_tables
 
 from detection import box
 import collections
@@ -31,8 +31,8 @@ def collate(batch):
 
 
     if elem_type is Table:
-        d =  {key: torch.cat([d[key] for d in batch]) for key in elem}
-        return Table(**d) 
+        return cat_tables(batch)
+           
     if elem_type is Struct:
         d =  {key: collate([d[key] for d in batch]) for key in elem}
         return Struct(**d)
@@ -148,9 +148,9 @@ def load_testing(args, images, collate_fn=collate):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
-def encode_target(encoder, crop_boxes=False):
+def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5)):
     def f(d):
-        encoding = encoder.encode(d.image, d.target, crop_boxes=crop_boxes)
+        encoding = encoder.encode(d.image, d.target, crop_boxes=crop_boxes, match_thresholds=match_thresholds)
 
         return Struct(
             image   = d.image,
@@ -166,13 +166,13 @@ def transform_training(args, encoder=None):
     s = 1 / args.down_scale
     result_size = int(args.image_size * s)
 
-    crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale),
+    crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale), border = args.border,
         non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips,
         min_visible=args.min_visible, crop_boxes=args.crop_boxes, allow_empty=args.allow_empty)
 
     adjust_colors = over_struct('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
 
-    encode = identity if encoder is None else  encode_target(encoder, args.crop_boxes)
+    encode = identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, match_thresholds=(args.neg_match, args.pos_match))
     return multiple(args.image_samples, transforms.compose (crop, adjust_colors, encode))
 
 def multiple(n, transform):

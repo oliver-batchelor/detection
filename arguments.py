@@ -19,7 +19,7 @@ train_parameters = Struct (
 
 
     seed            = param(1,      help='random seed'),
-    batch_size      = param(4,     help='input batch size for training'),
+    batch_size      = param(8,     help='input batch size for training'),
     epoch_size      = param(1024,   help='epoch size for training'),
 
     num_workers     = param(4,      help='number of workers used to process dataset'),
@@ -38,11 +38,11 @@ train_parameters = Struct (
 
 detection_parameters = Struct (
     image = group('image',
-        min_scale   = param(2/3,   help='minimum scaling during preprocessing'),
-        max_scale   = param(3/2,   help='maximum scaling during preprocessing'),
+        min_scale   = param(4/5,   help='minimum scaling during preprocessing'),
+        max_scale   = param(5/4,   help='maximum scaling during preprocessing'),
         gamma       = param(0.15,  help='variation in gamma (brightness) when training'),
         channel_gamma       = param(0.1,  help='variation per channel gamma when training'),
-        image_size  = param(440,   help='size of patches to train on'),
+        image_size  = param(600,   help='size of patches to train on'),
         down_scale  = param(1.0,     help='down scale of image_size to test/train on'),
 
         full_size   = param(False, help='train always on full size images rather than sampling a patch'),
@@ -68,6 +68,16 @@ detection_parameters = Struct (
 
     min_visible     = param (0.2, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
+    border          = param(50, help = "border around image for translation augmentation")
+)
+
+
+debug =  Struct (
+    debug = group('debug',
+        debug_predictions = param (False, "distribution of predictions by class"),
+        debug_boxes       = param (False, "debug anchor box matches"),
+        debug_all         = param (False, "enable all debug options")
+    )
 )
 
 
@@ -96,7 +106,7 @@ input_remote = make_input_parameters('remote', input_choices._extend(
     remote = Struct (host = param("localhost:2160", help = "hostname of remote connection"))
 ))
 
-parameters = detection_parameters._merge(train_parameters)._merge(input_remote)
+parameters = detection_parameters._merge(train_parameters)._merge(input_remote)._merge(debug)
 
 
 def get_arguments():

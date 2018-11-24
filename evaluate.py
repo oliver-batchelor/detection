@@ -12,7 +12,7 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import Struct, tensor, show_shapes
+from tools import Struct, tensor, show_shapes, Histogram, ZipList, transpose_structs, transpose_lists
 
 import detection.box as box
 from detection import evaluate
@@ -20,9 +20,9 @@ import operator
 from functools import reduce
 
 
-def eval_forward(device=torch.cuda.current_device()):
+def eval_forward(model, device=torch.cuda.current_device()):
 
-    def f(model, data):
+    def f(data):
         norm_data = normalize_batch(data.image).to(device)
         return model(norm_data)
 
@@ -45,6 +45,17 @@ def count_classes(label, num_classes):
     )
 
 
+
+
+def log_counts(class_names, counts, log):
+    assert len(class_names) == counts.classes.size(0)   
+
+    class_counts = {"class_{}".format(c):count for c, count in zip(class_names, counts.classes) }
+
+    log.scalars("train/boxes", 
+        Struct(ignored = counts.ignored, positive = counts.positive, **class_counts))
+
+
 def batch_stats(batch):
     assert(batch.dim() == 4 and batch.size(3) == 3)
   
@@ -52,6 +63,41 @@ def batch_stats(batch):
     flat = batch.view(-1, 3)  
 
     return batch.size(0) * Struct(mean=flat.mean(0).cpu(), std=flat.std(0).cpu())
+
+
+def log_predictions(class_names, histograms, log):
+
+    assert len(histograms) == len(class_names)
+    totals = reduce(operator.add, histograms)
+
+    if len(class_names)  > 1:
+        for i in range(0, len(class_names)):
+            name = class_names[i]
+            
+            log.histogram("train/positive", histograms[i].positive,  run = name)
+            log.histogram("train/negative", histograms[i].negative,  run = name)
+
+    log.histogram("train/positive", totals.positive)
+    log.histogram("train/negative", totals.negative)
+
+
+def prediction_stats(target, prediction, num_bins = 50):
+
+    num_classes = prediction.classification.size(2)
+    dist_histogram = torch.LongTensor(2, num_classes, num_bins)
+
+    def class_histogram(i):
+        pos_mask = target.classification == i + 1
+        neg_mask = (target.classification > 0) & ~pos_mask
+
+        class_pred = prediction.classification.select(2, i)
+
+        return Struct (
+            positive = Histogram(values = class_pred[pos_mask], range = (0, 1), num_bins = num_bins),
+            negative = Histogram(values = class_pred[neg_mask], range = (0, 1), num_bins = num_bins)
+        )
+
+    return ZipList(class_histogram(i) for i in range(0, num_classes))
 
 
 def eval_stats(classes, device=torch.cuda.current_device()):
@@ -83,7 +129,9 @@ def summarize_stats(results, epoch, globals={}):
     print("class balances: {}".format(str(balances.tolist())))
 
 
-def eval_train(model, loss_func, device=torch.cuda.current_device()):
+
+   
+def eval_train(model, loss_func, debug = Struct(), device=torch.cuda.current_device()):
 
     def f(data):
 
@@ -91,7 +139,8 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
-        loss = loss_func(data.encoding._map(Tensor.to, device), prediction)
+        target = data.encoding._map(Tensor.to, device)
+        loss = loss_func(target, prediction)
         total = sum(loss.values())
 
         stats = Struct(error=total.item(), loss = loss._map(Tensor.item),
@@ -99,11 +148,19 @@ def eval_train(model, loss_func, device=torch.cuda.current_device()):
             instances=data.lengths.sum().item(),
         )
 
+        num_classes = prediction.classification.size(2)
+
+        if debug.predictions:
+            stats = stats._extend(predictions = prediction_stats(target, prediction))
+
+        if debug.boxes:
+            stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
+
         return Struct(error = total, statistics=stats, size = data.image.size(0))
 
     return f
 
-def summarize_train(name, results, epoch, log):
+def summarize_train(name, results, classes, epoch, log):
     avg, totals = mean_results(results)
     loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.loss.items())])
 
@@ -111,8 +168,16 @@ def summarize_train(name, results, epoch, log):
         .format(epoch, avg.instances, loss_str, avg.error))
 
 
-    log.scalars("loss", avg.loss._extend(total = avg.error), global_step = epoch)
+    log.scalars("loss", avg.loss._extend(total = avg.error))
+
+    class_names = [c['name']['name'] for c in classes]
+
+    if 'box_counts' in avg:
+        log_counts(class_names, avg.box_counts,  log)
     
+    if 'predictions' in avg:
+        log_predictions(class_names, totals.predictions,  log)
+
     # log.scalar("loss", avg.error)
     # for name, loss in avg.losses:
     #     log.scalar("loss/{}".format(name), loss)
@@ -207,7 +272,6 @@ def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=to
         return  encoder.nms(prediction, nms_params=nms_params)
 
 
-
 def evaluate_raw(model, image, device):
     if image.dim() == 3:
         image = image.unsqueeze(0)
@@ -234,16 +298,18 @@ def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
 
 
 def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
-
     def f(data):
-        prediction = evaluate_image(model, data.image.squeeze(0), encoder, nms_params=nms_params, device=device)
-        # target = data.target._map(Tensor.squeeze, 0)
 
-        return Struct (
-            file = data.file, 
-            target = data.target._map(Tensor.to, device), 
-            prediction = prediction, 
-            size = data.image.size(0))
+        model.eval()
+        with torch.no_grad():
+            preds = evaluate_raw(model, data.image, device)        
+            prediction = encoder.decode(data.image.squeeze(0), preds)
+
+            return Struct (
+                file = data.file, 
+                target = data.target._map(Tensor.to, device), 
+                prediction = encoder.nms(prediction, nms_params=nms_params), 
+                size = data.image.size(0))
     return f
 
 
@@ -252,25 +318,60 @@ def percentiles(t, n=100):
     return torch.from_numpy(np.percentile(t.numpy(), np.arange(0, n)))
 
 
-def AP(results):
+def compute_AP(results, class_names):
     thresholds = [0.5 + inc * 0.05 for inc in range(0, 10)]
 
-    compute_mAP = evaluate.mAP_at(results)
-    mAP = [compute_mAP(t).mAP for t in thresholds]
+    compute_mAP = evaluate.mAP_classes(results, num_classes = len(class_names))
+    info = transpose_structs ([compute_mAP(t) for t in thresholds])
 
-    return Struct(
-        mAP = mAP,
-        AP = sum(mAP) / len(mAP)
+    info.classes = transpose_lists(info.classes)
+
+    print(len(info.classes), type(info.classes[0]))
+    assert len(info.classes) == len(class_names)
+
+    def summariseAP(ap):
+
+        mAP = [pr.mAP for pr in ap]
+
+        return Struct(
+            pr50 = ap[0],
+            pr75 = ap[5],
+
+            mAP = mAP,
+            AP = sum(mAP) / len(mAP)
+        )
+
+    return Struct (
+        total   = summariseAP(info.total),
+        classes = {name : summariseAP(ap) for name, ap in zip(class_names, info.classes)}
     )
+
+
+
+
+def summarize_test(name, results, classes, epoch, log):
+    class_names = [c['name']['name'] for c in classes]
+
+
+    summary = compute_AP(results, class_names)
+    total, class_aps = summary.total, summary.classes
+
+    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in total.mAP])
     
+    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}]'.format(epoch, total.AP * 100, mAP_strs))
+    log.scalars(name, Struct(AP = total.AP * 100.0, mAP50 = total.mAP[0] * 100.0, mAP75 = total.mAP[5] * 100.0))
 
-def summarize_test(name, results, epoch, log):
-    summary = AP(results)
-    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in summary.mAP])
+    if len(classes) > 1:
+        aps = {**class_aps, 'total':total}
 
-    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}]'.format(epoch, summary.AP * 100, mAP_strs))
+        log.scalars("mAP50", {name : ap.mAP[0] * 100.0 for name, ap in aps.items()})
+        log.scalars("mAP75", {name : ap.mAP[5] * 100.0 for name, ap in aps.items()})
 
-    log.scalars(name, Struct(AP = summary.AP * 100.0, mAP50 = summary.mAP[0] * 100.0, mAP75 = summary.mAP[5] * 100.0), global_step = epoch)
-    return summary.AP
+        log.scalars("AP", {name : ap.AP * 100.0 for name, ap in aps.items()})
+
+    
+    # log.pr_curve("pr@50", summary.curves[0])
+
+    return total.AP
 
 

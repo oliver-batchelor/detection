@@ -128,15 +128,21 @@ def load_checkpoint(model_path, model, model_args, args):
 
 def initialise(config, dataset, args):
     data_root = config['root']
-    classes = {c['id'] : {'shape':c['name']['shape']} for c in dataset.classes}
 
     model_args = Struct (
-        dataset = Struct(classes = classes, input_channels = 3),
+        dataset = Struct(
+            classes = {c['id'] : {'shape':c['name']['shape']} for c in dataset.classes}, 
+            input_channels = 3),
         model   = args.model,
         version = 2
     )
 
     run = 0
+
+    debug = Struct(
+        predictions = args.debug_predictions or args.debug_all,
+        boxes = args.debug_boxes  or args.debug_all
+    )
 
     output_path, log = logger.make_experiment(data_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
@@ -148,7 +154,7 @@ def initialise(config, dataset, args):
     best, current, resumed = load_checkpoint(model_path, model, model_args, args)
     model, epoch = current.model, current.epoch
 
-    # running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
+    running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
@@ -315,6 +321,8 @@ def run_trainer(args, conn = None, env = None):
         poll_command()
 
     def training_cycle():      
+
+        env.log.set_step(env.epoch)
         model = env.model.to(device)
        
         # print("estimating statistics {}:".format(env.epoch))
@@ -324,22 +332,22 @@ def run_trainer(args, conn = None, env = None):
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), total_bce,  device=device), env.optimizer, hook=train_update)
-        evaluate.summarize_train("train", train_stats, env.epoch, log=env.log)
+                    evaluate.eval_train(model.train(), total_bce, env.debug, device=device), env.optimizer, hook=train_update)
+        evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
         # Save parameters for model averaging
         training_params = flatten_parameters(model).cpu()
 
-        # is_averaging = env.epoch >= args.average_start and args.average_window > 1
-        # if is_averaging:
-        #     print("averaging:".format(env.epoch))
-        #     env.running_average = append_window(training_params, env.running_average, args.average_window)
+        is_averaging = env.epoch >= args.average_start and args.average_window > 1
+        if is_averaging:
+            print("averaging:".format(env.epoch))
+            env.running_average = append_window(training_params, env.running_average, args.average_window)
 
-        #     # Replace model with averaged model for purposes of testing
-        #     load_flattened(model, sum(env.running_average) / len(env.running_average))
+            # Replace model with averaged model for purposes of testing
+            load_flattened(model, sum(env.running_average) / len(env.running_average))
 
-        #     trainer.update_bn(env.dataset.sample_train(args.extend(batch_size = 16, epoch_size = 128), env.encoder), 
-        #         evaluate.eval_forward(model.train(), device))
+            trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder), 
+                evaluate.eval_forward(model.train(), device))
 
         score = 0
         if len(env.dataset.test_images) > 0:
@@ -349,14 +357,14 @@ def run_trainer(args, conn = None, env = None):
             test_stats = trainer.test(env.dataset.test(args),
                 evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=test_update)
 
-            score = evaluate.summarize_test("test", test_stats, env.epoch, log=env.log)
+            score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)
         
         is_best = score >= env.best.score
         if is_best:
             env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
 
-        # if is_averaging:
-        #     load_flattened(model, training_params) # Restore parameters
+        if is_averaging:
+            load_flattened(model, training_params) # Restore parameters
 
         current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
         best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
@@ -366,6 +374,8 @@ def run_trainer(args, conn = None, env = None):
 
         send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
+
+        env.log.flush()
 
 
     while(True):
