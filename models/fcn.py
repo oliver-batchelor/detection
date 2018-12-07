@@ -16,7 +16,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
-from tools import Struct, Table
+from tools import struct, table
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
@@ -55,10 +55,10 @@ class Encoder:
         return self.anchor_cache[input_args]
 
 
-    def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5)):
+    def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
         inputs = image_size(inputs)
 
-        return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds)
+        return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
 
 
     def decode(self, inputs, prediction):
@@ -68,10 +68,10 @@ class Encoder:
         anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
         confidence, label = prediction.classification.max(1)
-        return Table(bbox = box.decode(prediction.location, anchor_boxes), confidence = confidence, label = label)
+        return table(bbox = box.decode(prediction.location, anchor_boxes), confidence = confidence, label = label)
         
     def nms(self, prediction, nms_params=box.nms_defaults):
-        return box.nms(prediction, **nms_params)
+        return box.nms(prediction, nms_params)
 
 
 
@@ -115,11 +115,11 @@ class FCN(nn.Module):
             return Conv(size, features, 1)
 
         def make_decoder():
-            # decoder = nn.Sequential (
-            #     Residual(basic_block(features, features)),
-            #     Residual(basic_block(features, features))
-            # )
-            decoder = identity
+            decoder = nn.Sequential (
+                Residual(basic_block(features, features)),
+                Residual(basic_block(features, features))
+            )
+            # decoder = identity
             return Decode(features, module=decoder)
 
 
@@ -173,7 +173,7 @@ class FCN(nn.Module):
         if self.square:
             locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
 
-        return Struct( location = locs, classification = conf )
+        return struct( location = locs, classification = conf )
 
     def parameter_groups(self, lr, fine_tuning=0.1):
         
@@ -194,7 +194,7 @@ class FCN(nn.Module):
 
 base_options = '|'.join(pretrained.models.keys())
 
-parameters = Struct(
+parameters = struct(
     base_name = param ("resnet18", help = "name of pretrained resnet to use options: " + base_options),
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
@@ -258,11 +258,12 @@ def create_fcn(args, dataset_args):
     backbone = Cascade(OrderedDict(zip(layer_names, layers)), drop_initial = args.first)
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
+
     return FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
            Encoder(args.first, box_sizes)
 
 models = {
-    'fcn' : Struct(create=create_fcn, parameters=parameters)
+    'fcn' : struct(create=create_fcn, parameters=parameters)
   }
 
 
@@ -272,10 +273,10 @@ if __name__ == '__main__':
     _, *cmd_args = sys.argv
 
     model_params = {k: v.parameters for k, v in models.items()}
-    parameters = Struct(model= choice('fcn', model_params))
+    parameters = struct(model= choice('fcn', model_params))
 
     parser = make_parser('Object detection', parameters)
-    args = Struct(**parser.parse_args().__dict__)
+    args = struct(**parser.parse_args().__dict__)
 
     model_args = parse_choice("model", parameters.model, args.model)
 
@@ -284,7 +285,7 @@ if __name__ == '__main__':
         1 : {'shape':'BoxShape'}
     }
 
-    model, encoder = create_fcn(model_args.parameters, Struct(classes = classes, input_channels = 3))
+    model, encoder = create_fcn(model_args.parameters, struct(classes = classes, input_channels = 3))
 
     x = Variable(torch.FloatTensor(4, 3, 370, 500))
     out = model.cuda()(x.cuda())

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from detection import box
-from tools import Struct, const
+from tools import struct, const
 
 def bookend(*xs, dim=0):
     def to_tensor(xs):
@@ -71,7 +71,7 @@ def compute_mAP(true_positives, num_target, eps=1e-7):
 
     true_positives = bookend(num_target, true_positives, 0)
 
-    return Struct(
+    return struct(
         recall = recall, 
         precision = precision, 
 
@@ -140,7 +140,7 @@ def mAP_classes(image_pairs, num_classes, eps=1e-7):
         def class_matches(i):
             return matches[(predicted_label == i).nonzero().squeeze(1)]
 
-        return Struct(
+        return struct(
             total = compute_mAP(matches, target_label.size(0)), 
             classes = [compute_mAP(class_matches(i), num_targets[i].item()) for i in range(0, num_classes)]
         )

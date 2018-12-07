@@ -20,7 +20,7 @@ from detection.loss import total_bce
 from tools.model import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import Struct, logger, show_shapes
+from tools import struct, logger, show_shapes, to_structs
 
 
 import connection
@@ -81,20 +81,21 @@ def load_state_partial(model, src):
     dest = model.state_dict()
 
     for k, dest_param in dest.items():
-        source_param = src[k]
+        if k in src:
+            source_param = src[k]
 
-        if source_param.dim() == dest_param.dim():
-            copy_partial(dest_param, source_param)
+            if source_param.dim() == dest_param.dim():
+                copy_partial(dest_param, source_param)
                 
 
 
 
 def load_state(model, info):
     load_state_partial(model, info.state)
-    return Struct(model = model, score = info.score, epoch = info.epoch)
+    return struct(model = model, score = info.score, epoch = info.epoch)
 
 def new_state(model):
-    return Struct (model = model, score = 0.0, epoch = 0)
+    return struct (model = model, score = 0.0, epoch = 0)
 
 def try_load(model_path):
     try:
@@ -127,11 +128,11 @@ def load_checkpoint(model_path, model, model_args, args):
 
 
 def initialise(config, dataset, args):
-    data_root = config['root']
+    data_root = config.root
 
-    model_args = Struct (
-        dataset = Struct(
-            classes = {c['id'] : {'shape':c['name']['shape']} for c in dataset.classes}, 
+    model_args = struct (
+        dataset = struct(
+            classes = {c.id : struct (shape = c.name.shape) for c in dataset.classes}, 
             input_channels = 3),
         model   = args.model,
         version = 2
@@ -139,7 +140,7 @@ def initialise(config, dataset, args):
 
     run = 0
 
-    debug = Struct(
+    debug = struct(
         predictions = args.debug_predictions or args.debug_all,
         boxes = args.debug_boxes  or args.debug_all
     )
@@ -159,46 +160,44 @@ def initialise(config, dataset, args):
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
-    return Struct(**locals())
+    return struct(**locals())
 
 
 def encode_shape(box, config):
     lower, upper =  box[:2], box[2:]
 
-    if config['shape'] == 'CircleConfig':
+    if config.shape == 'CircleConfig':
 
         centre = ((lower + upper) * 0.5).tolist()
         radius = ((upper - lower).sum().item() / 4)
 
-        circle_shape = {'centre':  centre, 'radius': radius}
+        circle_shape = struct(centre = centre, radius = radius)
         return tagged('CircleShape', circle_shape)
 
-    elif config['shape'] == 'BoxConfig':
-        return tagged('BoxShape', {'lower':lower.tolist(), 'upper':upper.tolist()})
+    elif config.shape == 'BoxConfig':
+        return tagged('BoxShape', struct (lower = lower.tolist(), upper = upper.tolist()))
 
-    assert False, "unsupported shape config: " + config['shape']
+    assert False, "unsupported shape config: " + config.shape
 
 
 def evaluate_image(env, image, nms_params, device):
     
-
     model = env.best.model
     prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
     classes = env.dataset.classes
-
     
     def detection(p):
         object_class = classes[p.label]
-        config = object_class['name']
+        config = object_class.name
 
-        return {
-            'shape' : encode_shape(p.bbox.cpu(), config),
-            'label'  : object_class['id'],
-            'confidence' : p.confidence
-        }
+        return struct (
+            shape      =  encode_shape(p.bbox.cpu(), config),
+            label      =  object_class.id,
+            confidence = p.confidence.item()
+        )
 
-    return list(map(detection, prediction.sequence()))
+    return list(map(detection, prediction._sequence()))
 
 def detect_request(env, file, nms_params, device):
     path = os.path.join(env.data_root, file)
@@ -206,10 +205,8 @@ def detect_request(env, file, nms_params, device):
     if not os.path.isfile(path):
         raise NotFound(file)
 
-    image = env.dataset.load_testing(path, env.args)
+    image = env.dataset.load_inference(path, env.args)
     return evaluate_image(env, image, nms_params, device)
-
-
 
 
 def log_lerp(range, t):
@@ -240,12 +237,25 @@ def append_window(x, xs, window):
     return [x, *xs][:window]
 
            
-
-
 def set_bn_momentum(model, mom):
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             m.momentum = mom
+
+
+def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
+    score = 0
+    if len(env.dataset.test_images) > 0:
+        nms_params = env.args._subset('nms_threshold',  'class_threshold', 'max_detections')
+
+        print("testing {}:".format(env.epoch))
+        test_stats = trainer.test(env.dataset.test(env.args),
+            evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=hook)
+
+        score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)    
+    return score
+
+
 
 def run_trainer(args, conn = None, env = None):
 
@@ -262,7 +272,10 @@ def run_trainer(args, conn = None, env = None):
         nonlocal env, device
 
         try:
-            tag, data = split_tagged(json.loads(str))
+            
+            tag, data = split_tagged(to_structs(json.loads(str)))
+
+            print(data)
             # print("recieved command: " + tag)
 
             if tag == 'TrainerInit':
@@ -275,20 +288,11 @@ def run_trainer(args, conn = None, env = None):
                 file, image_data = data
 
                 image = decode_image(image_data, env.config)
-                category = image_data['category']
-                # print ("updating '" + file + "' in " + category)
-
-                env.dataset.update_image(file, image, category)
+                env.dataset.update_image(file, image, image_data.category)
 
 
             elif tag == 'TrainerDetect':
-                reqId, image, nms_prefs = data
-
-                nms_params = {
-                    'nms_threshold'     :   nms_prefs['nms'],
-                    'class_threshold'   :   nms_prefs['threshold'],
-                    'max_detections'    :   nms_prefs['detections']
-                }
+                reqId, image, nms_params = data
 
                 if env is not None:
 
@@ -349,27 +353,20 @@ def run_trainer(args, conn = None, env = None):
             trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder), 
                 evaluate.eval_forward(model.train(), device))
 
-        score = 0
-        if len(env.dataset.test_images) > 0:
-            nms_params = args._subset('nms_threshold',  'class_threshold', 'max_detections')
+        score = run_testing(model, env, device=device, hook=test_update)
 
-            print("testing {}:".format(env.epoch))
-            test_stats = trainer.test(env.dataset.test(args),
-                evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=test_update)
-
-            score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)
         
         is_best = score >= env.best.score
         if is_best:
-            env.best = Struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
+            env.best = struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
 
         if is_averaging:
             load_flattened(model, training_params) # Restore parameters
 
-        current = Struct(state = model.state_dict(), epoch = env.epoch, score = score)
-        best = Struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
+        current = struct(state = model.state_dict(), epoch = env.epoch, score = score)
+        best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
-        save_checkpoint = Struct(current = current, best = best, args = env.model_args, run = env.run)
+        save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)
 
         send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))

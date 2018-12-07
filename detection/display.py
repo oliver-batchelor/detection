@@ -79,8 +79,6 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
             if m.match is not None:
                 color = (0, 255, 0)
 
-            print(m.bbox)
-
             label_class = classes[m.label]['name']
             draw_box(image, m.bbox, scale=scale, color=color, confidence=m.confidence, name=label_class['name'], thickness=1)
 

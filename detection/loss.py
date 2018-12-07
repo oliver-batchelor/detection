@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from tools import tensor, Struct, show_shapes
+from tools import tensor, struct, show_shapes
 
 
 
@@ -58,23 +58,26 @@ def mask_valid(target, prediction):
     valid_mask = target.classification >= 0
     prediction_mask = valid_mask.unsqueeze(2).expand_as(prediction.classification)
 
-    target = Struct(
+    target = struct(
         location = target.location[pos_mask], 
         classification   = target.classification[valid_mask])
 
-    prediction = Struct(
+    prediction = struct(
         location = prediction.location[pos_mask],
         classification   = prediction.classification[prediction_mask].view(-1, num_classes))
 
     return (target, prediction)
 
 
-def total_bce(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6):
-    target, prediction = mask_valid(target, prediction)
+def total_bce(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6, averaging = False):
 
-    #n = prediction.location.size(0)
+    batch = target.location.size(0)
+    n = prediction.location.size(0) + 1    
+
+    target, prediction = mask_valid(target, prediction)
     
     class_loss = focal_loss_bce(target.classification, prediction.classification, gamma=gamma, alpha=alpha)
     loc_loss = F.smooth_l1_loss(prediction.location, target.location, reduction='sum')
 
-    return Struct(classification = class_loss / balance, location = loc_loss)
+
+    return struct(classification = class_loss / (batch * balance), location = loc_loss / batch)

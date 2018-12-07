@@ -2,7 +2,7 @@
 # https://github.com/amdegroot/ssd.pytorch.git
 
 
-from tools import Struct, Table
+from tools import struct, Table
 
 import torch
 from enum import Enum
@@ -29,7 +29,7 @@ def point_form(boxes):
 
 
 
-def transform(boxes, offset, scale):
+def transform(boxes, offset=(0, 0), scale=(1, 1)):
     lower, upper = boxes[:, :2], boxes[:, 2:]
 
     offset, scale = torch.Tensor(offset), torch.Tensor(scale)
@@ -45,6 +45,13 @@ def transpose(boxes):
     return torch.stack([y1, x1, y2, x2], boxes.dim() - 1)
 
 
+def flip_horizontal(boxes, width):
+    x1, y1, x2, y2 = split4(boxes)
+    return torch.stack([width - x2, y1, width - x1, y2], boxes.dim() - 1)
+
+def flip_vertical(boxes, height):
+    x1, y1, x2, y2 = split4(boxes)
+    return torch.stack([x1, height - y2, x2, height - y1], boxes.dim() - 1)
 
 
 
@@ -111,21 +118,21 @@ def iou(box_a, box_b):
     return inter / union  # [n,m]
 
 
-nms_defaults = {
-    'nms_threshold':0.5,
-    'class_threshold':0.05,
-    'max_detections':100
-}
+nms_defaults = struct(
+    nms         = 0.5,
+    threshold   = 0.05,
+    detections  = 100
+)
 
-def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+def nms(prediction, params):
 
-    if class_threshold > 0:
-        inds = (prediction.confidence >= class_threshold).nonzero().squeeze(1)
+    if params.threshold > 0:
+        inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
         prediction = prediction._index_select(inds)
 
     prediction = prediction._sort_on('confidence', descending=True)
 
-    inds = extern.nms(prediction.bbox, prediction.confidence, nms_threshold)
+    inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)
     return prediction._index_select(inds)
 
 
@@ -217,7 +224,7 @@ def anchor_sizes(size, aspects, scales):
 
 
 
-def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5)):
+def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0):
     '''Encode target bounding boxes and class label.
     We obey the Faster RCNN box coder:
       tx = (x - anchor_x) / anchor_w
@@ -235,20 +242,25 @@ def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5)):
       classes: (tensor) encoded class label, sized [m].
     '''
     n = anchor_boxes.size(0)
+    m = target.bbox.size(0)
 
-
-
-    if target.bbox.size(0) == 0:
-        return Struct (
+    if m == 0:
+        return struct (
             location   = torch.FloatTensor(n, 4).fill_(0), 
             classification  = torch.LongTensor(n).fill_(0)) # all negative label
 
     ious = iou(point_form(anchor_boxes), target.bbox)
+
+    if match_nearest > 0:
+        top_ious, inds = ious.topk(match_nearest, dim = 0)
+        ious = ious.scatter(0, inds, top_ious + 1)
+
     max_ious, max_ids = ious.max(1)
 
-    return Struct (
+    return struct (
         location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
-        classification = encode_classes(target.label, max_ious, max_ids, match_thresholds=match_thresholds)
+        classification = encode_classes(target.label, max_ious, max_ids, match_thresholds=match_thresholds),
+        
     )
 
 
@@ -275,11 +287,6 @@ def encode_boxes(boxes, anchor_boxes):
     return torch.cat([loc_pos,loc_size], 1)
 
 
-
-
-
-
-
 def decode(prediction, anchor_boxes):
     '''Decode (encoded) prediction and anchor boxes to give detected boxes.
     Args:
@@ -301,14 +308,9 @@ def decode(prediction, anchor_boxes):
 
 
 
-
-
-
-
-def decode_nms(loc_preds, class_preds, anchor_boxes, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
+def decode_nms(loc_preds, class_preds, anchor_boxes, nms_params):
     assert loc_preds.dim() == 2 and class_preds.dim() == 2
 
     prediction = decode(loc_preds, class_preds, anchor_boxes)
-    return nms(prediction, nms_threshold=nms_threshold, class_threshold=class_threshold, \
-        max_detections=max_detections).type_as(prediction.label)
+    return nms(prediction, nms_params).type_as(prediction.label)
 

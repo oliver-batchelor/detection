@@ -2,11 +2,11 @@
 import argparse
 
 from tools.parameters import param, parse_args, choice, parse_choice, group
-from tools import Struct
+from tools import struct
 
 import detection.models as models
 
-train_parameters = Struct (
+train_parameters = struct (
     optimizer = group('optimizer settings',
         lr              = param(0.1,    help='learning rate'),
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
@@ -36,23 +36,28 @@ train_parameters = Struct (
 )
 
 
-detection_parameters = Struct (
+detection_parameters = struct (
     image = group('image',
-        min_scale   = param(4/5,   help='minimum scaling during preprocessing'),
-        max_scale   = param(5/4,   help='maximum scaling during preprocessing'),
-        gamma       = param(0.15,  help='variation in gamma (brightness) when training'),
-        channel_gamma       = param(0.1,  help='variation per channel gamma when training'),
-        image_size  = param(600,   help='size of patches to train on'),
-        down_scale  = param(1.0,     help='down scale of image_size to test/train on'),
+        gamma           = param(0.15,  help='variation in gamma when training'),
+        channel_gamma   = param(0.1,  help='variation per channel gamma when training'),
 
-        full_size   = param(False, help='train always on full size images rather than sampling a patch'),
+        brightness      = param(0.05,  help='variation in brightness (additive) when training'),
+        contrast        = param(0.05,  help='variation in contrast (multiplicative) when training'),
+
+        image_size      = param(600,   help='size of patches to train on'),
+
+        border_bias     = param(50,    help = "bias random crop to select border more often"),
+        augment = param("crop", help = 'image augmentation method (crop | full | ssd)'),
+
+        scale  = param(1.0,     help='base scale of image_size to test/train on'),
+
+        max_scale = param(4./3, help='maximum scale for cropped patches'),
+        max_aspect = param(1.1, help = 'maximum aspect ratio on crops'),
+
         transposes  = param(False, help='enable image transposes in training'),
         flips          = param(True, help='enable horizontal image flips in training'),
         vertical_flips = param(False, help='enable vertical image flips in training'),
-
-        image_samples   = param(1,      help='number of training samples to extract from each loaded image'),
-
-        allow_empty = param(0.2,    help='when image crop is empty, train with probability')
+        image_samples   = param(1,      help='number of training samples to extract from each loaded image')
     ),
 
     match = group('match thresholds',
@@ -66,13 +71,13 @@ detection_parameters = Struct (
         max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
     ),
 
-    min_visible     = param (0.2, help = 'minimum proportion of area for an overlapped box to be included'),
+    min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
-    border          = param(50, help = "border around image for translation augmentation")
+    top_anchors     = param(4,     help='select n top anchors for ground truth regardless of iou overlap')
 )
 
 
-debug =  Struct (
+debug_parameters =  struct (
     debug = group('debug',
         debug_predictions = param (False, "distribution of predictions by class"),
         debug_boxes       = param (False, "debug anchor box matches"),
@@ -81,19 +86,19 @@ debug =  Struct (
 )
 
 
-input_choices = Struct(
-    json = Struct(
+input_choices = struct(
+    json = struct(
         path          = param(type="str", help = "path to exported json annotation file", required=True)),
-    coco = Struct(
+    coco = struct(
         path          = param("/home/oliver/storage/coco", help = "path to exported json annotation file")),
-    voc = Struct(
+    voc = struct(
         path          = param("/home/oliver/storage/voc", help = "path to exported json annotation file"),
         preset        = param("test2007", help='preset configuration of testing/training set used options test2007|val2012')
     )
 )
 
 def make_input_parameters(default = None, choices = input_choices):
-    return Struct(
+    return struct(
         keep_classes = param(type="str", help = "further filter the classes, but keep empty images"),
         subset       = param(type="str", help = "use a subset of loaded classes, filter images with no anntations"),
         input        = choice(default=default, options=choices, help='input method'),
@@ -103,10 +108,10 @@ def make_input_parameters(default = None, choices = input_choices):
 
 
 input_remote = make_input_parameters('remote', input_choices._extend(
-    remote = Struct (host = param("localhost:2160", help = "hostname of remote connection"))
+    remote = struct (host = param("localhost:2160", help = "hostname of remote connection"))
 ))
 
-parameters = detection_parameters._merge(train_parameters)._merge(input_remote)._merge(debug)
+parameters = detection_parameters._merge(train_parameters)._merge(input_remote)._merge(debug_parameters)
 
 
 def get_arguments():

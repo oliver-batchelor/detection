@@ -17,7 +17,7 @@ from models.cifar.wrn import WideResNet
 
 import models.common as c
 
-from tools import Struct
+from tools import struct
 
 
 def make_encoder(name, depth = None):

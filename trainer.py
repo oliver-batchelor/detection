@@ -16,14 +16,14 @@ def const(a):
             
 
 
-def train(loader, eval, optimizer, hook = const(False)):
+def train(loader, eval, optimizer, hook = None):
     results = []
 
     with tqdm() as bar:
         for n, data in enumerate(loader):
             optimizer.zero_grad()
 
-            if hook(n, len(loader)): break
+            if hook and hook(n, len(loader)): break
 
             result = eval(data)
             result.error.backward()
@@ -47,13 +47,13 @@ def update_bn(loader, eval):
 
 
 
-def test(loader, eval, hook = const(False)):
+def test(loader, eval, hook = None):
     results = []
 
     with torch.no_grad():
         for i, data in enumerate(tqdm(loader)):
 
-            if hook(i, len(loader)): break
+            if hook and hook(i, len(loader)): break
 
             result = eval(data)
             results.append(result)

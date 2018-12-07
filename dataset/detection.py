@@ -8,14 +8,14 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 
 
 import tools.dataset.direct as direct
-from tools import over_struct
 
 from tools.dataset.flat import FlatList
 from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import tensor, Struct, Table, cat_tables
+from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct
+
 
 from detection import box
 import collections
@@ -35,9 +35,10 @@ def collate(batch):
            
     if elem_type is Struct:
         d =  {key: collate([d[key] for d in batch]) for key in elem}
-        return Struct(**d)
+        return Struct(d)
     elif isinstance(elem, str):
         return batch        
+    
     elif isinstance(elem, collections.abc.Mapping):
         return {key: collate([d[key] for d in batch]) for key in elem}
     elif isinstance(elem, collections.abc.Sequence):
@@ -50,11 +51,14 @@ def collate(batch):
 
 
 
+empty_target = table (
+        bbox = torch.FloatTensor(0, 4),
+        label = torch.LongTensor(0))
 
 
-def load_boxes(image):
+def load_image(image):
     img = cv.imread_color(image.file)
-    return image._extend(image = img)
+    return image._extend(image = img, image_size = torch.LongTensor([img.size(1), img.size(0)]))
 
 
 def random_mean(mean, magnitude):
@@ -72,74 +76,171 @@ def scale(scale):
 def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
+def random_flips(horizontal=True, vertical=False, transposes=False):
+    def apply(d):
+        image, bbox = d.image, d.target.bbox
 
-def random_crop(dest_size, scale_range=(1, 1), non_uniform_scale=0, border = 0, min_visible=0.2, 
-                allow_empty=0.0, crop_boxes=False, flips=True, transposes=False, vertical_flips=False):
+        if transposes and (random.uniform(0, 1) > 0.5):
+            image = image.transpose(0, 1)
+            bbox = box.transpose(bbox)
+
+        if vertical and (random.uniform(0, 1) > 0.5):
+            image = cv.flip_vertical(image)
+            bbox = box.flip_vertical(bbox, image.size(0))
+       
+        if horizontal and (random.uniform(0, 1) > 0.5):
+            image = cv.flip_horizontal(image)
+            bbox = box.flip_horizontal(bbox, image.size(1))
+            
+        return d._extend(image = image, target = d.target._extend(bbox = bbox))
+
+    return apply
+
+
+def resize_to(dest_size):
+    cw, ch = dest_size
+
+    def apply(d):      
+        s = (cw / d.image.size(1), ch / d.image.size(0))
+
+        return d._extend(
+            image = transforms.resize_to(d.image, dest_size),
+            target = d.target._extend(bbox = box.transform(d.target.bbox, scale = s))
+        )
+
+    return apply
+
+
+def transformed(d, image, bbox):
+    return d._extend(
+        image   = image,
+        target = d.target._extend(bbox = bbox))
+
+# def transform(d, translate = (0, 0), scale = (1, 1)):
+
+#     t = transforms.translation(dx, dy) 
+
+#     return transformed(d, 
+#         image = 
+#         bbox = box.transform(d.target.bbox, translate = translate, scale = scale)
+#     )
+
+
+def centre_on(image_size):
+    width, height = image_size
+
+    def apply(d):
+        dx = (width - d.image.size(1)) / 2
+        dy = (height - d.image.size(0)) / 2
+
+        bbox = box.transform(d.target.bbox, (dx, dy), (1, 1))
+        image = transforms.warp_affine(d.image, transforms.translation(dx, dy), image_size)
+
+        return transformed(d, image, bbox)
+    return apply        
+
+
+# def fit_to(image_size):
+#     def apply(d):
+#         h, w, _ = d.image.size()
+
+#         s = image_size / max(h, w)
+#         bbox = box.transform(d.target.bbox, scale = (s, s))
+
+#       return d._extend(
+#                 image   = transforms.warp_affine(d.image, transforms.translation(dx, dy), (image_size, image_size)),
+#                 target = d.target._extend(bbox = bbox))
+
+
+def random_crop_padded(dest_size, scale_range=(1, 1), aspect_range=(1, 1), border_bias=0):
     cw, ch = dest_size
 
     def apply(d):
 
         scale = random_log(*scale_range)
-        flip = flips and (random.uniform(0, 1) > 0.5)
-        vertical_flip = vertical_flips and (random.uniform(0, 1) > 0.5)
+        aspect = random_log(*aspect_range)
 
-        transpose = transposes and (random.uniform(0, 1) > 0.5)
-        sx, sy = random_mean(1, non_uniform_scale) * scale, random_mean(1, non_uniform_scale) * scale
-        image, input_target = d.image, d.target
+        sx, sy = scale * math.sqrt(aspect), scale / math.sqrt(aspect)
 
-        if transpose:
-            image = image.transpose(0, 1)
-            input_target.bbox = box.transpose(input_target.bbox)
-
-        input_size = (image.size(1), image.size(0))
+        input_size = (d.image.size(1), d.image.size(0))
         region_size = (cw / sx, ch / sy)
 
-        sx = sx * (-1 if flip else 1)
-        sy = sy * (-1 if vertical_flip else 1)
-
-        # while bbox.size(0) == 0 and input_bbox.size(0) > 0:
-        x, y = transforms.random_region(input_size, region_size, border)
-
-        x_start = x + (region_size[0] if flip else 0)
-        y_start = y + (region_size[1] if vertical_flip else 0)
-
-
-        target = input_target._extend(bbox = box.transform(input_target.bbox, (-x_start, -y_start), (sx, sy)))
-        target = box.filter_hidden(target, (0, 0), dest_size, min_visible=min_visible)
-
-        if crop_boxes:
-            box.clamp(target.bbox, (0, 0), dest_size)
-
+        x, y = transforms.random_crop_padded(input_size, region_size, border_bias=border_bias)
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
         t = transforms.make_affine(dest_size, centre, scale=(sx, sy))
 
         return d._extend(
-                image = transforms.warp_affine(image, t, dest_size),
-                target = target
+                image = transforms.warp_affine(d.image, t, dest_size),
+                target = d.target._extend(bbox = box.transform(d.target.bbox, (-x, -y), (sx, sy)))
             )
     return apply
 
 
+# def ssd_crop():
+    
+#     options = [ None, 0.9, 0.7, 0.5, 0.3, 0.1, 0.0 ]
+
+#     def apply(d):
+#         height, width, _ = d.image.size()
+
+#         min_overlap = options[random.randint(0, len(options) - 1)]
+
+#         # Return full image
+#         if min_overlap is None:
+#             return d
+
+#         for i in range(0, 50):
+
+#             w = random.randint(int(0.1 * width), width)
+#             h = random.uniform(int(0.1 * height), height)
+
+#             if max(w / h, h / w) > 2.0:
+#                 continue
+
+#             x = random.
+
+
+
+#         return d._extend(
+#                 image = transforms.warp_affine(d.image, t, dest_size),
+#                 target = d.target._extend(bbox = box.transform(d.target.bbox, (-x, -y), (sx, sy)))
+#             )
+#     return apply
+
+
+def filter_boxes(min_visible = 0.4, crop_boxes = False):
+    
+    def apply(d):
+        size = (d.image.size(1), d.image.size(0))
+        target = box.filter_hidden(d.target, (0, 0), size, min_visible=min_visible)
+
+        if crop_boxes:
+            box.clamp(target.bbox, (0, 0), size)    
+
+        return d._extend(target = target)
+    
+    return apply
 
 
 def load_training(args, dataset, collate_fn=collate):
     n = round(args.epoch_size / args.image_samples)
     return DataLoader(dataset,
         num_workers=args.num_workers,
-        batch_size=1 if args.full_size else args.batch_size,
+        batch_size=args.batch_size,
         sampler=RepeatSampler(n, len(dataset)) if args.epoch_size else RandomSampler(dataset),
         collate_fn=collate_fn)
 
 
 def sample_training(args, images, loader, transform, collate_fn=collate):
+    assert args.epoch_size is None or args.epoch_size > 0
 
     dataset = direct.Loader(loader, transform)
-    sampler = direct.RandomSampler(images, (args.epoch_size // args.image_samples)) if args.epoch_size else direct.ListSampler(images)
+    sampler = direct.RandomSampler(images, (args.epoch_size // args.image_samples)) if (args.epoch_size is not None) else direct.ListSampler(images)
 
     return DataLoader(dataset,
         num_workers=args.num_workers,
-        batch_size=1 if args.full_size else (args.batch_size // args.image_samples),
+        batch_size=args.batch_size // args.image_samples,
         sampler=sampler,
         collate_fn=collate_fn)
 
@@ -148,11 +249,11 @@ def load_testing(args, images, collate_fn=collate):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
-def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5)):
+def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
     def f(d):
-        encoding = encoder.encode(d.image, d.target, crop_boxes=crop_boxes, match_thresholds=match_thresholds)
+        encoding = encoder.encode(d.image, d.target, crop_boxes=crop_boxes, match_thresholds=match_thresholds, match_nearest = match_nearest)
 
-        return Struct(
+        return struct(
             image   = d.image,
             encoding = encoding,
             lengths = len(d.target.label)
@@ -162,18 +263,37 @@ def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5)):
 def identity(x):
     return x
 
+
+
+
+
 def transform_training(args, encoder=None):
-    s = 1 / args.down_scale
-    result_size = int(args.image_size * s)
+    s = args.scale
+    dest_size = (int(args.image_size * s), int(args.image_size * s))
 
-    crop = random_crop((result_size, result_size), scale_range = (s * args.min_scale, s * args.max_scale), border = args.border,
-        non_uniform_scale = 0.1, flips=args.flips, transposes=args.transposes, vertical_flips=args.vertical_flips,
-        min_visible=args.min_visible, crop_boxes=args.crop_boxes, allow_empty=args.allow_empty)
+    crop = identity
 
-    adjust_colors = over_struct('image', transforms.adjust_gamma(args.gamma, args.channel_gamma))
+    if args.augment == "crop":
+        crop = random_crop_padded(dest_size, scale_range = (s * 1/args.max_scale, s * args.max_scale), 
+            aspect_range=(1/args.max_aspect, args.max_aspect), border_bias = args.border_bias)
+    elif args.augment == "resize":
+        crop = resize_to(dest_size)
+    else:
+        assert false, "unknown augmentation method " + args.augment
 
-    encode = identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, match_thresholds=(args.neg_match, args.pos_match))
-    return multiple(args.image_samples, transforms.compose (crop, adjust_colors, encode))
+    filter = filter_boxes(min_visible=args.min_visible, crop_boxes=args.crop_boxes)
+    flip   = random_flips(horizontal=args.flips, vertical=args.vertical_flips, transposes=args.transposes)
+    
+    
+    adjust_light = over_struct('image', transforms.compose( 
+        transforms.adjust_gamma(args.gamma, args.channel_gamma),
+        transforms.adjust_brightness(args.brightness, args.contrast)
+    ))
+
+    encode = identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, 
+        match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)
+
+    return multiple(args.image_samples, transforms.compose (adjust_light, crop, filter, flip, encode))
 
 def multiple(n, transform):
     def f(data):
@@ -185,19 +305,22 @@ def flatten(collate_fn):
         return collate_fn([x for y in lists for x in y])
     return f
 
+
 def transform_testing(args):
-    if args.down_scale != 1:
-        s = 1 / args.down_scale
-        return scale(s)
-    else:
-        return None
+    """ Returns a function which transforms an image and ground truths for testing
+    """
+    s = args.scale
+    dest_size = (int(args.image_size * s), int(args.image_size * s))
 
+    if args.augment == "crop":
 
-def transform_image_testing(args):
-    if args.down_scale != 1:
-        return transforms.adjust_scale(1 / args.down_scale)
-    else:
-        return None
+        scaling = scale(args.scale) if args.scale != 1 else identity
+        return scaling
+        # return transforms.compose(scaling, centre_on(dest_size))
+
+    elif args.augment == "resize":
+        return resize_to(dest_size)
+
 
 
 class DetectionDataset:
@@ -228,27 +351,25 @@ class DetectionDataset:
 
 
     def train(self, args, encoder=None, collate_fn=collate):
-        images = FlatList(list(self.train_images.values()), loader = load_boxes,
+        images = FlatList(list(self.train_images.values()), loader = load_image,
             transform = transform_training(args, encoder=encoder))
 
         return load_training(args, images, collate_fn=flatten(collate_fn))
 
     def sample_train(self, args, encoder=None, collate_fn=collate):
-        return sample_training(args, list(self.train_images.values()), load_boxes,
+        return sample_training(args, list(self.train_images.values()), load_image,
             transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate_fn))
 
-    def load_testing(self, file, args):
-        transform = transform_image_testing(args)
-        image = cv.imread_color(file)
+    def load_inference(self, file, args):
+        transform = transform_testing(args)
+        d = struct(file = file, target = empty_target)
 
-        if transform is not None:
-            image = transform(image)
-        return image
+        return transform(load_image(d)).image
 
     def test(self, args, collate_fn=collate):
-        images = FlatList(list(self.test_images.values()), loader = load_boxes, transform = transform_testing(args))
+        images = FlatList(list(self.test_images.values()), loader = load_image, transform = transform_testing(args))
         return load_testing(args, images, collate_fn=collate_fn)
 
     def test_training(self, args, collate_fn=collate):
-        images = FlatList(list(self.train_images.values()), loader = load_boxes, transform = transform_testing(args))
+        images = FlatList(list(self.train_images.values()), loader = load_image, transform = transform_testing(args))
         return load_testing(args, images, collate_fn=collate_fn)
