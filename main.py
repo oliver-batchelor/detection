@@ -20,7 +20,7 @@ from detection.loss import total_bce
 from tools.model import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import struct, logger, show_shapes, to_structs
+from tools import struct, logger, show_shapes, to_structs, Struct
 
 
 import connection
@@ -86,7 +86,7 @@ def load_state_partial(model, src):
 
             if source_param.dim() == dest_param.dim():
                 copy_partial(dest_param, source_param)
-                
+
 
 
 
@@ -106,9 +106,10 @@ def try_load(model_path):
 def load_checkpoint(model_path, model, model_args, args):
     loaded = try_load(model_path)
 
-    if not (args.no_load or loaded is None):
-        current = load_state(model, loaded.best if args.restore_best else loaded.current)       
-        best = load_state(copy.deepcopy(model), loaded.best)        
+    if not (args.no_load or not (type(loaded) is Struct)):
+
+        current = load_state(model, loaded.best if args.restore_best else loaded.current)
+        best = load_state(copy.deepcopy(model), loaded.best)
 
         if loaded.args == model_args:
             print("loaded model dataset parameters match, resuming")
@@ -119,7 +120,7 @@ def load_checkpoint(model_path, model, model_args, args):
 
             best.score = 0.0
             best.epoch = current.epoch
-        
+
         return best, current, True
 
     return new_state(copy.deepcopy(model)), new_state(model), False
@@ -132,7 +133,7 @@ def initialise(config, dataset, args):
 
     model_args = struct (
         dataset = struct(
-            classes = {c.id : struct (shape = c.name.shape) for c in dataset.classes}, 
+            classes = {c.id : struct (shape = c.name.shape) for c in dataset.classes},
             input_channels = 3),
         model   = args.model,
         version = 2
@@ -181,12 +182,12 @@ def encode_shape(box, config):
 
 
 def evaluate_image(env, image, nms_params, device):
-    
+
     model = env.best.model
     prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
     classes = env.dataset.classes
-    
+
     def detection(p):
         object_class = classes[p.label]
         config = object_class.name
@@ -236,7 +237,7 @@ def load_flattened(model, flattened):
 def append_window(x, xs, window):
     return [x, *xs][:window]
 
-           
+
 def set_bn_momentum(model, mom):
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
@@ -246,13 +247,16 @@ def set_bn_momentum(model, mom):
 def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
     score = 0
     if len(env.dataset.test_images) > 0:
-        nms_params = env.args._subset('nms_threshold',  'class_threshold', 'max_detections')
+        nms_params = struct(
+            nms = env.args.nms_threshold,
+            threshold = env.args.class_threshold,
+            detections = env.args.max_detections)
 
         print("testing {}:".format(env.epoch))
         test_stats = trainer.test(env.dataset.test(env.args),
             evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=hook)
 
-        score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)    
+        score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)
     return score
 
 
@@ -265,17 +269,15 @@ def run_trainer(args, conn = None, env = None):
     def send_command(command, data):
 
         if conn is not None:
-            str = json.dumps(tagged(command, data))
+            str = json.dumps(tagged(command, data)._to_dicts())
             conn.send(str)
 
     def process_command(str):
         nonlocal env, device
 
         try:
-            
-            tag, data = split_tagged(to_structs(json.loads(str)))
 
-            print(data)
+            tag, data = split_tagged(to_structs(json.loads(str)))
             # print("recieved command: " + tag)
 
             if tag == 'TrainerInit':
@@ -324,11 +326,11 @@ def run_trainer(args, conn = None, env = None):
     def test_update(n, total):
         poll_command()
 
-    def training_cycle():      
+    def training_cycle():
 
         env.log.set_step(env.epoch)
         model = env.model.to(device)
-       
+
         # print("estimating statistics {}:".format(env.epoch))
         # stats = trainer.test(env.dataset.sample_train(args, env.encoder), evaluate.eval_stats(env.dataset.classes, device=device))
         # evaluate.summarize_stats(stats, env.epoch)
@@ -350,12 +352,12 @@ def run_trainer(args, conn = None, env = None):
             # Replace model with averaged model for purposes of testing
             load_flattened(model, sum(env.running_average) / len(env.running_average))
 
-            trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder), 
+            trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
                 evaluate.eval_forward(model.train(), device))
 
         score = run_testing(model, env, device=device, hook=test_update)
 
-        
+
         is_best = score >= env.best.score
         if is_best:
             env.best = struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
