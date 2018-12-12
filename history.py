@@ -5,11 +5,29 @@ from dataset import annotate
 import argparse
 
 from tools import struct, to_structs
+from detection import evaluate
+
+
 
 def decode_image(data, config):
-    data.history 
+    image = annotate.decode_image(data, config=config)
+    history = list(reversed(data.history))
 
-    return annotate.decode_image(data, config=config)
+    
+
+    # tags = [(entry.tag) for time, entry in data.history]
+    
+    time, edit = history[0]
+    detections = annotate.decode_detections(edit.contents.contents, annotate.class_mapping(config))
+    
+
+    test = struct(prediction = detections._sort_on('confidence'), target = image.target)
+    compute_mAP = evaluate.mAP_classes([test], num_classes = len(config.classes))
+
+    pr = compute_mAP(0.5)
+    print(image.file, pr.total.mAP)
+
+    return image._extend(detections = detections)
 
 
 def decode_dataset(data):
@@ -19,8 +37,6 @@ def decode_dataset(data):
     classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
 
     images = [decode_image(i, config) for i in data.images if len(i.history) > 0]
-
-    print(images)
 
 
 def load_dataset(filename):

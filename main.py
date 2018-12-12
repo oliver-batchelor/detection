@@ -264,8 +264,6 @@ def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
 def run_trainer(args, conn = None, env = None):
 
     device = torch.cuda.current_device()
-
-
     def send_command(command, data):
 
         if conn is not None:

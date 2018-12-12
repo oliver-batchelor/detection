@@ -26,32 +26,64 @@ def tagged(name, contents):
         return struct(tag = name, contents = contents)
 
 
-def decode_image(data, config):
-    class_mapping = {int(k):i  for i, k in enumerate(config.classes.keys())}
 
-    def decode_obj(obj):
+def decode_obj(obj):
+    tag, shape = split_tagged(obj.shape)
 
-        tag, shape = split_tagged(obj.shape)
-        label = class_mapping[obj.label]
+    if tag == 'BoxShape':
+        return struct(
+            label = obj.label, box = [*shape.lower, *shape.upper])
+    elif tag == 'CircleShape':
+        x, y, r = *shape.centre, shape.radius
 
-        if tag == 'BoxShape':
-            return struct(
-                label = label, box = [*shape.lower, *shape.upper])
-        elif tag == 'CircleShape':
-            x, y, r = *shape.centre, shape.radius
+        return struct(
+            label = obj.label, box = [x - r, y - r, x + r, y + r])
+    else:
+        # Ignore unsupported annotation for now
+        return None
 
-            return struct(
-                label = label, box = [x - r, y - r, x + r, y + r])
-        else:
-            # Ignore unsupported annotation for now
-            return None
 
+def decode_detection(det):
+    obj = decode_obj(det)
+    if obj is not None:
+        obj = obj._extend(confidence = det.confidence)
+
+    return obj
+
+def lookup(mapping):
+    def f(i):
+        assert i in mapping
+        return mapping[i]
+    return f
+
+def decode_detections(detections, class_mapping):
+    objs = filterMap(decode_detection, detections)
+
+    boxes = pluck('box', objs)
+    labels = list(map(lookup(class_mapping), pluck('label', objs)))
+
+    return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+                  label = torch.LongTensor(labels),
+                  confidence = torch.LongTensor(pluck('confidence', objs))
+        )
+
+
+def decode_objects(data, class_mapping):
     objs = filterMap(decode_obj, data.annotations)
 
     boxes = pluck('box', objs)
-    target = table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
-                    label = torch.LongTensor(pluck('label', objs)))
+    labels = list(map(lookup(class_mapping), pluck('label', objs)))
 
+    return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+                  label = torch.LongTensor(pluck('label', objs)))
+
+
+def class_mapping(config):
+    return {int(k):i  for i, k in enumerate(config.classes.keys())}
+
+
+def decode_image(data, config):
+    target = decode_objects(data, class_mapping(config))
 
     return struct(
         file = path.join(config.root, data.imageFile),
