@@ -6,7 +6,7 @@ import torch
 from dataset.detection import DetectionDataset
 from tools import struct, to_structs
 
-from tools import filterMap, pluck, filterNone, struct, table
+from tools import filter_map, pluck, filter_none, struct, table
 
 def load_dataset(filename):
     with open(filename, "r") as file:
@@ -32,7 +32,9 @@ def decode_obj(obj):
 
     if tag == 'BoxShape':
         return struct(
-            label = obj.label, box = [*shape.lower, *shape.upper])
+            label = obj.label, 
+            box = [*shape.lower, *shape.upper])
+
     elif tag == 'CircleShape':
         x, y, r = *shape.centre, shape.radius
 
@@ -57,7 +59,7 @@ def lookup(mapping):
     return f
 
 def decode_detections(detections, class_mapping):
-    objs = filterMap(decode_detection, detections)
+    objs = filter_map(decode_detection, detections)
 
     boxes = pluck('box', objs)
     labels = list(map(lookup(class_mapping), pluck('label', objs)))
@@ -69,7 +71,7 @@ def decode_detections(detections, class_mapping):
 
 
 def decode_objects(data, class_mapping):
-    objs = filterMap(decode_obj, data.annotations)
+    objs = filter_map(decode_obj, data.annotations)
 
     boxes = pluck('box', objs)
     labels = list(map(lookup(class_mapping), pluck('label', objs)))

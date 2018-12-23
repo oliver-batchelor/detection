@@ -1,7 +1,6 @@
 import os
 
 import shutil
-import itertools
 import argparse
 import torch
 import json
@@ -12,7 +11,7 @@ import numpy as np
 from tools.image import cv, index_map
 # import imports.voc as voc
 
-from tools import struct
+from tools import struct, concat_lists
 from tools.image.index_map import default_colors
 
 from dataset.annotate import decode_dataset
@@ -49,8 +48,7 @@ classes = \
 #     raise Exception('load_file: file not readable ' + filename)
 
 
-def concat(xs):
-    return list(itertools.chain.from_iterable(xs))
+
 
 
 def tagged(tag, contents):
@@ -79,7 +77,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
              assert name in class_names, "class not found: " + name
 
 
-    image_ids = concat([coco.getImgIds(catIds=[cat]) for cat in cat_ids])
+    image_ids = concat_lists([coco.getImgIds(catIds=[cat]) for cat in cat_ids])
 
     print("found images: ", len(image_ids))
     print(class_names)

@@ -103,6 +103,19 @@ def try_load(model_path):
     except (FileNotFoundError, EOFError, RuntimeError):
         pass
 
+def load_model(model_path):
+    loaded = try_load(model_path)
+    assert loaded is not None, "failed to load model from " + model_path
+ 
+    args = loaded.args
+
+
+    model, encoder = tools.create(models, args.model, args.dataset)
+    best = load_state(model, loaded.best)
+
+    return model, encoder, args
+
+
 def load_checkpoint(model_path, model, model_args, args):
     loaded = try_load(model_path)
 
@@ -110,6 +123,8 @@ def load_checkpoint(model_path, model, model_args, args):
 
         current = load_state(model, loaded.best if args.restore_best else loaded.current)
         best = load_state(copy.deepcopy(model), loaded.best)
+
+        print(loaded.args)
 
         if loaded.args == model_args:
             print("loaded model dataset parameters match, resuming")
@@ -133,7 +148,7 @@ def initialise(config, dataset, args):
 
     model_args = struct (
         dataset = struct(
-            classes = {c.id : struct (shape = c.name.shape) for c in dataset.classes},
+            classes = dataset.classes,
             input_channels = 3),
         model   = args.model,
         version = 2

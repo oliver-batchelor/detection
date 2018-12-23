@@ -8,7 +8,7 @@ import detection.models as models
 
 train_parameters = struct (
     optimizer = group('optimizer settings',
-        lr              = param(0.1,    help='learning rate'),
+        lr              = param(0.001,    help='learning rate'),
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
         fine_tuning     = param(1.0,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
@@ -20,6 +20,12 @@ train_parameters = struct (
 
     seed            = param(1,      help='random seed'),
     batch_size      = param(8,     help='input batch size for training'),
+
+
+    # reviews      = param(0,     help = 'number of reviews conducted per epoch'),
+    # review_start = param(20,    help = 'start reviews after n epochs'),
+    review_all      = param(False,    help = 'manually trigger review of all images'),
+
     epoch_size      = param(1024,   help='epoch size for training'),
 
     num_workers     = param(4,      help='number of workers used to process dataset'),
@@ -39,14 +45,17 @@ train_parameters = struct (
 detection_parameters = struct (
     image = group('image',
         gamma           = param(0.15,  help='variation in gamma when training'),
-        channel_gamma   = param(0.1,  help='variation per channel gamma when training'),
+        channel_gamma   = param(0.0,  help='variation per channel gamma when training'),
 
         brightness      = param(0.05,  help='variation in brightness (additive) when training'),
         contrast        = param(0.05,  help='variation in contrast (multiplicative) when training'),
 
+        hue             = param(0.05,  help='variation in brightness (additive) when training'),
+        saturation      = param(0.00,  help='variation in contrast (multiplicative) when training'),        
+
         image_size      = param(600,   help='size of patches to train on'),
 
-        border_bias     = param(50,    help = "bias random crop to select border more often"),
+        border_bias     = param(0.1,    help = "bias random crop to select border more often (proportion of size)"),
         augment = param("crop", help = 'image augmentation method (crop | full | ssd)'),
 
         scale  = param(1.0,     help='base scale of image_size to test/train on'),
@@ -71,6 +80,7 @@ detection_parameters = struct (
         max_detections    = param (100,  help = 'maximum number of detections (for efficiency) in testing')
     ),
 
+    select_instance = param(0.5, help = 'probability of cropping around an object instance as opposed to a random patch'),
     min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
     top_anchors     = param(4,     help='select n top anchors for ground truth regardless of iou overlap')
@@ -101,10 +111,8 @@ def make_input_parameters(default = None, choices = input_choices):
     return struct(
         keep_classes = param(type="str", help = "further filter the classes, but keep empty images"),
         subset       = param(type="str", help = "use a subset of loaded classes, filter images with no anntations"),
-        input        = choice(default=default, options=choices, help='input method'),
+        input        = choice(default=default, options=choices, help='input method', required=default is None),
     )
-
-
 
 
 input_remote = make_input_parameters('remote', input_choices._extend(
@@ -116,6 +124,7 @@ parameters = detection_parameters._merge(train_parameters)._merge(input_remote).
 
 def get_arguments():
     args = parse_args(parameters, "trainer", "object detection parameters")
+
 
     args.model = parse_choice("model", parameters.model, args.model)
     args.input = parse_choice("input", parameters.input, args.input)

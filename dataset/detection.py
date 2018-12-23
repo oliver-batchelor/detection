@@ -151,8 +151,11 @@ def centre_on(image_size):
 #                 image   = transforms.warp_affine(d.image, transforms.translation(dx, dy), (image_size, image_size)),
 #                 target = d.target._extend(bbox = bbox))
 
+def as_tuple(bbox):
+    b = bbox.tolist()
+    return (b[0], b[1]), (b[2], b[3])
 
-def random_crop_padded(dest_size, scale_range=(1, 1), aspect_range=(1, 1), border_bias=0):
+def random_crop_padded(dest_size, scale_range=(1, 1), aspect_range=(1, 1), border_bias=0, select_instance=0.5):
     cw, ch = dest_size
 
     def apply(d):
@@ -165,13 +168,21 @@ def random_crop_padded(dest_size, scale_range=(1, 1), aspect_range=(1, 1), borde
         input_size = (d.image.size(1), d.image.size(0))
         region_size = (cw / sx, ch / sy)
 
+        num_instances = d.target.label.size(0)
+        target_box = None
+        
         x, y = transforms.random_crop_padded(input_size, region_size, border_bias=border_bias)
+
+        if (random.uniform(0, 1) < select_instance) and num_instances > 0:
+            instance = random.randint(0, num_instances - 1)
+            x, y = transforms.random_crop_target(input_size, region_size, target_box=as_tuple(d.target.bbox[instance]))
+
 
         centre = (x + region_size[0] * 0.5, y + region_size[1] * 0.5)
         t = transforms.make_affine(dest_size, centre, scale=(sx, sy))
 
         return d._extend(
-                image = transforms.warp_affine(d.image, t, dest_size),
+                image = transforms.warp_affine(d.image, t, dest_size, flags=cv.inter.cubic),
                 target = d.target._extend(bbox = box.transform(d.target.bbox, (-x, -y), (sx, sy)))
             )
     return apply
@@ -234,6 +245,7 @@ def load_training(args, dataset, collate_fn=collate):
 
 def sample_training(args, images, loader, transform, collate_fn=collate):
     assert args.epoch_size is None or args.epoch_size > 0
+    assert args.batch_size % args.image_samples == 0, "batch_size should be a multiple of image_samples"
 
     dataset = direct.Loader(loader, transform)
     sampler = direct.RandomSampler(images, (args.epoch_size // args.image_samples)) if (args.epoch_size is not None) else direct.ListSampler(images)
@@ -275,7 +287,7 @@ def transform_training(args, encoder=None):
 
     if args.augment == "crop":
         crop = random_crop_padded(dest_size, scale_range = (s * 1/args.max_scale, s * args.max_scale), 
-            aspect_range=(1/args.max_aspect, args.max_aspect), border_bias = args.border_bias)
+            aspect_range=(1/args.max_aspect, args.max_aspect), border_bias = args.border_bias, select_instance = args.select_instance)
     elif args.augment == "resize":
         crop = resize_to(dest_size)
     else:
@@ -287,13 +299,14 @@ def transform_training(args, encoder=None):
     
     adjust_light = over_struct('image', transforms.compose( 
         transforms.adjust_gamma(args.gamma, args.channel_gamma),
-        transforms.adjust_brightness(args.brightness, args.contrast)
+        transforms.adjust_brightness(args.brightness, args.contrast),
+        transforms.adjust_colours(args.hue, args.saturation)
     ))
 
     encode = identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)
 
-    return multiple(args.image_samples, transforms.compose (adjust_light, crop, filter, flip, encode))
+    return multiple(args.image_samples, transforms.compose (crop, adjust_light, filter, flip, encode))
 
 def multiple(n, transform):
     def f(data):

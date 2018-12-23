@@ -13,13 +13,14 @@ def const(a):
 
 
 
-            
+
 
 
 def train(loader, eval, optimizer, hook = None):
     results = []
 
     with tqdm() as bar:
+
         for n, data in enumerate(loader):
             optimizer.zero_grad()
 
