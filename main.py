@@ -334,9 +334,16 @@ def run_trainer(args, conn = None, env = None):
         lr = log_lerp((args.lr, args.lr * args.lr_epoch_decay), n / total) if args.lr > 0 else 0
 
         adjust_learning_rate(lr, env.optimizer)
+
+        send_command('TrainerProgress', struct(activity = 'Training', progress = (n, total)))
         poll_command()
 
+        
+
+
     def test_update(n, total):
+
+        send_command('TrainerProgress', struct(activity = 'Testing', progress = (n, total)))
         poll_command()
 
     def training_cycle():

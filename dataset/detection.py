@@ -338,40 +338,61 @@ def transform_testing(args):
 
 class DetectionDataset:
 
-    def __init__(self, train_images={}, test_images={}, classes=[]):
+    def __init__(self, images = {}, classes=[]):
 
-        assert type(train_images) is dict, "expected train_images as a dict"
-        assert type(test_images) is dict, "expected test_images as a dict"
+        assert type(images) is dict, "expected images as a dict"
         assert type(classes) is list, "expected classes as a list"
 
-        self.train_images = train_images
-        self.test_images = test_images
-
+        self.images = {}
         self.classes = classes
 
 
     def update_image(self, file, image, category):
-        if file in self.train_images:
-            del self.train_images[file]
-        if file in self.test_images:
-            del self.test_images[file]
+
+        for k, images in self.images.items():
+            if file in images:
+                del images[file]
 
         if image is not None:
-            if category == 'Test':
-                self.test_images[file] = image
-            elif category == 'Train':
-                self.train_images[file] = image
+            if not (category in self.images):
+                self.images[category] = {}
+            self.images[category][file] = image
 
 
-    def train(self, args, encoder=None, collate_fn=collate):
-        images = FlatList(list(self.train_images.values()), loader = load_image,
+    def category(self, k):
+        if not (k in self.images):
+            return {}        
+        else:
+            return self.images[k]
+
+    def get_images(self, k):
+        return list(self.category(k).values())
+
+    @property
+    def train_images(self):
+        return self.get_images('Train')
+
+    @property
+    def test_images(self):
+        return self.get_images('Test')
+
+    @property
+    def all_images(self):
+        all_images = {}
+        for k, images in self.images.items():
+            all_images.update(images)
+
+        return all_images
+
+    def train(self, args, encoder=None):
+        images = FlatList(self.train_images, loader = load_image,
             transform = transform_training(args, encoder=encoder))
 
-        return load_training(args, images, collate_fn=flatten(collate_fn))
+        return load_training(args, images, collate_fn=flatten(collate))
 
-    def sample_train(self, args, encoder=None, collate_fn=collate):
-        return sample_training(args, list(self.train_images.values()), load_image,
-            transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate_fn))
+    def sample_train(self, args, encoder=None):
+        return sample_training(args, self.train_images, load_image,
+            transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate))
 
     def load_inference(self, file, args):
         transform = transform_testing(args)
@@ -379,10 +400,14 @@ class DetectionDataset:
 
         return transform(load_image(d)).image
 
-    def test(self, args, collate_fn=collate):
-        images = FlatList(list(self.test_images.values()), loader = load_image, transform = transform_testing(args))
-        return load_testing(args, images, collate_fn=collate_fn)
+    def test(self, args):
+        images = FlatList(self.test_images, loader = load_image, transform = transform_testing(args))
+        return load_testing(args, images, collate_fn=collate)
 
-    def test_training(self, args, collate_fn=collate):
-        images = FlatList(list(self.train_images.values()), loader = load_image, transform = transform_testing(args))
-        return load_testing(args, images, collate_fn=collate_fn)
+    def test_training(self, args):
+        images = FlatList(self.train_images, loader = load_image, transform = transform_testing(args))
+        return load_testing(args, images, collate_fn=collate)
+
+    def test_all(self, args):
+        images = FlatList(self.all_images, loader = load_image, transform = transform_testing(args))
+

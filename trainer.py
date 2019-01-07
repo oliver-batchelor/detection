@@ -13,29 +13,34 @@ def const(a):
 
 
 
-
-
-
-def train(loader, eval, optimizer, hook = None):
+def run_progress(loader, hook, eval):
     results = []
 
     with tqdm() as bar:
-
-        for n, data in enumerate(loader):
-            optimizer.zero_grad()
-
-            if hook and hook(n, len(loader)): break
-
+        for i, data in enumerate(loader):
             result = eval(data)
-            result.error.backward()
-            optimizer.step()
-            results.append(result.statistics)
 
+            if hook and hook(i * result.size, len(loader) * result.size): break
+
+            results.append(result)
             bar.update(result.size)
             if bar.total is None:
                 bar.total = len(loader) * result.size
 
     return results
+
+def train(loader, eval, optimizer, hook = None):
+
+    def update(data):
+        optimizer.zero_grad()
+
+        result = eval(data)
+        result.error.backward()
+        optimizer.step()
+
+        return result.statistics
+        
+    return run_progress(loader, hook, update)
 
 
 def update_bn(loader, eval):
@@ -49,28 +54,7 @@ def update_bn(loader, eval):
 
 
 def test(loader, eval, hook = None):
-    results = []
 
     with torch.no_grad():
-        for i, data in enumerate(tqdm(loader)):
+        return run_progress(loader, hook, eval)
 
-            if hook and hook(i, len(loader)): break
-
-            result = eval(data)
-            results.append(result)
-
-            gc.collect()
-
-        return results
-
-
-def test_images(files, eval):
-    results = []
-
-    for (image_file, mask_file) in tqdm(files):
-        data = dataset.load_rgb(image_file)
-        label = dataset.load_label(mask_file)
-
-        results.append((image_file, eval(data)))
-
-    return results
