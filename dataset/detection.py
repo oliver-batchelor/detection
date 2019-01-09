@@ -347,34 +347,22 @@ class DetectionDataset:
         self.classes = classes
 
 
-    def update_image(self, file, image, category):
-
-        for k, images in self.images.items():
-            if file in images:
-                del images[file]
-
-        if image is not None:
-            if not (category in self.images):
-                self.images[category] = {}
-            self.images[category][file] = image
-
-
-    def category(self, k):
-        if not (k in self.images):
-            return {}        
-        else:
-            return self.images[k]
+    def update_image(self, image):
+        self.images[image.file] = image
 
     def get_images(self, k):
-        return list(self.category(k).values())
+        return [image for image in self.images.values() if image.category == k] 
+
+
+    
 
     @property
     def train_images(self):
-        return self.get_images('Train')
+        return self.get_images('train')
 
     @property
     def test_images(self):
-        return self.get_images('Test')
+        return self.get_images('test')
 
     @property
     def all_images(self):

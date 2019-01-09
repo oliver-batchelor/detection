@@ -176,22 +176,23 @@ def initialise(config, dataset, args):
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
+
     return struct(**locals())
 
 
 def encode_shape(box, config):
     lower, upper =  box[:2], box[2:]
 
-    if config.shape == 'CircleConfig':
+    if config.shape == 'circle':
 
         centre = ((lower + upper) * 0.5).tolist()
         radius = ((upper - lower).sum().item() / 4)
 
         circle_shape = struct(centre = centre, radius = radius)
-        return tagged('CircleShape', circle_shape)
+        return tagged('circle', circle_shape)
 
-    elif config.shape == 'BoxConfig':
-        return tagged('BoxShape', struct (lower = lower.tolist(), upper = upper.tolist()))
+    elif config.shape == 'box':
+        return tagged('box', struct (lower = lower.tolist(), upper = upper.tolist()))
 
     assert False, "unsupported shape config: " + config.shape
 
@@ -275,6 +276,10 @@ def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
     return score
 
 
+class UserCommand(Exception):
+    def __init__(self, command):
+        super(UserCommand, self).__init__("")
+        self.command = command
 
 def run_trainer(args, conn = None, env = None):
 
@@ -282,47 +287,53 @@ def run_trainer(args, conn = None, env = None):
     def send_command(command, data):
 
         if conn is not None:
-            str = json.dumps(tagged(command, data)._to_dicts())
+            str = json.dumps(tagged(command, data)._to_dicts())           
             conn.send(str)
 
     def process_command(str):
         nonlocal env, device
 
+        if str is None:
+            print("Server disconnected.")
+            raise UserCommand('pause')
+
         try:
-
             tag, data = split_tagged(to_structs(json.loads(str)))
-            # print("recieved command: " + tag)
+            if tag == 'command':
+                raise UserCommand(data)
 
-            if tag == 'TrainerInit':
 
+            elif tag == 'init':
                 config, dataset = init_dataset(data)
                 env = initialise(config, dataset, args)
 
+                raise UserCommand('resume')
 
-            elif tag == 'TrainerUpdate':
+
+            elif tag == 'update':
                 file, image_data = data
 
                 image = decode_image(image_data, env.config)
-                env.dataset.update_image(file, image, image_data.category)
+                env.dataset.update_image(image)
 
 
-            elif tag == 'TrainerDetect':
+            elif tag == 'detect':
                 reqId, image, nms_params = data
 
                 if env is not None:
 
                     results = detect_request(env, image, nms_params, device)
-                    send_command('TrainerDetections', (reqId, image, results, (env.run, env.best.epoch)))
+                    send_command('detections', (reqId, image, results, (env.run, env.best.epoch)))
 
                 else:
-                    send_command('TrainerReqError', [reqId, image, "model not available yet"])
+                    send_command('req_error', [reqId, image, "model not available yet"])
 
             else:
-                send_command('TrainerError', "unknown command: " + tag)
+                send_command('error', "unknown command: " + tag)
 
 
         except (JSONDecodeError) as err:
-            send_command('TrainerError', repr(err))
+            send_command('error', repr(err))
             return None
 
     def poll_command():
@@ -335,18 +346,21 @@ def run_trainer(args, conn = None, env = None):
 
         adjust_learning_rate(lr, env.optimizer)
 
-        send_command('TrainerProgress', struct(activity = 'Training', progress = (n, total)))
+        activity = struct(tag = 'train', epoch = env.epoch)
+        send_command('progress', struct(activity = activity, progress = (n, total)))
+        
         poll_command()
 
         
-
-
     def test_update(n, total):
 
-        send_command('TrainerProgress', struct(activity = 'Testing', progress = (n, total)))
+        activity = struct(tag = 'test', epoch = env.epoch)
+        send_command('progress', struct(activity = activity, progress = (n, total)))
         poll_command()
 
     def training_cycle():
+        if env == None or len(env.dataset.train_images) == 0:
+            return None
 
         env.log.set_step(env.epoch)
         model = env.model.to(device)
@@ -391,20 +405,47 @@ def run_trainer(args, conn = None, env = None):
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)
 
-        send_command("TrainerCheckpoint", ((env.run, env.epoch), score, is_best))
+        send_command("checkpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
 
         env.log.flush()
 
 
+    def review_all():
+        print("reviewing...")
+
+    def detect_all():
+        print("detecting...")
+        
+
+    def paused():
+        send_command('progress', None)
+
+        while(True):
+            poll_command()
+
+
+    activities = struct(
+        detect = detect_all,
+        review = review_all,
+        resume = training_cycle,
+        test = training_cycle,
+        pause = paused
+    )
+
+    activity = training_cycle
+
     while(True):
-        if env is not None and len(env.dataset.train_images) > 0:
-            training_cycle()
-        poll_command()
+        try:
+            activity()
+            poll_command()
 
+        except UserCommand as cmd:
+            assert cmd.command in activities, "Unknown command " + cmd.command
 
-
-
+            print ("User command: ", cmd.command)
+            activity = activities[cmd.command]
+                
 
 def run_main():
     args = arguments.get_arguments()

@@ -19,23 +19,20 @@ def load_dataset(filename):
 def split_tagged(tagged):
     return tagged.tag, tagged.contents if 'contents' in tagged else None
 
-def tagged(name, contents):
-    if contents is None:
-        return struct(tag = name)
-    else:
-        return struct(tag = name, contents = contents)
+def tagged(name, contents=None):
+    return struct(tag = name, contents = contents)
 
 
 
 def decode_obj(obj):
     tag, shape = split_tagged(obj.shape)
 
-    if tag == 'BoxShape':
+    if tag == 'box':
         return struct(
             label = obj.label, 
             box = [*shape.lower, *shape.upper])
 
-    elif tag == 'CircleShape':
+    elif tag == 'circle':
         x, y, r = *shape.centre, shape.radius
 
         return struct(
@@ -105,7 +102,7 @@ def decode_dataset(data):
     def imageCat(cat):
         return filterDict( { i.imageFile:decode_image(i, config) for i in data.images if i.category == cat })
 
-    return config, DetectionDataset(classes=classes, train_images=imageCat('Train'), test_images=imageCat('Test'))
+    return config, DetectionDataset(classes=classes, train_images=imageCat('train'), test_images=imageCat('test'))
 
 
 def init_dataset(config):

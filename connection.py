@@ -12,23 +12,27 @@ import time
 
 def connection(conn, url, reconnect_time=0.5):
     async def recv_loop(socket):
-        while True:
-            try:
+        try:
+            while True:
                 in_str = await socket.recv()
-                conn.send(in_str)
-            except (ConnectionClosed, IncompleteReadError) as e:
-                print(e)
+                conn.send(in_str)                   
+        except (ConnectionClosed, IncompleteReadError) as e:
+            conn.send(None)                   
+
 
 
     async def send_loop(socket):
         loop = asyncio.get_event_loop()
         executor = ThreadPoolExecutor(max_workers=1)
 
-        while True:
-            msg = await loop.run_in_executor(executor, conn.recv)
-            if msg is None: 
-                break
-            await socket.send(msg)
+        try:
+            while True:
+                msg = await loop.run_in_executor(executor, conn.recv)
+                if msg is None: 
+                    break
+                await socket.send(msg)
+        except (ConnectionClosed, IncompleteReadError) as e:
+            pass
 
     async def run():
         async with websockets.connect(url) as socket:

@@ -281,8 +281,8 @@ if __name__ == '__main__':
     model_args = parse_choice("model", parameters.model, args.model)
 
     classes = {
-        0 : {'shape':'BoxShape'},
-        1 : {'shape':'BoxShape'}
+        0 : {'shape':'box'},
+        1 : {'shape':'box'}
     }
 
     model, encoder = create_fcn(model_args.parameters, struct(classes = classes, input_channels = 3))

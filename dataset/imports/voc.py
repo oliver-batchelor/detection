@@ -16,14 +16,14 @@ from tools.image.index_map import default_colors
 
 import xmltodict
 
-train_val = [('Train', 'VOC2012', 'trainval'), ('Train', 'VOC2007', 'trainval')]
+train_val = [('train', 'VOC2012', 'trainval'), ('train', 'VOC2007', 'trainval')]
 
 presets = struct (
-    test2007 = train_val + [('Test', 'VOC2007', 'test')],
+    test2007 = train_val + [('test', 'VOC2007', 'test')],
     val2012 = [
-        ('Train', 'VOC2007', 'trainval'), ('Train', 'VOC2007', 'test'), 
-        ('Train', 'VOC2012', 'train'), 
-        ('Test', 'VOC2012', 'val')]
+        ('train', 'VOC2007', 'trainval'), ('train', 'VOC2007', 'test'), 
+        ('train', 'VOC2012', 'train'), 
+        ('test', 'VOC2012', 'val')]
 )
 
 
@@ -78,7 +78,7 @@ def import_subset(input_path, year, subset, target_category, class_map):
             'label': class_map[class_name],
             'confirm': True,
             'detection': None,
-            'shape': tagged('BoxShape', {'lower': lower, 'upper': upper })
+            'shape': tagged('box', {'lower': lower, 'upper': upper })
         }
 
     def import_image(root):
@@ -123,7 +123,7 @@ def make_dataset(root, images, class_list):
         classes[i] = {
             'name':class_name,
             'colour':default_colors[i],
-            'shape':'BoxConfig'
+            'shape':'box'
         }
 
     return {

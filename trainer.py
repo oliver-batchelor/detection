@@ -20,7 +20,7 @@ def run_progress(loader, hook, eval):
         for i, data in enumerate(loader):
             result = eval(data)
 
-            if hook and hook(i * result.size, len(loader) * result.size): break
+            if hook and hook((i + 1) * result.size, len(loader) * result.size): break
 
             results.append(result)
             bar.update(result.size)

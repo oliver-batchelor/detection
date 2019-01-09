@@ -68,7 +68,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
         cat['id']: {
             'name':cat['name'],
             'colour':default_colors[int(cat['id']) % 255],
-            'shape':'BoxConfig'
+            'shape':'box'
         } for cat in cats
     }
 
@@ -93,7 +93,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
               'label': ann['category_id'],
               'confirm': True,
               'detection': None,
-              'shape': tagged('BoxShape', {'lower': [x, y], 'upper': [x + w, y + h]  })
+              'shape': tagged('box', {'lower': [x, y], 'upper': [x + w, y + h]  })
             }
 
         anns = coco.loadAnns(coco.getAnnIds(id, catIds=cat_ids))
@@ -119,7 +119,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
 
 
 def import_coco(input_path, classes):   
-    subsets = [('train2017', 'Train'), ('val2017', 'Test')]
+    subsets = [('train2017', 'train'), ('val2017', 'test')]
     imports = {subset : import_subset(input_path,  subset = subset, target_category= category, class_inputs = classes) for subset, category in subsets}
 
 
