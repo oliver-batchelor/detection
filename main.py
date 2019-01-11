@@ -197,11 +197,7 @@ def encode_shape(box, config):
     assert False, "unsupported shape config: " + config.shape
 
 
-def evaluate_image(env, image, nms_params, device):
-
-    model = env.best.model
-    prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
-
+def make_detections(env, prediction):
     classes = env.dataset.classes
 
     def detection(p):
@@ -214,7 +210,14 @@ def evaluate_image(env, image, nms_params, device):
             confidence = p.confidence.item()
         )
 
-    return list(map(detection, prediction._sequence()))
+    return struct(detections = list(map(detection, prediction._sequence())), networkId = (env.run, env.best.epoch))
+
+def evaluate_image(env, image, nms_params, device):
+    model = env.best.model
+    prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
+
+    return make_detections(prediction)
+
 
 def detect_request(env, file, nms_params, device):
     path = os.path.join(env.data_root, file)
@@ -259,21 +262,36 @@ def set_bn_momentum(model, mom):
         if isinstance(m, nn.BatchNorm2d):
             m.momentum = mom
 
-
-def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
-    score = 0
-    if len(env.dataset.test_images) > 0:
-        nms_params = struct(
+def get_nms_params(args):
+    return struct(
             nms = env.args.nms_threshold,
             threshold = env.args.class_threshold,
             detections = env.args.max_detections)
 
+
+def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
+    score = 0
+    if len(env.dataset.test_images) > 0:
         print("testing {}:".format(env.epoch))
         test_stats = trainer.test(env.dataset.test(env.args),
-            evaluate.eval_test(model.eval(), env.encoder, nms_params=nms_params, device=device), hook=hook)
+            evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)
 
         score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)
     return score
+
+
+def run_detections(model, env, device=torch.cuda.current_device(), hook=None, n=None):
+    images = least_recently_evaluated(env.dataset.new_images, n = n)
+
+    if len(images) > 0:
+        results = trainer.test(env.dataset.test_on(images),
+                evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)    
+
+        return {result.file : make_detections(env, result.prediction) for result in results}
+
+    #trainer.evaluate(env.dataset.test(env.args))
+    # run_detections
+
 
 
 class UserCommand(Exception):
@@ -323,7 +341,7 @@ def run_trainer(args, conn = None, env = None):
                 if env is not None:
 
                     results = detect_request(env, image, nms_params, device)
-                    send_command('detections', (reqId, image, results, (env.run, env.best.epoch)))
+                    send_command('detections', (reqId, image, results))
 
                 else:
                     send_command('req_error', [reqId, image, "model not available yet"])
@@ -351,12 +369,14 @@ def run_trainer(args, conn = None, env = None):
         
         poll_command()
 
-        
-    def test_update(n, total):
 
-        activity = struct(tag = 'test', epoch = env.epoch)
-        send_command('progress', struct(activity = activity, progress = (n, total)))
-        poll_command()
+        
+    def update(name):
+        def f(n, total):
+            activity = struct(tag = name, epoch = env.epoch)
+            send_command('progress', struct(activity = activity, progress = (n, total)))
+            poll_command()
+        return f
 
     def training_cycle():
         if env == None or len(env.dataset.train_images) == 0:
@@ -389,7 +409,7 @@ def run_trainer(args, conn = None, env = None):
             trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
                 evaluate.eval_forward(model.train(), device))
 
-        score = run_testing(model, env, device=device, hook=test_update)
+        score = run_testing(model, env, device=device, hook=update('test'))
 
 
         is_best = score >= env.best.score
@@ -407,6 +427,12 @@ def run_trainer(args, conn = None, env = None):
 
         send_command("checkpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
+
+
+        if args.detections > 0 and conn is not None:
+            results = run_detections(model, env, device=device, hook=update('detect'), n=args.detections)
+            send_command('detections_many', results)
+
 
         env.log.flush()
 

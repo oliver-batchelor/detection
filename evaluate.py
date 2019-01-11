@@ -308,7 +308,7 @@ def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.cur
 
             return struct (
                 file = data.file, 
-                target = data.target._map(Tensor.to, device), 
+                target = data.target, #data.target._map(Tensor.to, device), 
                 prediction = encoder.nms(prediction, nms_params=nms_params), 
                 size = data.image.size(0))
     return f

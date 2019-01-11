@@ -22,10 +22,10 @@ train_parameters = struct (
     batch_size      = param(8,     help='input batch size for training'),
 
 
-    # reviews      = param(0,     help = 'number of reviews conducted per epoch'),
-    # review_start = param(20,    help = 'start reviews after n epochs'),
-    review_all      = param(False,    help = 'manually trigger review of all images'),
-
+    reviews      = param(0,     help = 'number of reviews conducted per epoch'),
+    detections   = param(0,     help = 'number of detections conducted per epoch on new images'),
+    
+    
     epoch_size      = param(1024,   help='epoch size for training'),
 
     num_workers     = param(4,      help='number of workers used to process dataset'),

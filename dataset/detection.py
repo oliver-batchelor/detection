@@ -334,7 +334,16 @@ def transform_testing(args):
     elif args.augment == "resize":
         return resize_to(dest_size)
 
+def least_recently_evaluated(self, images, n = None):
+    random.shuffle(images)
 
+    key = lambda image: image.evaluated or (0, 0)
+    images = sorted(images, key=key)
+
+    if n is not None:
+        return images[:max_results]
+    else:
+        return images
 
 class DetectionDataset:
 
@@ -354,8 +363,14 @@ class DetectionDataset:
         return [image for image in self.images.values() if image.category == k] 
 
 
-    
+    def mark_evalated(self, files, net_id):
+        for k in files:
+            assert k in self.images, "mark_evaluated, invalid file: " + k
 
+            self.images[k].evaluated = net_id
+
+
+    
     @property
     def train_images(self):
         return self.get_images('train')
@@ -363,6 +378,10 @@ class DetectionDataset:
     @property
     def test_images(self):
         return self.get_images('test')
+
+    @property
+    def new_images(self):
+        return self.get_images('new')        
 
     @property
     def all_images(self):
@@ -392,10 +411,7 @@ class DetectionDataset:
         images = FlatList(self.test_images, loader = load_image, transform = transform_testing(args))
         return load_testing(args, images, collate_fn=collate)
 
-    def test_training(self, args):
-        images = FlatList(self.train_images, loader = load_image, transform = transform_testing(args))
+    def test_on(self, images):
+        images = FlatList(images, loader = load_image, transform = transform_testing(args))
         return load_testing(args, images, collate_fn=collate)
-
-    def test_all(self, args):
-        images = FlatList(self.all_images, loader = load_image, transform = transform_testing(args))
 

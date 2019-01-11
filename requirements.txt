@@ -3,3 +3,5 @@ pycocotools
 matplotlib
 tensorflow
 xmltodict
+pretrainedmodels
+websockets

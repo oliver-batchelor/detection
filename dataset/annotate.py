@@ -84,10 +84,13 @@ def class_mapping(config):
 def decode_image(data, config):
     target = decode_objects(data, class_mapping(config))
 
+    evaluated = data.evaluated if 'evaluated' in data else None
+
     return struct(
         file = path.join(config.root, data.imageFile),
         target = target,
-        category = data.category
+        category = data.category,
+        evaluated = evaluated
     )
 
 def filterDict(d):
