@@ -116,6 +116,10 @@ def mean_results(results):
     total = reduce(operator.add, results)
     return total / total.size, total
 
+def sum_results(results):
+    return reduce(operator.add, results)
+    
+
 
 def summarize_stats(results, epoch, globals={}):
     avg = mean_results(results)
@@ -141,11 +145,14 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
 
         target = data.encoding._map(Tensor.to, device)
         loss = loss_func(target, prediction)
-        total = sum(loss.values())
 
-        stats = struct(error=total.item(), loss = loss._map(Tensor.item),
+        files = [(file, loss) for file, loss in zip(data.file, loss.batch.detach())]
+
+        stats = struct(error=loss.total.item(), 
+            loss = loss.parts._map(Tensor.item),
             size=data.image.size(0), 
             instances=data.lengths.sum().item(),
+            files = files
         )
 
         num_classes = prediction.classification.size(2)
@@ -156,12 +163,15 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
         if debug.boxes:
             stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
 
-        return struct(error = total, statistics=stats, size = data.image.size(0))
+        return struct(error = loss.total, statistics=stats, size = data.image.size(0))
 
     return f
 
 def summarize_train(name, results, classes, epoch, log):
-    avg, totals = mean_results(results)
+
+    totals = sum_results(results)
+    avg = totals._subset('loss', 'instances', 'error') / totals.size
+
     loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.loss.items())])
 
     print(name + ' epoch: {}\t (instances : {:.2f}) \tloss: {} = {:.6f}'

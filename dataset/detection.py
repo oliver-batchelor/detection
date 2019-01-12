@@ -29,7 +29,6 @@ def collate(batch):
     elem = batch[0]
     elem_type = type(batch[0])
 
-
     if elem_type is Table:
         return cat_tables(batch)
            
@@ -38,7 +37,9 @@ def collate(batch):
         return Struct(d)
     elif isinstance(elem, str):
         return batch        
-    
+    elif elem is None:
+        return batch
+
     elif isinstance(elem, collections.abc.Mapping):
         return {key: collate([d[key] for d in batch]) for key in elem}
     elif isinstance(elem, collections.abc.Sequence):
@@ -268,7 +269,8 @@ def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5), match_
         return struct(
             image   = d.image,
             encoding = encoding,
-            lengths = len(d.target.label)
+            lengths = len(d.target.label),
+            file = d.file
         )
     return f
 
@@ -327,6 +329,7 @@ def transform_testing(args):
 
     if args.augment == "crop":
 
+
         scaling = scale(args.scale) if args.scale != 1 else identity
         return scaling
         # return transforms.compose(scaling, centre_on(dest_size))
@@ -334,14 +337,14 @@ def transform_testing(args):
     elif args.augment == "resize":
         return resize_to(dest_size)
 
-def least_recently_evaluated(self, images, n = None):
+def least_recently_evaluated(images, n = None):
     random.shuffle(images)
 
-    key = lambda image: image.evaluated or (0, 0)
+    key = lambda image: tuple(image.evaluated or (0, 0))
     images = sorted(images, key=key)
 
     if n is not None:
-        return images[:max_results]
+        return images[:n]
     else:
         return images
 
@@ -408,10 +411,9 @@ class DetectionDataset:
         return transform(load_image(d)).image
 
     def test(self, args):
-        images = FlatList(self.test_images, loader = load_image, transform = transform_testing(args))
-        return load_testing(args, images, collate_fn=collate)
+        return test_on(self.test_images, args)
 
-    def test_on(self, images):
-        images = FlatList(images, loader = load_image, transform = transform_testing(args))
-        return load_testing(args, images, collate_fn=collate)
+    def test_on(self, images, args):
+        dataset = FlatList(images, loader = load_image, transform = transform_testing(args))
+        return load_testing(args, dataset, collate_fn=collate)
 

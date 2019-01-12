@@ -5,6 +5,9 @@ import json
 import copy
 import random
 
+import sys
+import traceback
+
 import torch
 from torch import nn
 import torch.optim as optim
@@ -14,8 +17,10 @@ from json.decoder import JSONDecodeError
 from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, init_dataset
 from dataset.imports import load_dataset
 
+from dataset.detection import least_recently_evaluated
+
 from detection.models import models
-from detection.loss import total_bce
+from detection.loss import focal_loss
 
 from tools.model import tools
 
@@ -216,7 +221,7 @@ def evaluate_image(env, image, nms_params, device):
     model = env.best.model
     prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
-    return make_detections(prediction)
+    return make_detections(env, prediction)
 
 
 def detect_request(env, file, nms_params, device):
@@ -264,9 +269,9 @@ def set_bn_momentum(model, mom):
 
 def get_nms_params(args):
     return struct(
-            nms = env.args.nms_threshold,
-            threshold = env.args.class_threshold,
-            detections = env.args.max_detections)
+            nms = args.nms_threshold,
+            threshold = args.class_threshold,
+            detections = args.max_detections)
 
 
 def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
@@ -284,10 +289,11 @@ def run_detections(model, env, device=torch.cuda.current_device(), hook=None, n=
     images = least_recently_evaluated(env.dataset.new_images, n = n)
 
     if len(images) > 0:
-        results = trainer.test(env.dataset.test_on(images),
+        results = trainer.test(env.dataset.test_on(images, env.args),
                 evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)    
 
-        return {result.file : make_detections(env, result.prediction) for result in results}
+
+        return {result.file[0] : make_detections(env, result.prediction) for result in results}
 
     #trainer.evaluate(env.dataset.test(env.args))
     # run_detections
@@ -392,7 +398,7 @@ def run_trainer(args, conn = None, env = None):
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), total_bce, env.debug, device=device), env.optimizer, hook=train_update)
+                    evaluate.eval_train(model.train(), focal_loss, env.debug, device=device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
         # Save parameters for model averaging
@@ -496,6 +502,9 @@ def run_main():
     try:
         run_trainer(args, conn, env=env)
     except (KeyboardInterrupt, SystemExit):
+        p.terminate()
+    except Exception:
+        traceback.print_exc()
         p.terminate()
 
 
