@@ -177,7 +177,6 @@ def summarize_train(name, results, classes, epoch, log):
     print(name + ' epoch: {}\t (instances : {:.2f}) \tloss: {} = {:.6f}'
         .format(epoch, avg.instances, loss_str, avg.error))
 
-
     log.scalars("loss", avg.loss._extend(total = avg.error))
 
     class_names = [c['name']['name'] for c in classes]

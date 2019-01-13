@@ -214,8 +214,17 @@ def make_detections(env, prediction):
             label      =  object_class.id,
             confidence = p.confidence.item()
         )
+    detections = list(map(detection, prediction._sequence()))
 
-    return struct(detections = list(map(detection, prediction._sequence())), networkId = (env.run, env.best.epoch))
+    def score(ds):
+        return sum(d.confidence ** 2 for d in ds)      
+
+    stats = struct (
+        score = score(detections),
+        classScores = {c.id : score([d for d in detections if d.label == classId]) for c in classes}
+    )
+
+    return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
 def evaluate_image(env, image, nms_params, device):
     model = env.best.model
