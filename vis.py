@@ -95,6 +95,7 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
         return struct(
             image = data.image,
             file = data.file,
+            id = data.id,
             image_size = data.image_size,
             matches = matches,
             anchors = anchors,

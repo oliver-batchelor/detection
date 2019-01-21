@@ -146,7 +146,7 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
         target = data.encoding._map(Tensor.to, device)
         loss = loss_func(target, prediction)
 
-        files = [(file, loss) for file, loss in zip(data.file, loss.batch.detach())]
+        files = [(file, loss.item()) for file, loss in zip(data.id, loss.batch.detach())]
 
         stats = struct(error=loss.total.item(), 
             loss = loss.parts._map(Tensor.item),
@@ -316,7 +316,7 @@ def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.cur
             prediction = encoder.decode(data.image.squeeze(0), preds)
 
             return struct (
-                file = data.file, 
+                id = data.id, 
                 target = data.target, #data.target._map(Tensor.to, device), 
                 prediction = encoder.nms(prediction, nms_params=nms_params), 
                 size = data.image.size(0))

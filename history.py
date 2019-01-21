@@ -212,7 +212,8 @@ if __name__ == '__main__':
     # print(runs['penguins'].images[2].session.actions)
     # print(runs['penguins'].images[28].session.actions)
 
-    n = map_series(lambda i: struct(num_actions = len(i.session.actions), n = i.target._size, mAP = i.mAP50, duration = i.session.duration, file = i.file))
+    n = map_series(lambda i: struct(num_actions = len(i.session.actions), 
+        n = i.target._size, mAP = i.mAP50, duration = i.session.duration, id = i.id))
     #penguins = n['scallops']
 
     # for i, s in enumerate(penguins):

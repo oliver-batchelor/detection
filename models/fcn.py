@@ -34,7 +34,7 @@ def image_size(inputs):
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes):
+    def __init__(self, start_layer, box_sizes, separate=False):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
@@ -96,12 +96,13 @@ def check_equal(*elems):
 
 class FCN(nn.Module):
 
-    def __init__(self, backbone, box_sizes, layer_names, fine_tune = [], features=32, num_classes=2, shared=False, square=False):
+    def __init__(self, backbone, box_sizes, layer_names, fine_tune = [], features=32, num_classes=2, shared=False, square=False, separate=False):
         super().__init__()
        
         self.box_sizes = box_sizes
         self.num_classes = num_classes
         self.square = square
+        self.separate = separate
 
         assert check_equal(len(layer_names), len(box_sizes)), "FCN: layers and box sizes differ in length"
 
@@ -143,7 +144,9 @@ class FCN(nn.Module):
         else:
             self.classifiers = Parallel(named([output(len(boxes) * self.num_classes) for boxes in self.box_sizes]))
 
-        self.localisers = Parallel(named([output(len(boxes) * (3 if square else 4)) for boxes in self.box_sizes]))
+
+        self.box_outputs = 4 * (self.num_classes if separate else 1)
+        self.localisers = Parallel(named([output(len(boxes) * self.box_outputs) for boxes in self.box_sizes]))
 
 
         self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
@@ -167,11 +170,11 @@ class FCN(nn.Module):
             return torch.cat(list(map(permute, layers)), 1)
 
         conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
-        locs = join(self.localisers(layers), 3 if self.square else 4)
+        locs = join(self.localisers(layers), self.box_outputs)
 
-
-        if self.square:
-            locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
+        # if self.square:
+            # locs = locs.view(locs.size(0), locs.size(1), locs.size(2) )
+            # locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
 
         return struct( location = locs, classification = conf )
 
@@ -203,6 +206,8 @@ parameters = struct(
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
     shared    = param (False, help = "share weights between network heads at different levels"),
     square    = param (False, help = "restrict box outputs (and anchors) to square"),
+
+    separate =  param (False, help = "separate box location prediction for each class")
   )
 
 def extra_layer(inp, features):

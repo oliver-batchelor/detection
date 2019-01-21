@@ -12,6 +12,7 @@ train_parameters = struct (
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
         fine_tuning     = param(1.0,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
+        weight_decay    = param(5e-4, help='weight decay rate')
     ),
 
     average_start  = param(2,    help='start weight averaging after epochs'),
@@ -58,7 +59,7 @@ detection_parameters = struct (
         border_bias     = param(0.1,    help = "bias random crop to select border more often (proportion of size)"),
         augment = param("crop", help = 'image augmentation method (crop | full | ssd)'),
 
-        scale  = param(1.0,     help='base scale of image_size to test/train on'),
+        scale  = param(1.0,     help='base scale of image_size'),
 
         max_scale = param(4./3, help='maximum scale for cropped patches'),
         max_aspect = param(1.1, help = 'maximum aspect ratio on crops'),

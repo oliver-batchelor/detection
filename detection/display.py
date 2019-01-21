@@ -25,7 +25,7 @@ def draw_box(image, box, scale=1.0, name=None, confidence=None, thickness=2, col
 def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
     image = eval.image.clone()
 
-    cv.putText(image, eval.file, (0, int(12 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
+    cv.putText(image, eval.id, (0, int(12 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
     cv.putText(image, "mAP@0.5 " + str(eval.mAP), (0, int(24 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
 
 

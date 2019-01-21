@@ -180,7 +180,7 @@ def initialise(config, dataset, args):
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
-    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum)
+    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     return struct(**locals())
 
@@ -220,13 +220,14 @@ def make_detections(env, prediction):
         return sum(d.confidence ** 2 for d in ds)      
 
     stats = struct (
-        score = score(detections),
-        classScores = {c.id : score([d for d in detections if d.label == classId]) for c in classes}
+        score   = score(detections),
+        classes = {c.id : score([d for d in detections if d.label == c.id]) for c in classes}
     )
 
     return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
-def evaluate_image(env, image, nms_params, device):
+
+def evaluate_detections(env, image, nms_params, device):
     model = env.best.model
     prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
 
@@ -239,8 +240,8 @@ def detect_request(env, file, nms_params, device):
     if not os.path.isfile(path):
         raise NotFound(file)
 
-    image = env.dataset.load_inference(path, env.args)
-    return evaluate_image(env, image, nms_params, device)
+    image = env.dataset.load_inference(file, path, env.args)
+    return evaluate_detections(env, image, nms_params, device)
 
 
 def log_lerp(range, t):
@@ -283,14 +284,14 @@ def get_nms_params(args):
             detections = args.max_detections)
 
 
-def run_testing(model, env, device=torch.cuda.current_device(), hook=None):
+def run_testing(name, images, model, env, device=torch.cuda.current_device(), hook=None):
     score = 0
-    if len(env.dataset.test_images) > 0:
-        print("testing {}:".format(env.epoch))
-        test_stats = trainer.test(env.dataset.test(env.args),
+    if len(images) > 0:
+        print("{} {}:".format(name, env.epoch))
+        test_stats = trainer.test(env.dataset.test_on(images, env.args),
             evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)
 
-        score = evaluate.summarize_test("test", test_stats, env.dataset.classes, env.epoch, log=env.log)
+        score = evaluate.summarize_test(name, test_stats, env.dataset.classes, env.epoch, log=env.log)
     return score
 
 
@@ -298,16 +299,27 @@ def run_detections(model, env, device=torch.cuda.current_device(), hook=None, n=
     images = least_recently_evaluated(env.dataset.new_images, n = n)
 
     if len(images) > 0:
+        
         results = trainer.test(env.dataset.test_on(images, env.args),
                 evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)    
 
+        return {result.id[0] : make_detections(env, result.prediction) for result in results}
 
-        return {result.file[0] : make_detections(env, result.prediction) for result in results}
+def add_multimap(m, k, x):
+    xs = m[k] if k in m else []
+    xs.append(x)
+    m[k] = xs
 
-    #trainer.evaluate(env.dataset.test(env.args))
-    # run_detections
 
+def report_training(results):
+    images = {}
 
+    for r in results:
+        for file, loss in r.files:
+            add_multimap(images, file, struct(loss = loss))
+
+    return images
+        
 
 class UserCommand(Exception):
     def __init__(self, command):
@@ -356,7 +368,7 @@ def run_trainer(args, conn = None, env = None):
                 if env is not None:
 
                     results = detect_request(env, image, nms_params, device)
-                    send_command('detections', (reqId, image, results))
+                    send_command('detect_request', (reqId, image, results))
 
                 else:
                     send_command('req_error', [reqId, image, "model not available yet"])
@@ -410,6 +422,9 @@ def run_trainer(args, conn = None, env = None):
                     evaluate.eval_train(model.train(), focal_loss, env.debug, device=device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
+        
+        send_command('training', report_training(train_stats))
+
         # Save parameters for model averaging
         training_params = flatten_parameters(model).cpu()
 
@@ -424,7 +439,9 @@ def run_trainer(args, conn = None, env = None):
             trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
                 evaluate.eval_forward(model.train(), device))
 
-        score = run_testing(model, env, device=device, hook=update('test'))
+
+
+        score = run_testing('validate', env.dataset.validate_images, model, env, device=device, hook=update('validate'))
 
 
         is_best = score >= env.best.score
@@ -437,6 +454,8 @@ def run_trainer(args, conn = None, env = None):
         current = struct(state = model.state_dict(), epoch = env.epoch, score = score)
         best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
+        run_testing('test', env.dataset.test_images, model, env, device=device, hook=update('test'))
+
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)
 
@@ -444,9 +463,9 @@ def run_trainer(args, conn = None, env = None):
         env.epoch = env.epoch + 1
 
 
-        if args.detections > 0 and conn is not None:
+        if args.detections > 0 and conn:
             results = run_detections(model, env, device=device, hook=update('detect'), n=args.detections)
-            send_command('detections_many', results)
+            send_command('detections', results)
 
 
         env.log.flush()
@@ -471,6 +490,7 @@ def run_trainer(args, conn = None, env = None):
         review = review_all,
         resume = training_cycle,
         test = training_cycle,
+        validate = training_cycle,
         pause = paused
     )
 

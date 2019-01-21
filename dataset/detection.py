@@ -270,7 +270,7 @@ def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5), match_
             image   = d.image,
             encoding = encoding,
             lengths = len(d.target.label),
-            file = d.file
+            id = d.id
         )
     return f
 
@@ -360,7 +360,7 @@ class DetectionDataset:
 
 
     def update_image(self, image):
-        self.images[image.file] = image
+        self.images[image.id] = image
 
     def get_images(self, k):
         return [image for image in self.images.values() if image.category == k] 
@@ -381,6 +381,11 @@ class DetectionDataset:
     @property
     def test_images(self):
         return self.get_images('test')
+
+    @property
+    def validate_images(self):
+        return self.get_images('validate')
+
 
     @property
     def new_images(self):
@@ -404,9 +409,9 @@ class DetectionDataset:
         return sample_training(args, self.train_images, load_image,
             transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate))
 
-    def load_inference(self, file, args):
+    def load_inference(self, id, file, args):
         transform = transform_testing(args)
-        d = struct(file = file, target = empty_target)
+        d = struct(id = id, file = file, target = empty_target)
 
         return transform(load_image(d)).image
 

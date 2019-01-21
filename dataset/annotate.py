@@ -87,6 +87,7 @@ def decode_image(data, config):
     evaluated = data.evaluated if 'evaluated' in data else None
 
     return struct(
+        id = data.imageFile,
         file = path.join(config.root, data.imageFile),
         target = target,
         category = data.category,
@@ -102,10 +103,8 @@ def decode_dataset(data):
     config = data.config
     classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
 
-    def imageCat(cat):
-        return filterDict( { i.imageFile:decode_image(i, config) for i in data.images if i.category == cat })
-
-    return config, DetectionDataset(classes=classes, train_images=imageCat('train'), test_images=imageCat('test'))
+    images = { i.imageFile:decode_image(i, config) for i in data.images }
+    return config, DetectionDataset(classes=classes, images = images)
 
 
 def init_dataset(config):

@@ -2,7 +2,7 @@
 # https://github.com/amdegroot/ssd.pytorch.git
 
 
-from tools import struct, Table
+from tools import struct, Table, show_shapes
 
 import torch
 from enum import Enum
@@ -124,16 +124,18 @@ nms_defaults = struct(
     detections  = 100
 )
 
-def nms(prediction, params):
+def nms(prediction, params, max_boxes=200):
+    # max_boxes is a 'safety' parameter, otherwise nms will eat all the gpu ram
 
     if params.threshold > 0:
         inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
         prediction = prediction._index_select(inds)
 
     prediction = prediction._sort_on('confidence', descending=True)
+    prediction = prediction._take(max_boxes * params.detections)
 
     inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)
-    return prediction._index_select(inds)
+    return prediction._index_select(inds)._take(params.detections)
 
 
 # def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
