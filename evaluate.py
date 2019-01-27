@@ -12,7 +12,7 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import struct, tensor, show_shapes, Histogram, ZipList, transpose_structs, transpose_lists
+from tools import struct, tensor, show_shapes, show_shapes_info, Histogram, ZipList, transpose_structs, transpose_lists, pluck
 
 import detection.box as box
 from detection import evaluate
@@ -133,7 +133,26 @@ def summarize_stats(results, epoch, globals={}):
     print("class balances: {}".format(str(balances.tolist())))
 
 
+def train_statistics(data, loss, prediction, target, debug = struct(), device=torch.cuda.current_device()):
 
+    files = [(file, loss.item()) for file, loss in zip(data.id, loss.batch.detach())]
+
+    stats = struct(error=loss.total.item(), 
+        loss = loss.parts._map(Tensor.item),
+        size = data.image.size(0), 
+        instances=data.lengths.sum().item(),
+        files = files
+    )
+
+    num_classes = prediction.classification.size(2)
+
+    if debug.predictions:
+        stats = stats._extend(predictions = prediction_stats(target, prediction))
+
+    if debug.boxes:
+        stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
+
+    return stats
    
 def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_device()):
 
@@ -142,41 +161,20 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
         image = data.image.to(device)
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
-
+        
         target = data.encoding._map(Tensor.to, device)
         loss = loss_func(target, prediction)
 
-        files = [(file, loss.item()) for file, loss in zip(data.id, loss.batch.detach())]
-
-        stats = struct(error=loss.total.item(), 
-            loss = loss.parts._map(Tensor.item),
-            size=data.image.size(0), 
-            instances=data.lengths.sum().item(),
-            files = files
-        )
-
-        num_classes = prediction.classification.size(2)
-
-        if debug.predictions:
-            stats = stats._extend(predictions = prediction_stats(target, prediction))
-
-        if debug.boxes:
-            stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
+        stats = train_statistics(data, loss, prediction, target, debug, device)
 
         return struct(error = loss.total, statistics=stats, size = data.image.size(0))
 
     return f
 
-def summarize_train(name, results, classes, epoch, log):
-
+def summarize_train_stats(results, classes, log):
     totals = sum_results(results)
     avg = totals._subset('loss', 'instances', 'error') / totals.size
-
-    loss_str = " + ".join(["({} : {:.6f})".format(k, v) for k, v in sorted(avg.loss.items())])
-
-    print(name + ' epoch: {}\t (instances : {:.2f}) \tloss: {} = {:.6f}'
-        .format(epoch, avg.instances, loss_str, avg.error))
-
+    
     log.scalars("loss", avg.loss._extend(total = avg.error))
 
     class_names = [c['name']['name'] for c in classes]
@@ -187,11 +185,14 @@ def summarize_train(name, results, classes, epoch, log):
     if 'predictions' in avg:
         log_predictions(class_names, totals.predictions,  log)
 
-    # log.scalar("loss", avg.error)
-    # for name, loss in avg.losses:
-    #     log.scalar("loss/{}".format(name), loss)
+    loss_str = " + ".join(["{} : {:.3f}".format(k, v) for k, v in sorted(avg.loss.items())])
+    return ('n: {}, instances : {:.2f}, loss: {} = {:.3f}'.format(totals.size, avg.instances, loss_str, avg.error))
 
-    return avg.error
+
+def summarize_train(name, results, classes, epoch, log):
+    summary = summarize_train_stats(results, classes, log)
+    print('{} epoch: {} {}'.format(name, epoch, summary))
+    
 
 
 def splits(size, n, overlap=0):
@@ -207,6 +208,9 @@ def splits(size, n, overlap=0):
 
     return ranges
 
+
+ 
+ 
 
 def image_splits(size, n=(1, 1), overlap=0):
     w, h = size
@@ -298,28 +302,44 @@ def evaluate_raw(model, image, device):
     #gc.collect()
     return predictions
 
-def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
+def evaluate_decode(model, image, encoder, device, offset = (0, 0), crop_boxes=False):
     preds = evaluate_raw(model, image, device=device)
-    p = encoder.decode(image, preds)
+    p = encoder.decode(image, preds, crop_boxes=crop_boxes)
 
     offset = torch.Tensor([*offset, *offset]).to(device)
     return p._extend(bbox = p.bbox + offset)
 
+def test_loss(data, loss_func, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
+    target = encoding._map(Tensor.to, device)
+    def unsqueeze(p):
+        return p.unsqueeze(0)
+
+    prediction = prediction._map(unsqueeze)
+    loss = loss_func(target, prediction)
+    return train_statistics(data, loss, prediction, target, debug, device)
 
 
-def eval_test(model, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
+def eval_test(model, encoder, loss_func, debug=struct(), nms_params=box.nms_defaults, device=torch.cuda.current_device(), crop_boxes=False):
     def f(data):
 
         model.eval()
         with torch.no_grad():
-            preds = evaluate_raw(model, data.image, device)        
-            prediction = encoder.decode(data.image.squeeze(0), preds)
+            raw_prediction = evaluate_raw(model, data.image, device)        
+            prediction = encoder.decode(data.image.squeeze(0), raw_prediction, crop_boxes=crop_boxes)
+
+            train_stats = test_loss(data, loss_func, data.encoding, raw_prediction, debug=debug, device=device)
 
             return struct (
                 id = data.id, 
-                target = data.target, #data.target._map(Tensor.to, device), 
+                target = data.target._map(Tensor.to, device), 
                 prediction = encoder.nms(prediction, nms_params=nms_params), 
-                size = data.image.size(0))
+
+                # for summary of loss
+                instances=data.lengths.sum().item(),
+                train_stats = train_stats,
+
+                size = data.image.size(0),
+            )
     return f
 
 
@@ -356,17 +376,19 @@ def compute_AP(results, class_names):
 
 
 
+def summarize_test(name, results, classes, epoch, log): 
 
-def summarize_test(name, results, classes, epoch, log):
     class_names = [c['name']['name'] for c in classes]
-
 
     summary = compute_AP(results, class_names)
     total, class_aps = summary.total, summary.classes
 
     mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in total.mAP])
     
-    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}]'.format(epoch, total.AP * 100, mAP_strs))
+    train_summary = summarize_train_stats(pluck('train_stats', results), classes, log)
+    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}] \t {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
+
+
     log.scalars(name, struct(AP = total.AP * 100.0, mAP50 = total.mAP[0] * 100.0, mAP75 = total.mAP[5] * 100.0))
 
     if len(classes) > 1:

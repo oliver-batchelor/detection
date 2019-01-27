@@ -81,7 +81,7 @@ def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
 #     return struct(classification = class_loss / (batch * balance), location = loc_loss / batch)
 
 
-def focal_loss(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6, averaging = False):
+def focal_loss(target, prediction, balance=5, gamma=2, alpha=0.25, eps=1e-6, averaging = False):
     batch = target.location.size(0)
     num_classes = prediction.classification.size(2)
 
@@ -100,4 +100,4 @@ def focal_loss(target, prediction, balance=10, gamma=2, alpha=0.25, eps=1e-6, av
     parts = struct(classification = class_loss.mean(), location = loc_loss.mean())
     batch = class_loss + loc_loss
 
-    return struct(total = batch.sum(), parts = parts, batch = batch)
+    return struct(total = batch.mean(), parts = parts, batch = batch)

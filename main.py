@@ -182,6 +182,8 @@ def initialise(config, dataset, args):
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
+    loss_func = focal_loss
+
     return struct(**locals())
 
 
@@ -283,15 +285,20 @@ def get_nms_params(args):
             threshold = args.class_threshold,
             detections = args.max_detections)
 
+def test_images(images, model, env, device=torch.cuda.current_device(), hook=None):
+    eval_test = evaluate.eval_test(model.eval(), env.encoder, loss_func = env.loss_func, 
+        debug = env.debug, nms_params=get_nms_params(env.args), device=device, crop_boxes=env.args.crop_boxes)
+
+    return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
+
 
 def run_testing(name, images, model, env, device=torch.cuda.current_device(), hook=None):
     score = 0
     if len(images) > 0:
         print("{} {}:".format(name, env.epoch))
-        test_stats = trainer.test(env.dataset.test_on(images, env.args),
-            evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)
+        results = test_images(images, model, env, device, hook)
 
-        score = evaluate.summarize_test(name, test_stats, env.dataset.classes, env.epoch, log=env.log)
+        score = evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, log=env.log)
     return score
 
 
@@ -299,10 +306,7 @@ def run_detections(model, env, device=torch.cuda.current_device(), hook=None, n=
     images = least_recently_evaluated(env.dataset.new_images, n = n)
 
     if len(images) > 0:
-        
-        results = trainer.test(env.dataset.test_on(images, env.args),
-                evaluate.eval_test(model.eval(), env.encoder, nms_params=get_nms_params(env.args), device=device), hook=hook)    
-
+        results = test_images(images, model, env, device, hook)
         return {result.id[0] : make_detections(env, result.prediction) for result in results}
 
 def add_multimap(m, k, x):
@@ -360,6 +364,9 @@ def run_trainer(args, conn = None, env = None):
 
                 image = decode_image(image_data, env.config)
                 env.dataset.update_image(image)
+
+                if image.category == 'validate':
+                    env.best.score = 0
 
 
             elif tag == 'detect':
@@ -419,7 +426,7 @@ def run_trainer(args, conn = None, env = None):
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), focal_loss, env.debug, device=device), env.optimizer, hook=train_update)
+                    evaluate.eval_train(model.train(), env.loss_func, env.debug, device=device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
         

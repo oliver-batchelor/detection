@@ -14,7 +14,7 @@ from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct
+from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct, show_shapes
 
 
 from detection import box
@@ -269,6 +269,7 @@ def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5), match_
         return struct(
             image   = d.image,
             encoding = encoding,
+            target = d.target,
             lengths = len(d.target.label),
             id = d.id
         )
@@ -278,7 +279,9 @@ def identity(x):
     return x
 
 
-
+def encode_with(args, encoder=None):
+    return identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, 
+        match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)    
 
 
 def transform_training(args, encoder=None):
@@ -305,9 +308,7 @@ def transform_training(args, encoder=None):
         transforms.adjust_colours(args.hue, args.saturation)
     ))
 
-    encode = identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, 
-        match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)
-
+    encode = encode_with(args, encoder) 
     return multiple(args.image_samples, transforms.compose (crop, adjust_light, filter, flip, encode))
 
 def multiple(n, transform):
@@ -321,21 +322,24 @@ def flatten(collate_fn):
     return f
 
 
-def transform_testing(args):
+def transform_testing(args, encoder=None):
     """ Returns a function which transforms an image and ground truths for testing
     """
     s = args.scale
     dest_size = (int(args.image_size * s), int(args.image_size * s))
 
+    transform = identity
+
     if args.augment == "crop":
-
-
-        scaling = scale(args.scale) if args.scale != 1 else identity
-        return scaling
+        transform = scale(args.scale) if args.scale != 1 else identity      
         # return transforms.compose(scaling, centre_on(dest_size))
 
     elif args.augment == "resize":
-        return resize_to(dest_size)
+        transform =  resize_to(dest_size)
+
+    encode = encode_with(args, encoder)         
+    return transforms.compose(transform, encode)
+
 
 def least_recently_evaluated(images, n = None):
     random.shuffle(images)
@@ -399,13 +403,13 @@ class DetectionDataset:
 
         return all_images
 
-    def train(self, args, encoder=None):
+    def train(self, args, encoder):
         images = FlatList(self.train_images, loader = load_image,
             transform = transform_training(args, encoder=encoder))
 
         return load_training(args, images, collate_fn=flatten(collate))
 
-    def sample_train(self, args, encoder=None):
+    def sample_train(self, args, encoder):
         return sample_training(args, self.train_images, load_image,
             transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate))
 
@@ -415,10 +419,10 @@ class DetectionDataset:
 
         return transform(load_image(d)).image
 
-    def test(self, args):
+    def test(self, args, encoder):
         return test_on(self.test_images, args)
 
-    def test_on(self, images, args):
-        dataset = FlatList(images, loader = load_image, transform = transform_testing(args))
+    def test_on(self, images, args, encoder):
+        dataset = FlatList(images, loader = load_image, transform = transform_testing(args, encoder=encoder))
         return load_testing(args, dataset, collate_fn=collate)
 

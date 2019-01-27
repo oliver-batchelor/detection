@@ -12,7 +12,7 @@ train_parameters = struct (
         lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
         fine_tuning     = param(1.0,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
-        weight_decay    = param(5e-4, help='weight decay rate')
+        weight_decay    = param(1e-4, help='weight decay rate')
     ),
 
     average_start  = param(2,    help='start weight averaging after epochs'),
@@ -92,7 +92,7 @@ debug_parameters =  struct (
     debug = group('debug',
         debug_predictions = param (False, "distribution of predictions by class"),
         debug_boxes       = param (False, "debug anchor box matches"),
-        debug_all         = param (False, "enable all debug options")
+        debug_all         = param (True, "enable all debug options")
     )
 )
 

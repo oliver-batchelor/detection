@@ -55,20 +55,29 @@ class Encoder:
         return self.anchor_cache[input_args]
 
 
+    # def encode_refined(bbox, label, match_thresholds=(0.4, 0.5), match_nearest = 0):
+
+    #     return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
+
+
     def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
         inputs = image_size(inputs)
 
         return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
 
 
-    def decode(self, inputs, prediction):
+    def decode(self, inputs, prediction, crop_boxes=False):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
         inputs = image_size(inputs)
         anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
+        bbox = box.decode(prediction.location, anchor_boxes)
+        if crop_boxes:
+            box.clamp(bbox, (0, 0), inputs)
+
         confidence, label = prediction.classification.max(1)
-        return table(bbox = box.decode(prediction.location, anchor_boxes), confidence = confidence, label = label)
+        return table(bbox = bbox, confidence = confidence, label = label)
         
     def nms(self, prediction, nms_params=box.nms_defaults):
         return box.nms(prediction, nms_params)
@@ -198,7 +207,7 @@ class FCN(nn.Module):
 base_options = '|'.join(pretrained.models.keys())
 
 parameters = struct(
-    base_name = param ("resnet18", help = "name of pretrained resnet to use options: " + base_options),
+    backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
     last      = param (7, help = "last layer of anchor boxes"),
@@ -253,9 +262,9 @@ def create_fcn(args, dataset_args):
     assert num_classes >= 1
 
     assert args.first <= args.last
-    assert args.base_name in pretrained.models, "base model not found: " + args.base_name + ", options: " + base_options
+    assert args.backbone in pretrained.models, "base model not found: " + args.backbone + ", options: " + base_options
 
-    base_layers = pretrained.models[args.base_name]()
+    base_layers = pretrained.models[args.backbone]()
 
     layer_names = ["layer" + str(n) for n in range(0, args.last + 1)]
     layers = extend_layers(base_layers, args.last + 1, features=args.features*2)
