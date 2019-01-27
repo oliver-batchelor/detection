@@ -97,7 +97,7 @@ def focal_loss(target, prediction, balance=5, gamma=2, alpha=0.25, eps=1e-6, ave
     class_loss = class_loss.view(batch, -1).sum(1) / balance
     loc_loss = loc_loss.view(batch, -1).sum(1) 
 
-    parts = struct(classification = class_loss.mean(), location = loc_loss.mean())
+    parts = struct(classification = class_loss.sum(), location = loc_loss.sum())
     batch = class_loss + loc_loss
 
-    return struct(total = batch.mean(), parts = parts, batch = batch)
+    return struct(total = batch.sum(), parts = parts, batch = batch)

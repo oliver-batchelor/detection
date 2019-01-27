@@ -167,7 +167,7 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
 
         stats = train_statistics(data, loss, prediction, target, debug, device)
 
-        return struct(error = loss.total, statistics=stats, size = data.image.size(0))
+        return struct(error = loss.total / image.data.size(0), statistics=stats, size = data.image.size(0))
 
     return f
 
