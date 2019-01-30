@@ -166,7 +166,6 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
         loss = loss_func(target, prediction)
 
         stats = train_statistics(data, loss, prediction, target, debug, device)
-
         return struct(error = loss.total / image.data.size(0), statistics=stats, size = data.image.size(0))
 
     return f
@@ -277,8 +276,6 @@ def find_split_config(image, max_pixels=None):
 
 
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
-
-
     model.eval()
     with torch.no_grad():
         prediction = evaluate_decode(model, image, encoder, device)
@@ -347,26 +344,29 @@ def percentiles(t, n=100):
     assert t.dim() == 1
     return torch.from_numpy(np.percentile(t.numpy(), np.arange(0, n)))
 
+def mean(xs):
+    return sum(xs) / len(xs)
 
 def compute_AP(results, class_names):
-    thresholds = [0.5 + inc * 0.05 for inc in range(0, 10)]
+    thresholds = list(range(30, 100, 5))
 
     compute_mAP = evaluate.mAP_classes(results, num_classes = len(class_names))
-    info = transpose_structs ([compute_mAP(t) for t in thresholds])
+    info = transpose_structs ([compute_mAP(t / 100) for t in thresholds])
 
     info.classes = transpose_lists(info.classes)
     assert len(info.classes) == len(class_names)
 
     def summariseAP(ap):
 
-        mAP = [pr.mAP for pr in ap]
+        mAP = {t : pr.mAP for t, pr in zip(thresholds, ap)}
 
         return struct(
-            pr50 = ap[0],
-            pr75 = ap[5],
+            pr30 = mAP[30],
+            pr50 = mAP[50],
+            pr75 = mAP[75],
 
             mAP = mAP,
-            AP = sum(mAP) / len(mAP)
+            AP = mean([ap for k, ap in mAP.items() if k >= 50])
         )
 
     return struct (
@@ -383,19 +383,18 @@ def summarize_test(name, results, classes, epoch, log):
     summary = compute_AP(results, class_names)
     total, class_aps = summary.total, summary.classes
 
-    mAP_strs =' '.join(['{:.2f}'.format(mAP * 100.0) for mAP in total.mAP])
+    mAP_strs ='mAP@30: {:.2f}, 50: {:.2f}, 75: {:.2f}'.format(total.mAP[30], total.mAP[50], total.mAP[75])
     
     train_summary = summarize_train_stats(pluck('train_stats', results), classes, log)
-    print(name + ' epoch: {}\t AP: {:.2f}\t mAP@[0.5-0.95]: [{}] \t {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
+    print(name + ' epoch: {} AP: {:.2f} mAP@[0.3-0.95]: [{}] {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
 
-
-    log.scalars(name, struct(AP = total.AP * 100.0, mAP50 = total.mAP[0] * 100.0, mAP75 = total.mAP[5] * 100.0))
+    log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))
 
     if len(classes) > 1:
         aps = {**class_aps, 'total':total}
 
-        log.scalars("mAP50", {name : ap.mAP[0] * 100.0 for name, ap in aps.items()})
-        log.scalars("mAP75", {name : ap.mAP[5] * 100.0 for name, ap in aps.items()})
+        log.scalars("mAP50", {name : ap.mAP[50] * 100.0 for name, ap in aps.items()})
+        log.scalars("mAP75", {name : ap.mAP[75] * 100.0 for name, ap in aps.items()})
 
         log.scalars("AP", {name : ap.AP * 100.0 for name, ap in aps.items()})
 

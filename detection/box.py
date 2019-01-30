@@ -124,6 +124,10 @@ nms_defaults = struct(
     detections  = 100
 )
 
+
+
+
+
 def nms(prediction, params, max_boxes=200):
     # max_boxes is a 'safety' parameter, otherwise nms will eat all the gpu ram
 
@@ -136,6 +140,7 @@ def nms(prediction, params, max_boxes=200):
 
     inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)
     return prediction._index_select(inds)._take(params.detections)
+
 
 
 # def nms(prediction, nms_threshold=0.5, class_threshold=0.05, max_detections=100):
@@ -227,22 +232,7 @@ def anchor_sizes(size, aspects, scales):
 
 
 def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0):
-    '''Encode target bounding boxes and class label.
-    We obey the Faster RCNN box coder:
-      tx = (x - anchor_x) / anchor_w
-      ty = (y - anchor_y) / anchor_h
-      tw = log(w / anchor_w)
-      th = log(h / anchor_h)
-    Args:
-      target: {
-         boxes: (tensor) ground truth bounding boxes in point form, sized [n, 4].
-         label: (tensor) object class label, sized [n].
-      }
-      anchor_boxes: (tensor) bounding boxes in extents form, sized [m, 4].
-    Returns:
-      location: (tensor) encoded bounding boxes, sized [m, 4].
-      classes: (tensor) encoded class label, sized [m].
-    '''
+
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
@@ -255,7 +245,7 @@ def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0)
 
     if match_nearest > 0:
         top_ious, inds = ious.topk(match_nearest, dim = 0)
-        ious = ious.scatter(0, inds, top_ious + 1)
+        ious = ious.scatter(0, inds, top_ious * 2)
 
     max_ious, max_ids = ious.max(1)
 
@@ -280,7 +270,11 @@ def encode_classes(label, max_ious, max_ids, match_thresholds=(0.4, 0.5)):
     return class_target
 
 def encode_boxes(boxes, anchor_boxes):
-
+    '''We obey the Faster RCNN box coder:
+        tx = (x - anchor_x) / anchor_w
+        ty = (y - anchor_y) / anchor_h
+        tw = log(w / anchor_w)
+        th = log(h / anchor_h)'''
     boxes_pos, boxes_size = split(extents_form(boxes))
     anchor_pos, anchor_size = split(anchor_boxes)
 

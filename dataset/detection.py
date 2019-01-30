@@ -21,7 +21,7 @@ from detection import box
 import collections
 
 
-def collate(batch):
+def collate_batch(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
@@ -33,7 +33,7 @@ def collate(batch):
         return cat_tables(batch)
            
     if elem_type is Struct:
-        d =  {key: collate([d[key] for d in batch]) for key in elem}
+        d =  {key: collate_batch([d[key] for d in batch]) for key in elem}
         return Struct(d)
     elif isinstance(elem, str):
         return batch        
@@ -44,7 +44,7 @@ def collate(batch):
         return {key: collate([d[key] for d in batch]) for key in elem}
     elif isinstance(elem, collections.abc.Sequence):
         transposed = zip(*batch)
-        return [collate(samples) for samples in transposed]
+        return [collate_batch(samples) for samples in transposed]
     else:
         return default_collate(batch) 
 
@@ -235,7 +235,7 @@ def filter_boxes(min_visible = 0.4, crop_boxes = False):
     return apply
 
 
-def load_training(args, dataset, collate_fn=collate):
+def load_training(args, dataset, collate_fn=collate_batch):
     n = round(args.epoch_size / args.image_samples)
     return DataLoader(dataset,
         num_workers=args.num_workers,
@@ -244,7 +244,7 @@ def load_training(args, dataset, collate_fn=collate):
         collate_fn=collate_fn)
 
 
-def sample_training(args, images, loader, transform, collate_fn=collate):
+def sample_training(args, images, loader, transform, collate_fn=collate_batch):
     assert args.epoch_size is None or args.epoch_size > 0
     assert args.batch_size % args.image_samples == 0, "batch_size should be a multiple of image_samples"
 
@@ -258,7 +258,7 @@ def sample_training(args, images, loader, transform, collate_fn=collate):
         collate_fn=collate_fn)
 
 
-def load_testing(args, images, collate_fn=collate):
+def load_testing(args, images, collate_fn=collate_batch):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
@@ -359,7 +359,7 @@ class DetectionDataset:
         assert type(images) is dict, "expected images as a dict"
         assert type(classes) is list, "expected classes as a list"
 
-        self.images = {}
+        self.images = images
         self.classes = classes
 
 
@@ -403,13 +403,13 @@ class DetectionDataset:
 
         return all_images
 
-    def train(self, args, encoder):
+    def train(self, args, encoder, collate=collate_batch):
         images = FlatList(self.train_images, loader = load_image,
             transform = transform_training(args, encoder=encoder))
 
         return load_training(args, images, collate_fn=flatten(collate))
 
-    def sample_train(self, args, encoder):
+    def sample_train(self, args, encoder, collate=collate_batch):
         return sample_training(args, self.train_images, load_image,
             transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate))
 
@@ -419,10 +419,10 @@ class DetectionDataset:
 
         return transform(load_image(d)).image
 
-    def test(self, args, encoder):
-        return test_on(self.test_images, args)
+    def test(self, args, encoder, collate=collate_batch):
+        return test_on(self.test_images, args, collate=collate)
 
-    def test_on(self, images, args, encoder):
+    def test_on(self, images, args, encoder, collate=collate_batch):
         dataset = FlatList(images, loader = load_image, transform = transform_testing(args, encoder=encoder))
         return load_testing(args, dataset, collate_fn=collate)
 

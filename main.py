@@ -14,18 +14,19 @@ import torch.optim as optim
 
 from json.decoder import JSONDecodeError
 
-from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, init_dataset
+from dataset.annotate import decode_dataset, split_tagged, tagged, decode_image, init_dataset, decode_object_map
 from dataset.imports import load_dataset
 
 from dataset.detection import least_recently_evaluated
 
 from detection.models import models
-from detection.loss import focal_loss
+from detection.loss import batch_focal_loss
+from detection import box
 
 from tools.model import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import struct, logger, show_shapes, to_structs, Struct
+from tools import table, struct, logger, show_shapes, to_structs, Struct
 
 
 import connection
@@ -176,14 +177,16 @@ def initialise(config, dataset, args):
     best, current, resumed = load_checkpoint(model_path, model, model_args, args)
     model, epoch = current.model, current.epoch
 
-    running_average = [flatten_parameters(best.model).cpu()] if epoch >= args.average_start else []
+    pause_time = args.auto_pause
+
+    running_average = [] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    loss_func = focal_loss
-
+    # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
+    loss_func = batch_focal_loss
+    
     return struct(**locals())
 
 
@@ -204,7 +207,7 @@ def encode_shape(box, config):
     assert False, "unsupported shape config: " + config.shape
 
 
-def make_detections(env, prediction):
+def make_detections(env, predictions):
     classes = env.dataset.classes
 
     def detection(p):
@@ -214,9 +217,10 @@ def make_detections(env, prediction):
         return struct (
             shape      =  encode_shape(p.bbox.cpu(), config),
             label      =  object_class.id,
-            confidence = p.confidence.item()
+            confidence = p.confidence.item(),
+            match = p.match.item() if 'match' in p else None
         )
-    detections = list(map(detection, prediction._sequence()))
+    detections = list(map(detection, predictions))
 
     def score(ds):
         return sum(d.confidence ** 2 for d in ds)      
@@ -228,22 +232,59 @@ def make_detections(env, prediction):
 
     return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
+def suppress_predefined(prediction, predefined_bbox, threshold = 0.5):
+    ious = box.iou(prediction.bbox, predefined_bbox)
 
-def evaluate_detections(env, image, nms_params, device):
+    _, max_ids = ious.max(0)
+    max_ious, _ = ious.max(1)
+
+    predefined = prediction._index_select(max_ids)
+
+    # print(predefined)
+    # matching = (max_ious > threshold).nonzero().squeeze()
+    # print(prediction._index_select (matching)._sort_on('confidence'))
+    
+
+    prediction = prediction._extend(
+        confidence = prediction.confidence.masked_fill(max_ious > threshold, 0))
+
+    return prediction, predefined
+    
+def evaluate_detections(env, image, nms_params, device, review=None):
     model = env.best.model
-    prediction = evaluate.evaluate_image(model.to(device), image, env.encoder, nms_params, device)
+    detections = []
 
-    return make_detections(env, prediction)
+    model.eval()
+    with torch.no_grad():
+        prediction = evaluate.evaluate_decode(model.to(device), image, env.encoder, device=device)
+
+        if review is not None:
+            prediction, review_predictions = suppress_predefined(prediction, review.bbox.to(device), threshold = nms_params.threshold)
+            review_predictions = review_predictions._extend(match = review.id)
+            detections = list(review_predictions._sequence())
+
+        prediction =  env.encoder.nms(prediction, nms_params=nms_params)
+        return make_detections(env, detections + list(prediction._sequence()))
+            
 
 
-def detect_request(env, file, nms_params, device):
+# def match_predictions(bbox, predictions, threshold=0.5):
+#     ious = iou(predictions.bbox, bbox)
+
+#     _, max_ids = ious.max(1)
+#     return predictions._index_select(max_ids)
+
+# def review_request(env, file, nms_params, device):
+
+
+def detect_request(env, file, nms_params, device, review=None):
     path = os.path.join(env.data_root, file)
 
     if not os.path.isfile(path):
         raise NotFound(file)
 
     image = env.dataset.load_inference(file, path, env.args)
-    return evaluate_detections(env, image, nms_params, device)
+    return evaluate_detections(env, image, nms_params, device=device, review=review)
 
 
 def log_lerp(range, t):
@@ -336,8 +377,12 @@ def run_trainer(args, conn = None, env = None):
     def send_command(command, data):
 
         if conn is not None:
-            str = json.dumps(tagged(command, data)._to_dicts())           
-            conn.send(str)
+            # try:
+            command_str = json.dumps(tagged(command, data)._to_dicts())           
+            conn.send(command_str)
+            # except TypeError:
+            #     print("error serialising command: " + str((command, data)))
+
 
     def process_command(str):
         nonlocal env, device
@@ -356,8 +401,8 @@ def run_trainer(args, conn = None, env = None):
                 config, dataset = init_dataset(data)
                 env = initialise(config, dataset, args)
 
-                raise UserCommand('resume')
-
+                if not args.paused:
+                    raise UserCommand('resume')
 
             elif tag == 'update':
                 file, image_data = data
@@ -368,17 +413,24 @@ def run_trainer(args, conn = None, env = None):
                 if image.category == 'validate':
                     env.best.score = 0
 
+                if env.pause_time == 0:
+                    env.pause_time = env.args.auto_pause                    
+                    raise UserCommand('resume')
+                else:
+                    env.pause_time = env.args.auto_pause
 
             elif tag == 'detect':
-                reqId, image, nms_params = data
+                reqId, file, annotations, nms_params = data
+
+                review = decode_object_map(annotations, env.config) if len(annotations) > 0 else None
 
                 if env is not None:
-
-                    results = detect_request(env, image, nms_params, device)
-                    send_command('detect_request', (reqId, image, results))
+                    results = detect_request(env, file, nms_params, device, review=review)
+                    send_command('detect_request', (reqId, file, results))
 
                 else:
                     send_command('req_error', [reqId, image, "model not available yet"])
+              
 
             else:
                 send_command('error', "unknown command: " + tag)
@@ -437,12 +489,12 @@ def run_trainer(args, conn = None, env = None):
 
         is_averaging = env.epoch >= args.average_start and args.average_window > 1
         if is_averaging:
-            print("averaging:".format(env.epoch))
             env.running_average = append_window(training_params, env.running_average, args.average_window)
 
             # Replace model with averaged model for purposes of testing
             load_flattened(model, sum(env.running_average) / len(env.running_average))
 
+            print("updating average batch norm:".format(env.epoch))
             trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
                 evaluate.eval_forward(model.train(), device))
 
@@ -469,11 +521,15 @@ def run_trainer(args, conn = None, env = None):
         send_command("checkpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
 
-
         if args.detections > 0 and conn:
             results = run_detections(model, env, device=device, hook=update('detect'), n=args.detections)
             send_command('detections', results)
 
+        if env.pause_time is not None:
+            env.pause_time = env.pause_time - 1
+
+            if env.pause_time == 0:
+                raise UserCommand('pause')
 
         env.log.flush()
 
@@ -501,19 +557,26 @@ def run_trainer(args, conn = None, env = None):
         pause = paused
     )
 
-    activity = training_cycle
+    if conn is not None:
+        activity = paused if args.paused else training_cycle
 
-    while(True):
+        while(True):
+            try:
+                activity()
+                poll_command()
+
+            except UserCommand as cmd:
+                assert cmd.command in activities, "Unknown command " + cmd.command
+
+                print ("User command: ", cmd.command)
+                activity = activities[cmd.command]
+    else:
         try:
-            activity()
-            poll_command()
+            while(True):
+                training_cycle()
 
-        except UserCommand as cmd:
-            assert cmd.command in activities, "Unknown command " + cmd.command
-
-            print ("User command: ", cmd.command)
-            activity = activities[cmd.command]
-                
+        except UserCommand as cmd:                
+            pass
 
 def run_main():
     args = arguments.get_arguments()

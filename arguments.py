@@ -28,6 +28,9 @@ train_parameters = struct (
     
     
     epoch_size      = param(1024,   help='epoch size for training'),
+    auto_pause      = param(64, type='int', help='automatically pause training after epochs'),
+    
+    paused          = param(False, help='start trainer paused'),
 
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),

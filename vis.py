@@ -11,7 +11,7 @@ from detection.display import overlay_batch
 from arguments import detection_parameters, train_parameters, make_input_parameters, debug_parameters
 from tools.parameters import parse_args
 
-from tools import struct, Table, show_shapes
+from tools import struct, Table, show_shapes, pluck, transpose_structs
 from tools.parameters import param, required, parse_args, choice, parse_choice, make_parser
 from tools.image import cv
 from tools.image.transforms import resize_scale
@@ -35,7 +35,8 @@ pp = pprint.PrettyPrinter(indent=2)
 vis_parameters = struct (
     batch_size  = param(1,           help='batch size to display'),
     test        = param(False,       help='show test images instead of training'),
-    test_training  = param(False,    help='show train images but without preprocessing'),
+    validate        = param(False,       help='show validation images instead of training'),
+    validate_training  = param(False,    help='show train images but without preprocessing'),
 
     best = param (False, help='use best model for evaluation'),
     action = param ("visualise",    help='action to take (visualise|evaluate|benchmark)')
@@ -74,15 +75,17 @@ def identity(batch):
 
 
 
-
-
-
-
 def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
 
     with torch.no_grad():
         model.to(device)
-        prediction = evaluate.evaluate_image(model, data.image, encoder, nms_params, device)
+
+        raw_prediction = evaluate_raw(model, image, device=device)
+        decoded = encoder.decode(image, preds, crop_boxes=crop_boxes)
+
+        prediction = encoder.nms(decoded, nms_params=nms_params)
+
+        # prediction = evaluate.evaluate_image(model, data.image, encoder, nms_params, device)
 
         target = data.target._map(Tensor.to, prediction._device)
 
@@ -90,7 +93,14 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
         anchors = find_anchors(data.image, data.target, encoder, len(dataset.classes),
             match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)
 
+
         result = mAP_matches(matches, target.label.size(0))
+
+
+        pred = transpose_structs(matches) 
+        bbox = torch.stack (pred.bbox)
+
+        detected = box.match_predictions(bbox, raw_prediction, threshold = 0.5)
 
         return struct(
             image = data.image,
@@ -107,15 +117,15 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
 
 def benchmark(model, encoder, iter, args):
 
-    test = dataset.test(args,  collate_fn=identity)
+    test = dataset.validate(args,  collate_fn=identity)
     train = dataset.sample_train(args, encoder=encoder)
    
     
     print ("load(training): ", len(train))
     for data in tqdm(train):
         pass
-    print ("load(testing):", len(test))
-    for _ in tqdm(test):
+    print ("load(validate):", len(validate))
+    for _ in tqdm(validate):
         pass
 
 
@@ -157,7 +167,6 @@ def visualise(model, encoder, iter, args):
 
 
     print(help_str)
-
 
     for batch in iter:
         evals = [evaluate_vis(model, encoder, i, nms, args) for i in batch]
@@ -257,11 +266,13 @@ if __name__ == '__main__':
     iter = None
 
     if args.test:
-        iter = dataset.test(args, collate_fn=identity)
-    elif args.test_training:
-        iter = dataset.test_training(args, collate_fn=identity)
+        iter = dataset.test(args, encoder=None, collate=identity)
+    elif args.validate:
+        iter = dataset.validate(args, encoder=None, collate=identity)
+    elif args.validate_training:
+        iter = dataset.validate_training(args, encoder=None, collate=identity)
     else:
-        iter = dataset.sample_train(args, collate_fn=identity)
+        iter = dataset.sample_train(args, encoder=None, collate=identity)
 
     model = env.best.model if args.best else env.model
 
@@ -281,3 +292,5 @@ if __name__ == '__main__':
         benchmark(model, env.encoder, iter, args)
     else:
         assert False, "unknown action: " + action
+
+    print("done")

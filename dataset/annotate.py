@@ -74,7 +74,22 @@ def decode_objects(data, class_mapping):
     labels = list(map(lookup(class_mapping), pluck('label', objs)))
 
     return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
-                  label = torch.LongTensor(pluck('label', objs)))
+                  label = torch.LongTensor(labels))
+
+def decode_object_map(annotations, config):
+    mapping = class_mapping(config)
+
+    objs = { k: decode_obj(a) for k, a in annotations.items() }
+    objs = [ ann._extend(id = int(k)) for k, ann in objs.items() if ann is not None ]
+ 
+    boxes = pluck('box', objs)
+    labels = list(map(lookup(mapping), pluck('label', objs)))
+
+    ids = pluck ('id', objs)
+
+    return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+                  label = torch.LongTensor(labels),
+                  id = torch.LongTensor(ids))
 
 
 def class_mapping(config):

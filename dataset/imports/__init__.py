@@ -2,6 +2,7 @@ from .coco import import_coco
 from .voc import import_voc
 
 from tools.parameters import get_choice
+from tools import struct
 from dataset.annotate import decode_dataset
 
 import json
@@ -69,12 +70,23 @@ def contains_any_class(dataset, class_ids):
         return False
     return f
 
+def add_dict(d, k):
+    d[k] = d[k] + 1 if k in d else 1
+    return d
 
 def summarise(images, classes):
     counts = sum([len(image['annotations']) for image in images])
 
-    print("using {:d} classes, found {:d} training images, with {:d} instances, {:.2f} per image"
-        .format(len(classes), len(images), counts, counts / len(images)) )
+    categories = {}
+    for image in images:
+        add_dict(categories, image['category'])
+
+    annotated = categories.get('train', 0) + categories.get('test', 0) + categories.get('validate', 0)
+
+    print("using {:d} classes, found {:d} images, {:d} annotated with {:d} instances at {:.2f} per image"
+        .format(len(classes), len(images), annotated, counts, counts / annotated) )
+    
+    print(categories)
 
 
 def import_dataset(input_args, subset=None):
