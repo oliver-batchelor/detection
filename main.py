@@ -28,7 +28,6 @@ from tools.model import tools
 from tools.parameters import default_parameters, get_choice
 from tools import table, struct, logger, show_shapes, to_structs, Struct
 
-
 import connection
 import trainer
 import evaluate
@@ -148,7 +147,6 @@ def load_checkpoint(model_path, model, model_args, args):
 
 
 
-
 def initialise(config, dataset, args):
     data_root = config.root
 
@@ -178,14 +176,15 @@ def initialise(config, dataset, args):
     model, epoch = current.model, current.epoch
 
     pause_time = args.auto_pause
-
     running_average = [] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
-    loss_func = batch_focal_loss
+    
+    device = torch.cuda.current_device()
+    loss_func = batch_focal_loss 
     
     return struct(**locals())
 
@@ -232,40 +231,53 @@ def make_detections(env, predictions):
 
     return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
-def suppress_predefined(prediction, predefined_bbox, threshold = 0.5):
-    ious = box.iou(prediction.bbox, predefined_bbox)
 
-    _, max_ids = ious.max(0)
-    max_ious, _ = ious.max(1)
 
-    predefined = prediction._index_select(max_ids)
+def evaluate_detections(env, image, nms_params):
+    model = env.best.model
+    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, nms_params=nms_params, device=env.device)
+    return make_detections(env, list(detections._sequence()))
+
+
+def select_matching(ious, prediction, threshold = 0.5):
+    matching = ious < threshold
+
+    confidence = prediction.confidence.unsqueeze(1).expand(not_matching.size()).masked_fill(~matching, 0)
+    
+    _, max_ids = confidence.max(0)
+    return prediction._index_select(max_ids)
 
     # print(predefined)
     # matching = (max_ious > threshold).nonzero().squeeze()
     # print(prediction._index_select (matching)._sort_on('confidence'))
-    
 
-    prediction = prediction._extend(
+def suppress_boxes(ious, prediction, threshold = 0.5):
+    max_ious, _ = ious.max(1)  
+    return prediction._extend(
         confidence = prediction.confidence.masked_fill(max_ious > threshold, 0))
 
-    return prediction, predefined
-    
-def evaluate_detections(env, image, nms_params, device, review=None):
+def table_list(t):
+    return list(t._sequence())
+
+def evaluate_review(env, image, nms_params, review):
     model = env.best.model
-    detections = []
 
     model.eval()
     with torch.no_grad():
-        prediction = evaluate.evaluate_decode(model.to(device), image, env.encoder, device=device)
+        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, device=env.device)
 
-        if review is not None:
-            prediction, review_predictions = suppress_predefined(prediction, review.bbox.to(device), threshold = nms_params.threshold)
-            review_predictions = review_predictions._extend(match = review.id)
-            detections = list(review_predictions._sequence())
+        ious = box.iou(prediction.bbox, review.bbox.to(env.device))
+        review_predictions = select_matching(ious, prediction, threshold = nms_params.threshold)
 
-        prediction =  env.encoder.nms(prediction, nms_params=nms_params)
-        return make_detections(env, detections + list(prediction._sequence()))
-            
+       
+        prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
+
+        
+
+        detections = table_list(review_predictions._extend(match = review.id)) + \
+                     table_list(env.encoder.nms(prediction, nms_params=nms_params))
+
+        return make_detections(env, detections)
 
 
 # def match_predictions(bbox, predictions, threshold=0.5):
@@ -277,14 +289,18 @@ def evaluate_detections(env, image, nms_params, device, review=None):
 # def review_request(env, file, nms_params, device):
 
 
-def detect_request(env, file, nms_params, device, review=None):
+def detect_request(env, file, nms_params, review=None):
     path = os.path.join(env.data_root, file)
 
     if not os.path.isfile(path):
         raise NotFound(file)
 
     image = env.dataset.load_inference(file, path, env.args)
-    return evaluate_detections(env, image, nms_params, device=device, review=review)
+
+    if review is None:
+        return evaluate_detections(env, image, nms_params)
+    else:
+        return evaluate_review(env, image, nms_params, review)
 
 
 def log_lerp(range, t):
@@ -326,28 +342,28 @@ def get_nms_params(args):
             threshold = args.class_threshold,
             detections = args.max_detections)
 
-def test_images(images, model, env, device=torch.cuda.current_device(), hook=None):
-    eval_test = evaluate.eval_test(model.eval(), env.encoder, loss_func = env.loss_func, 
-        debug = env.debug, nms_params=get_nms_params(env.args), device=device, crop_boxes=env.args.crop_boxes)
+def test_images(images, model, env, hook=None):
+    eval_test = evaluate.eval_test(model.eval(), env.encoder, loss_func = env.loss_func,
+        debug = env.debug, nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
 
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
 
 
-def run_testing(name, images, model, env, device=torch.cuda.current_device(), hook=None):
+def run_testing(name, images, model, env, hook=None):
     score = 0
     if len(images) > 0:
         print("{} {}:".format(name, env.epoch))
-        results = test_images(images, model, env, device, hook)
+        results = test_images(images, model, env,  hook)
 
         score = evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, log=env.log)
     return score
 
 
-def run_detections(model, env, device=torch.cuda.current_device(), hook=None, n=None):
+def run_detections(model, env, hook=None, n=None):
     images = least_recently_evaluated(env.dataset.new_images, n = n)
 
     if len(images) > 0:
-        results = test_images(images, model, env, device, hook)
+        results = test_images(images, model, env, hook)
         return {result.id[0] : make_detections(env, result.prediction) for result in results}
 
 def add_multimap(m, k, x):
@@ -373,7 +389,6 @@ class UserCommand(Exception):
 
 def run_trainer(args, conn = None, env = None):
 
-    device = torch.cuda.current_device()
     def send_command(command, data):
 
         if conn is not None:
@@ -385,7 +400,7 @@ def run_trainer(args, conn = None, env = None):
 
 
     def process_command(str):
-        nonlocal env, device
+        nonlocal env
 
         if str is None:
             print("Server disconnected.")
@@ -425,7 +440,7 @@ def run_trainer(args, conn = None, env = None):
                 review = decode_object_map(annotations, env.config) if len(annotations) > 0 else None
 
                 if env is not None:
-                    results = detect_request(env, file, nms_params, device, review=review)
+                    results = detect_request(env, file, nms_params, review=review)
                     send_command('detect_request', (reqId, file, results))
 
                 else:
@@ -469,7 +484,7 @@ def run_trainer(args, conn = None, env = None):
             return None
 
         env.log.set_step(env.epoch)
-        model = env.model.to(device)
+        model = env.model.to(env.device)
 
         # print("estimating statistics {}:".format(env.epoch))
         # stats = trainer.test(env.dataset.sample_train(args, env.encoder), evaluate.eval_stats(env.dataset.classes, device=device))
@@ -478,7 +493,7 @@ def run_trainer(args, conn = None, env = None):
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), env.loss_func, env.debug, device=device), env.optimizer, hook=train_update)
+                    evaluate.eval_train(model.train(), env.loss_func, env.debug, device=env.device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
         
@@ -496,11 +511,11 @@ def run_trainer(args, conn = None, env = None):
 
             print("updating average batch norm:".format(env.epoch))
             trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
-                evaluate.eval_forward(model.train(), device))
+                evaluate.eval_forward(model.train(), device=env.device))
 
 
 
-        score = run_testing('validate', env.dataset.validate_images, model, env, device=device, hook=update('validate'))
+        score = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
 
 
         is_best = score >= env.best.score
@@ -513,7 +528,7 @@ def run_trainer(args, conn = None, env = None):
         current = struct(state = model.state_dict(), epoch = env.epoch, score = score)
         best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
-        run_testing('test', env.dataset.test_images, model, env, device=device, hook=update('test'))
+        run_testing('test', env.dataset.test_images, model, env, hook=update('test'))
 
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)
@@ -522,7 +537,7 @@ def run_trainer(args, conn = None, env = None):
         env.epoch = env.epoch + 1
 
         if args.detections > 0 and conn:
-            results = run_detections(model, env, device=device, hook=update('detect'), n=args.detections)
+            results = run_detections(model, env, hook=update('detect'), n=args.detections)
             send_command('detections', results)
 
         if env.pause_time is not None:

@@ -272,9 +272,10 @@ def create_fcn(args, dataset_args):
     backbone = Cascade(OrderedDict(zip(layer_names, layers)), drop_initial = args.first)
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
 
+    model = FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, 
+                num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
 
-    return FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, num_classes=num_classes, features=args.features, shared=args.shared, square=args.square), \
-           Encoder(args.first, box_sizes)
+    return model, Encoder(args.first, box_sizes)
 
 models = {
     'fcn' : struct(create=create_fcn, parameters=parameters)

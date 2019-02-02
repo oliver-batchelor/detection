@@ -152,6 +152,9 @@ def train_statistics(data, loss, prediction, target, debug = struct(), device=to
     if debug.boxes:
         stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
 
+    # if debug.matches:
+    #     stats = stats._extend(box_counts=count_classes(target.classification, num_classes))        
+
     return stats
    
 def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_device()):
@@ -191,7 +194,6 @@ def summarize_train_stats(results, classes, log):
 def summarize_train(name, results, classes, epoch, log):
     summary = summarize_train_stats(results, classes, log)
     print('{} epoch: {} {}'.format(name, epoch, summary))
-    
 
 
 def splits(size, n, overlap=0):
@@ -206,10 +208,6 @@ def splits(size, n, overlap=0):
         ranges.append(r)
 
     return ranges
-
-
- 
- 
 
 def image_splits(size, n=(1, 1), overlap=0):
     w, h = size
