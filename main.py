@@ -242,7 +242,7 @@ def evaluate_detections(env, image, nms_params):
 def select_matching(ious, prediction, threshold = 0.5):
     matching = ious < threshold
 
-    confidence = prediction.confidence.unsqueeze(1).expand(not_matching.size()).masked_fill(~matching, 0)
+    confidence = prediction.confidence.unsqueeze(1).expand(matching.size()).masked_fill(~matching, 0)
     
     _, max_ids = confidence.max(0)
     return prediction._index_select(max_ids)
