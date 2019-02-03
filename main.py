@@ -364,7 +364,9 @@ def run_detections(model, env, hook=None, n=None):
 
     if len(images) > 0:
         results = test_images(images, model, env, hook)
-        return {result.id[0] : make_detections(env, result.prediction) for result in results}
+
+        # print(show_shapes(results[0].prediction))
+        return {result.id[0] : make_detections(env, table_list(result.prediction)) for result in results}
 
 def add_multimap(m, k, x):
     xs = m[k] if k in m else []
