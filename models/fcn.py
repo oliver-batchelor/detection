@@ -213,6 +213,9 @@ parameters = struct(
     last      = param (7, help = "last layer of anchor boxes"),
 
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
+
+    tall = param(False, "use a set of anchor boxes for tall objects"),
+
     shared    = param (False, help = "share weights between network heads at different levels"),
     square    = param (False, help = "restrict box outputs (and anchors) to square"),
 
@@ -236,9 +239,14 @@ def split_at(xs, n):
     return xs[:n], xs[n:]
 
 
-def anchor_sizes(start, end, anchor_scale=4, square=False):
+def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
 
-    aspects = [1] if square else [1/2, 1, 2]
+    aspects = [1/2, 1, 2]
+    if square:
+        aspects = [1]
+    elif tall:
+        aspects = [1/8, 1/4, 1/2, 1]
+
     scales = [1, pow(2, 1/3), pow(2, 2/3)]
 
     return [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
@@ -264,13 +272,15 @@ def create_fcn(args, dataset_args):
     assert args.first <= args.last
     assert args.backbone in pretrained.models, "base model not found: " + args.backbone + ", options: " + base_options
 
+    assert not (args.square and args.tall), "model can be tall or square but not both"
+
     base_layers = pretrained.models[args.backbone]()
 
     layer_names = ["layer" + str(n) for n in range(0, args.last + 1)]
     layers = extend_layers(base_layers, args.last + 1, features=args.features*2)
 
     backbone = Cascade(OrderedDict(zip(layer_names, layers)), drop_initial = args.first)
-    box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
+    box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square, tall=args.tall)
 
     model = FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, 
                 num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
