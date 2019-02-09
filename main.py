@@ -111,9 +111,8 @@ def try_load(model_path):
 def load_model(model_path):
     loaded = try_load(model_path)
     assert loaded is not None, "failed to load model from " + model_path
- 
-    args = loaded.args
 
+    args = loaded.args
 
     model, encoder = tools.create(models, args.model, args.dataset)
     best = load_state(model, loaded.best)
@@ -182,10 +181,10 @@ def initialise(config, dataset, args):
 
     optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
-    
+
     device = torch.cuda.current_device()
-    loss_func = batch_focal_loss 
-    
+    loss_func = batch_focal_loss
+
     return struct(**locals())
 
 
@@ -222,7 +221,7 @@ def make_detections(env, predictions):
     detections = list(map(detection, predictions))
 
     def score(ds):
-        return sum(d.confidence ** 2 for d in ds)      
+        return sum(d.confidence ** 2 for d in ds)
 
     stats = struct (
         score   = score(detections),
@@ -235,7 +234,7 @@ def make_detections(env, predictions):
 
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
-    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, nms_params=nms_params, device=env.device)
+    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, nms_params=nms_params, device=env.device, crop_boxes=env.args.crop_boxes)
     return make_detections(env, list(detections._sequence()))
 
 
@@ -243,7 +242,7 @@ def select_matching(ious, prediction, threshold = 0.5):
     matching = ious < threshold
 
     confidence = prediction.confidence.unsqueeze(1).expand(matching.size()).masked_fill(~matching, 0)
-    
+
     _, max_ids = confidence.max(0)
     return prediction._index_select(max_ids)
 
@@ -252,7 +251,7 @@ def select_matching(ious, prediction, threshold = 0.5):
     # print(prediction._index_select (matching)._sort_on('confidence'))
 
 def suppress_boxes(ious, prediction, threshold = 0.5):
-    max_ious, _ = ious.max(1)  
+    max_ious, _ = ious.max(1)
     return prediction._extend(
         confidence = prediction.confidence.masked_fill(max_ious > threshold, 0))
 
@@ -264,15 +263,15 @@ def evaluate_review(env, image, nms_params, review):
 
     model.eval()
     with torch.no_grad():
-        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, device=env.device)
+        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, device=env.device, crop_boxes=env.args.crop_boxes)
 
         ious = box.iou(prediction.bbox, review.bbox.to(env.device))
         review_predictions = select_matching(ious, prediction, threshold = nms_params.threshold)
 
-       
+
         prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
 
-        
+
 
         detections = table_list(review_predictions._extend(match = review.id)) + \
                      table_list(env.encoder.nms(prediction, nms_params=nms_params))
@@ -287,7 +286,6 @@ def evaluate_review(env, image, nms_params, review):
 #     return predictions._index_select(max_ids)
 
 # def review_request(env, file, nms_params, device):
-
 
 def detect_request(env, file, nms_params, review=None):
     path = os.path.join(env.data_root, file)
@@ -382,7 +380,7 @@ def report_training(results):
             add_multimap(images, file, struct(loss = loss))
 
     return images
-        
+
 
 class UserCommand(Exception):
     def __init__(self, command):
@@ -395,7 +393,7 @@ def run_trainer(args, conn = None, env = None):
 
         if conn is not None:
             # try:
-            command_str = json.dumps(tagged(command, data)._to_dicts())           
+            command_str = json.dumps(tagged(command, data)._to_dicts())
             conn.send(command_str)
             # except TypeError:
             #     print("error serialising command: " + str((command, data)))
@@ -431,7 +429,7 @@ def run_trainer(args, conn = None, env = None):
                     env.best.score = 0
 
                 if env.pause_time == 0:
-                    env.pause_time = env.args.auto_pause                    
+                    env.pause_time = env.args.auto_pause
                     raise UserCommand('resume')
                 else:
                     env.pause_time = env.args.auto_pause
@@ -447,7 +445,7 @@ def run_trainer(args, conn = None, env = None):
 
                 else:
                     send_command('req_error', [reqId, image, "model not available yet"])
-              
+
 
             else:
                 send_command('error', "unknown command: " + tag)
@@ -469,11 +467,11 @@ def run_trainer(args, conn = None, env = None):
 
         activity = struct(tag = 'train', epoch = env.epoch)
         send_command('progress', struct(activity = activity, progress = (n, total)))
-        
+
         poll_command()
 
 
-        
+
     def update(name):
         def f(n, total):
             activity = struct(tag = name, epoch = env.epoch)
@@ -498,7 +496,7 @@ def run_trainer(args, conn = None, env = None):
                     evaluate.eval_train(model.train(), env.loss_func, env.debug, device=env.device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
-        
+
         send_command('training', report_training(train_stats))
 
         # Save parameters for model averaging
@@ -556,7 +554,7 @@ def run_trainer(args, conn = None, env = None):
 
     def detect_all():
         print("detecting...")
-        
+
 
     def paused():
         send_command('progress', None)
@@ -592,7 +590,7 @@ def run_trainer(args, conn = None, env = None):
             while(True):
                 training_cycle()
 
-        except UserCommand as cmd:                
+        except UserCommand as cmd:
             pass
 
 def run_main():
