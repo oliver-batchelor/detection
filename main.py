@@ -239,7 +239,7 @@ def evaluate_detections(env, image, nms_params):
 
 
 def select_matching(ious, prediction, threshold = 0.5):
-    matching = ious < threshold
+    matching = ious > threshold
 
     confidence = prediction.confidence.unsqueeze(1).expand(matching.size()).masked_fill(~matching, 0)
 
@@ -267,6 +267,8 @@ def evaluate_review(env, image, nms_params, review):
 
         ious = box.iou(prediction.bbox, review.bbox.to(env.device))
         review_predictions = select_matching(ious, prediction, threshold = nms_params.threshold)
+
+        # print(review_predictions)
 
 
         prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)

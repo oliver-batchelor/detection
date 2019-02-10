@@ -36,7 +36,10 @@ vis_parameters = struct (
     batch_size  = param(1,           help='batch size to display'),
     test        = param(False,       help='show test images instead of training'),
     validate        = param(False,       help='show validation images instead of training'),
-    validate_training  = param(False,    help='show train images but without preprocessing'),
+    
+    no_augment  = param(False,    help='dont use preprocessing even for training'),
+
+
 
     best = param (False, help='use best model for evaluation'),
     action = param ("visualise",    help='action to take (visualise|evaluate|benchmark)')
@@ -80,8 +83,8 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
     with torch.no_grad():
         model.to(device)
 
-        raw_prediction = evaluate_raw(model, image, device=device)
-        decoded = encoder.decode(image, preds, crop_boxes=crop_boxes)
+        raw_prediction = evaluate.evaluate_raw(model, data.image, device=device)
+        decoded = encoder.decode(data.image, raw_prediction, crop_boxes=args.crop_boxes)
 
         prediction = encoder.nms(decoded, nms_params=nms_params)
 
@@ -100,7 +103,7 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
         pred = transpose_structs(matches) 
         bbox = torch.stack (pred.bbox)
 
-        detected = box.match_predictions(bbox, raw_prediction, threshold = 0.5)
+        # detected = box.match_predictions(bbox, raw_prediction, threshold = 0.5)
 
         return struct(
             image = data.image,
@@ -269,8 +272,8 @@ if __name__ == '__main__':
         iter = dataset.test(args, encoder=None, collate=identity)
     elif args.validate:
         iter = dataset.validate(args, encoder=None, collate=identity)
-    elif args.validate_training:
-        iter = dataset.validate_training(args, encoder=None, collate=identity)
+    elif args.no_augment:
+        iter = dataset.test_on(dataset.train_images, args, encoder=None, collate=identity)
     else:
         iter = dataset.sample_train(args, encoder=None, collate=identity)
 

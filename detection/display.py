@@ -25,10 +25,6 @@ def draw_box(image, box, scale=1.0, name=None, confidence=None, thickness=2, col
 def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
     image = eval.image.clone()
 
-    cv.putText(image, eval.id, (0, int(12 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
-    cv.putText(image, "mAP@0.5 " + str(eval.mAP), (0, int(24 * scale)), scale = scale, color=(64, 64, 192), thickness=int(1*scale))
-
-
     def overlay_prediction():
         for prediction in eval.prediction._sequence():
             if prediction.confidence < threshold:
@@ -93,6 +89,10 @@ def overlay(eval, mode='target', threshold = 0.5, scale=1.0, classes=None):
 
     assert (mode in target), "overlay: invalid mode " + mode + ", expected one of " + str(target.keys())
     target[mode]()
+
+    cv.putText(image, eval.id, (0, int(24 * scale)), scale = 2*scale, color=(64, 64, 192), thickness=int(2*scale))
+    cv.putText(image, "mAP@0.5 " + str(eval.mAP), (0, int(48 * scale)), scale = 2*scale, color=(64, 64, 192), thickness=int(2*scale))
+
 
     return image
 

@@ -419,10 +419,12 @@ class DetectionDataset:
 
         return transform(load_image(d)).image
 
-    def test(self, args, encoder, collate=collate_batch):
-        return test_on(self.test_images, args, collate=collate)
-
     def test_on(self, images, args, encoder, collate=collate_batch):
         dataset = FlatList(images, loader = load_image, transform = transform_testing(args, encoder=encoder))
         return load_testing(args, dataset, collate_fn=collate)
 
+    def test(self, args, encoder, collate=collate_batch):
+        return self.test_on(self.test_images, args, encoder, collate=collate)
+
+    def validate(self, args, encoder, collate=collate_batch):
+        return self.test_on(self.validate_images, args, encoder, collate=collate)
