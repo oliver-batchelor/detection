@@ -185,6 +185,8 @@ def initialise(config, dataset, args):
     device = torch.cuda.current_device()
     loss_func = batch_focal_loss
 
+    tests = args.tests.split(",")
+
     return struct(**locals())
 
 
@@ -231,7 +233,6 @@ def make_detections(env, predictions):
     return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
 
-
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, nms_params=nms_params, device=env.device, crop_boxes=env.args.crop_boxes)
@@ -268,11 +269,7 @@ def evaluate_review(env, image, nms_params, review):
         ious = box.iou(prediction.bbox, review.bbox.to(env.device))
         review_predictions = select_matching(ious, prediction, threshold = nms_params.threshold)
 
-        # print(review_predictions)
-
-
         prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
-
 
 
         detections = table_list(review_predictions._extend(match = review.id)) + \
@@ -516,7 +513,6 @@ def run_trainer(args, conn = None, env = None):
                 evaluate.eval_forward(model.train(), device=env.device))
 
 
-
         score = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
 
 
@@ -530,7 +526,11 @@ def run_trainer(args, conn = None, env = None):
         current = struct(state = model.state_dict(), epoch = env.epoch, score = score)
         best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
 
-        run_testing('test', env.dataset.test_images, model, env, hook=update('test'))
+        # run_testing('test', env.dataset.test_images, model, env, hook=update('test'))
+        
+        for test_name in env.tests:
+            run_testing(test_name, env.dataset.get_images(test_name), model, env, hook=update('test'))
+        
 
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)

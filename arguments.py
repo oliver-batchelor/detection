@@ -25,6 +25,8 @@ train_parameters = struct (
 
     reviews      = param(0,     help = 'number of reviews conducted per epoch'),
     detections   = param(0,     help = 'number of detections conducted per epoch on new images'),
+
+    tests = param('test', help='comma separated list of test sets to use'),
     
     
     epoch_size      = param(1024,   help='epoch size for training'),

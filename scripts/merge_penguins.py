@@ -28,10 +28,20 @@ datasets = struct(
 def filter_used(dataset):
     return  [image for image in dataset.images if image.category in ['train', 'validate', 'test']]
 
+
+def get_category(dataset, category):
+    return  [image for image in dataset.images if image.category == category]
+
+
+
 def set_category(category):
     def f(image):
         return image._extend(category = category)
     return f
+
+def set_category_all(images, category):
+    return list(map(set_category(category), images))
+
 
 def quantiles(xs):
     return np.percentile(np.array(xs), [0, 25, 50, 75, 100])
@@ -79,13 +89,19 @@ def summary(dataset):
 pprint_struct(datasets._map(summary))
 
 
-images = datasets._map(filter_used)
+# images = datasets._map(filter_used)
+val_royd = set_category_all(get_category(datasets.royd, 'validate'), 'test_royd')
+val_hallett = set_category_all(get_category(datasets.hallett, 'validate'), 'test_hallett')
+val_cotter = set_category_all(get_category(datasets.cotter, 'validate'), 'test_cotter')
 
-train = list(concat_lists([images.cotter, images.hallett]))
-test = list(map(set_category('test'), images.royd))
+train = list(concat_lists([get_category(datasets.royd, 'train'), 
+    get_category(datasets.cotter, 'train'), 
+    get_category(datasets.hallett, 'train')]))   
 
-combined = struct(config=datasets.royd.config, images=concat_lists([test, train]))
-combined = struct(config=datasets.royd.config, images=concat_lists([test, train]))
+# train = list(concat_lists([images.cotter, images.hallett]))
+# test = list(map(set_category('test'), images.royd))
+
+combined = struct(config=datasets.royd.config, images=concat_lists([train, val_royd, val_hallett, val_cotter]))
 
 with open(combined_file, 'w') as outfile:
     json.dump(to_dicts(combined), outfile, sort_keys=True, indent=4, separators=(',', ': '))
