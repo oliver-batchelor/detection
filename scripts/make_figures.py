@@ -1,31 +1,37 @@
 import scripts.history
-import scripts.datasets
+from scripts.datasets import load_dataset, annotation_summary
+
+from os import path
+
+from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, pprint_struct, pluck_struct
 
 
 def load_all(datasets, base_path):
 
     def load(filename):
-        load_dataset(path.join(base_path, filename))
+        dataset = load_dataset(path.join(base_path, filename))
+        summary = annotation_summary(dataset)
 
+        return struct (summary = summary)
 
     loaded = datasets._map(load)
 
-    
+    pprint_struct(pluck_struct('summary', loaded))
 
-    return struct (
-        summary = annotation_summary(loaded)
     
+    
+datasets = struct(
+    penguins = 'penguins.json',
+    # scallops = 'scallops.json',
+    trees   = 'trees_josh.json',
+    #hallett = 'penguins_hallett.json',
+    #cotter = 'penguins_cotter.json',
+    #royds = 'penguins_royds.json',
+    combined = 'penguins_combined.json',
+)
 
+base_path = '/home/oliver/storage/export/'
 
 
 if __name__ == '__main__':
-
-    base_path = '/home/oliver/export/'
-    datasets = {
-        #'penguins' : 'penguins.json',
-        #'scallops' : 'scallops.json',
-        hallett = 'penguins_hallett.json'
-        cotter = 'penguins_cotter.json'
-        royds = 'penguins_royds.json'
-        combined = 'penguins_combined.json'
-    }
+    load_all(datasets, base_path)

@@ -29,8 +29,6 @@ def eval_forward(model, device=torch.cuda.current_device()):
     return f
 
 
-
-
 def count_classes(label, num_classes):
 
     class_counts = (label + 1).view(-1).bincount(minlength = num_classes + 2)
@@ -43,7 +41,6 @@ def count_classes(label, num_classes):
         positive = class_counts[2:].sum().item(),
         total = label.numel()
     )
-
 
 
 
