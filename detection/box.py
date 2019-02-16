@@ -128,17 +128,17 @@ nms_defaults = struct(
 
 
 
-def nms(prediction, params, max_boxes=200):
-    # max_boxes is a 'safety' parameter, otherwise nms will eat all the gpu ram
+def nms(prediction, params, max_box_factor=200):
+    # max_boxes is a 'safety' parameter, otherwise nms will can sometimes all the gpu ram
 
-    if params.threshold > 0:
-        inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
-        prediction = prediction._index_select(inds)
+    inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
+    prediction = prediction._index_select(inds)._extend(index = inds)
 
     prediction = prediction._sort_on('confidence', descending=True)
-    prediction = prediction._take(max_boxes * params.detections)
+    prediction = prediction._take(max_box_factor * params.detections)
 
     inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)
+    
     return prediction._index_select(inds)._take(params.detections)
 
 
@@ -232,7 +232,6 @@ def anchor_sizes(size, aspects, scales):
 
 
 def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0):
-
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
@@ -252,7 +251,6 @@ def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0)
     return struct (
         location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
         classification = encode_classes(target.label, max_ious, max_ids, match_thresholds=match_thresholds),
-        
     )
 
 

@@ -2,6 +2,7 @@ import sys
 import math
 
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -16,10 +17,12 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
-from tools import struct, table
+from tools import struct, table, show_shapes, sum_lists, cat_tables
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
+
+from detection.loss import batch_focal_loss
 
 
 def image_size(inputs):
@@ -34,7 +37,7 @@ def image_size(inputs):
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes, separate=False):
+    def __init__(self, start_layer, box_sizes):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
@@ -55,14 +58,9 @@ class Encoder:
         return self.anchor_cache[input_args]
 
 
-    # def encode_refined(bbox, label, match_thresholds=(0.4, 0.5), match_nearest = 0):
-
-    #     return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
-
 
     def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
         inputs = image_size(inputs)
-
         return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
 
 
@@ -73,14 +71,82 @@ class Encoder:
         anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
         bbox = box.decode(prediction.location, anchor_boxes)
+        confidence, label = prediction.classification.max(1)
+
         if crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
-        confidence, label = prediction.classification.max(1)
         return table(bbox = bbox, confidence = confidence, label = label)
-        
+
+       
+    def loss(self, encoding, prediction, device):
+
+       target = encoding._map(Tensor.to, device)
+       return batch_focal_loss(target, prediction, averaging=False)
+ 
+
     def nms(self, prediction, nms_params=box.nms_defaults):
         return box.nms(prediction, nms_params)
+    
+
+def split_prediction_batch(prediction, i):
+    return struct(
+        classification = prediction.classification[:, :, i].unsqueeze(2),
+        location = prediction.location[:, :, i, :].contiguous()
+    )        
+
+def split_prediction(prediction, i):
+    return struct(
+        classification = prediction.classification[:, i].unsqueeze(1),
+        location = prediction.location[:, i, :].contiguous()
+    )        
+
+
+
+class SeparateEncoder:
+    def __init__(self, start_layer, box_sizes, num_classes):
+        self.encoder = Encoder(start_layer, box_sizes)
+        self.num_classes = num_classes
+
+    def anchors(self, input_size, crop_boxes=False):
+        return self.encoder.anchors(input_size, crop_boxes=crop_boxes)
+
+  
+    def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
+        inputs = image_size(inputs)
+
+        def encode_class(i):
+            inds = (target.label == i).nonzero().squeeze(1)
+            target_class = target._index_select(inds)
+
+            target_class.label.fill_(0)
+
+            return self.encoder.encode(inputs, target_class, 
+                crop_boxes=crop_boxes, match_thresholds=match_thresholds, match_nearest=match_nearest)
+
+        return [encode_class(i) for i in range(0, self.num_classes)]
+        
+    def loss(self, encoding, prediction, device):
+        def class_loss(i):          
+            return self.encoder.loss(encoding[i], split_prediction_batch(prediction, i), device)
+
+        losses = [class_loss(i) for i in range(0, self.num_classes)]
+        return sum_lists(losses)
+
+    def decode(self, inputs, prediction, crop_boxes=False):
+        def decode_class(i):
+            decoded = self.encoder.decode(inputs, split_prediction(prediction, i), crop_boxes=crop_boxes) 
+            decoded.label.fill_(i)
+
+            return decoded
+
+        return cat_tables([decode_class(i) for i in range(0, self.num_classes)])
+
+
+        
+    def nms(self, prediction, nms_params=box.nms_defaults):
+        return self.encoder.nms(prediction, nms_params=nms_params)
+
 
 
 
@@ -154,8 +220,9 @@ class FCN(nn.Module):
             self.classifiers = Parallel(named([output(len(boxes) * self.num_classes) for boxes in self.box_sizes]))
 
 
-        self.box_outputs = 4 * (self.num_classes if separate else 1)
-        self.localisers = Parallel(named([output(len(boxes) * self.box_outputs) for boxes in self.box_sizes]))
+        self.box_outputs = 4 
+        self.box_layers = self.num_classes if self.separate else 1
+        self.localisers = Parallel(named([output(len(boxes) * self.box_layers * self.box_outputs) for boxes in self.box_sizes]))
 
 
         self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
@@ -167,9 +234,8 @@ class FCN(nn.Module):
 
     def forward(self, input):
         layers = self.backbone(input)
-
-  
         layers = self.decoder(self.reduce(layers))
+
         def join(layers, n):
 
             def permute(layer):
@@ -179,8 +245,12 @@ class FCN(nn.Module):
             return torch.cat(list(map(permute, layers)), 1)
 
         conf = torch.sigmoid(join(self.classifiers(layers), self.num_classes))
-        locs = join(self.localisers(layers), self.box_outputs)
 
+        locs = join(self.localisers(layers), self.box_outputs * self.box_layers)
+
+        if self.separate:
+            locs = locs.view(locs.size(0), locs.size(1), self.box_layers, self.box_outputs)
+                
         # if self.square:
             # locs = locs.view(locs.size(0), locs.size(1), locs.size(2) )
             # locs = torch.cat([locs, locs.narrow(2, 2, 1)], dim=2)
@@ -194,13 +264,6 @@ class FCN(nn.Module):
             {'params': nn.ModuleList(self.new_modules).parameters(), 'lr':lr, 'modifier': 1.0}
         ]
 
-        # fine_tune = {p:True for m in self.fine_tune for p in  m.parameters()}
-        # normal = [p for p in self.parameters() if p not in fine_tune]
-        
-        # return [
-        #     {'params': fine_tune.keys(), 'lr':lr, 'modifier': fine_tuning},
-        #     {'params': normal, 'lr':lr, 'modifier': 1.0}
-        # ]
 
 
 
@@ -283,9 +346,13 @@ def create_fcn(args, dataset_args):
     box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square, tall=args.tall)
 
     model = FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, 
-                num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
+                num_classes=num_classes, features=args.features, shared=args.shared, square=args.square, separate=args.separate)
 
-    return model, Encoder(args.first, box_sizes)
+    encoder = SeparateEncoder(args.first, box_sizes, num_classes=num_classes)  \
+        if args.separate else Encoder(args.first, box_sizes)
+
+    return model, encoder
+    
 
 models = {
     'fcn' : struct(create=create_fcn, parameters=parameters)

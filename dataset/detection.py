@@ -376,8 +376,7 @@ class DetectionDataset:
 
             self.images[k].evaluated = net_id
 
-
-    
+  
     @property
     def train_images(self):
         return self.get_images('train')

@@ -20,7 +20,6 @@ from dataset.imports import load_dataset
 from dataset.detection import least_recently_evaluated
 
 from detection.models import models
-from detection.loss import batch_focal_loss
 from detection import box
 
 from tools.model import tools
@@ -183,7 +182,6 @@ def initialise(config, dataset, args):
     # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
 
     device = torch.cuda.current_device()
-    loss_func = batch_focal_loss
 
     tests = args.tests.split(",")
 
@@ -239,17 +237,17 @@ def evaluate_detections(env, image, nms_params):
     return make_detections(env, list(detections._sequence()))
 
 
-def select_matching(ious, prediction, threshold = 0.5):
-    matching = ious > threshold
+def select_matching(ious, label, prediction, threshold = 0.5):
 
-    confidence = prediction.confidence.unsqueeze(1).expand(matching.size()).masked_fill(~matching, 0)
+    matching = ious > threshold
+    has_label = prediction.label.unsqueeze(1).expand_as(matching) == label.unsqueeze(0).expand_as(matching)
+      
+    matching = matching & has_label
+    confidence = prediction.confidence.unsqueeze(1).expand_as(matching).masked_fill(~matching, 0)
 
     _, max_ids = confidence.max(0)
     return prediction._index_select(max_ids)
 
-    # print(predefined)
-    # matching = (max_ious > threshold).nonzero().squeeze()
-    # print(prediction._index_select (matching)._sort_on('confidence'))
 
 def suppress_boxes(ious, prediction, threshold = 0.5):
     max_ious, _ = ious.max(1)
@@ -265,9 +263,12 @@ def evaluate_review(env, image, nms_params, review):
     model.eval()
     with torch.no_grad():
         prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, device=env.device, crop_boxes=env.args.crop_boxes)
+        review = review._map(torch.Tensor.to, env.device)
 
-        ious = box.iou(prediction.bbox, review.bbox.to(env.device))
-        review_predictions = select_matching(ious, prediction, threshold = nms_params.threshold)
+        ious = box.iou(prediction.bbox, review.bbox)
+
+
+        review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
 
         prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
 
@@ -340,8 +341,7 @@ def get_nms_params(args):
             detections = args.max_detections)
 
 def test_images(images, model, env, hook=None):
-    eval_test = evaluate.eval_test(model.eval(), env.encoder, loss_func = env.loss_func,
-        debug = env.debug, nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
+    eval_test = evaluate.eval_test(model.eval(), env.encoder, debug = env.debug, nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
 
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
 
@@ -492,7 +492,7 @@ def run_trainer(args, conn = None, env = None):
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), env.loss_func, env.debug, device=env.device), env.optimizer, hook=train_update)
+                    evaluate.eval_train(model.train(), env.encoder, env.debug, device=env.device), env.optimizer, hook=train_update)
         evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
 
 

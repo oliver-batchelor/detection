@@ -11,19 +11,8 @@ import math
 
 import json
 
-def load(filename):
+def load_dataset(filename):
     return to_structs(import_json(filename))
-
-combined_file = "/home/oliver/export/penguins_combined.json"
-
-datasets = struct(
-        royd = load("/home/oliver/export/penguins_royd.json"),
-        cotter = load("/home/oliver/export/penguins_cotter.json"),
-        hallett = load("/home/oliver/export/penguins_hallett.json"),
-        trees_josh = load("/home/oliver/export/trees_josh.json"),
-
-        combined = load(combined_file)
-    )
 
 def filter_used(dataset):
     return  [image for image in dataset.images if image.category in ['train', 'validate', 'test']]
@@ -47,7 +36,7 @@ def quantiles(xs):
     return np.percentile(np.array(xs), [0, 25, 50, 75, 100])
 
 
-def summary(dataset):
+def annotation_summary(dataset):
     images = filter_used(dataset)
 
     def count(image):
@@ -86,22 +75,32 @@ def summary(dataset):
         box_length=quantiles(totals.box_lengths), 
         box_area = quantiles(totals.box_areas))
 
-pprint_struct(datasets._map(summary))
+# pprint_struct(datasets._map(summary))
 
 
-# images = datasets._map(filter_used)
-val_royd = set_category_all(get_category(datasets.royd, 'validate'), 'test_royd')
-val_hallett = set_category_all(get_category(datasets.hallett, 'validate'), 'test_hallett')
-val_cotter = set_category_all(get_category(datasets.cotter, 'validate'), 'test_cotter')
+def combine_penguins(datasets):
+    val_royd = set_category_all(get_category(datasets.royd, 'validate'), 'test_royd')
+    val_hallett = set_category_all(get_category(datasets.hallett, 'validate'), 'test_hallett')
+    val_cotter = set_category_all(get_category(datasets.cotter, 'validate'), 'test_cotter')
 
-train = list(concat_lists([get_category(datasets.royd, 'train'), 
-    get_category(datasets.cotter, 'train'), 
-    get_category(datasets.hallett, 'train')]))   
+    train = list(concat_lists([get_category(datasets.royd, 'train'), 
+        get_category(datasets.cotter, 'train'), 
+        get_category(datasets.hallett, 'train')]))   
 
-# train = list(concat_lists([images.cotter, images.hallett]))
-# test = list(map(set_category('test'), images.royd))
+    combined = struct(config=datasets.royd.config, images=concat_lists([train, val_royd, val_hallett, val_cotter]))
 
-combined = struct(config=datasets.royd.config, images=concat_lists([train, val_royd, val_hallett, val_cotter]))
+    with open(combined_file, 'w') as outfile:
+        json.dump(to_dicts(combined), outfile, sort_keys=True, indent=4, separators=(',', ': '))
 
-with open(combined_file, 'w') as outfile:
-    json.dump(to_dicts(combined), outfile, sort_keys=True, indent=4, separators=(',', ': '))
+
+
+def decode_dataset(data):
+    data = to_structs(data)
+
+    config = data.config
+    classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
+
+    images = filter_none([decode_image(i, config) for i in data.images])
+    images.sort(key = lambda image: image.start)
+
+    return struct(classes = classes, images = images)

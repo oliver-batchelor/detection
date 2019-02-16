@@ -81,14 +81,14 @@ def log_predictions(class_names, histograms, log):
     log.histogram("train/negative", totals.negative)
 
 
-def prediction_stats(target, prediction, num_bins = 50):
+def prediction_stats(encoding, prediction, num_bins = 50):
 
     num_classes = prediction.classification.size(2)
     dist_histogram = torch.LongTensor(2, num_classes, num_bins)
 
     def class_histogram(i):
-        pos_mask = target.classification == i + 1
-        neg_mask = (target.classification > 0) & ~pos_mask
+        pos_mask = encoding.classification == i + 1
+        neg_mask = (encoding.classification > 0) & ~pos_mask
 
         class_pred = prediction.classification.select(2, i)
 
@@ -133,7 +133,7 @@ def summarize_stats(results, epoch, globals={}):
     print("class balances: {}".format(str(balances.tolist())))
 
 
-def train_statistics(data, loss, prediction, target, debug = struct(), device=torch.cuda.current_device()):
+def train_statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
 
     files = [(file, loss.item()) for file, loss in zip(data.id, loss.batch.detach())]
 
@@ -146,18 +146,16 @@ def train_statistics(data, loss, prediction, target, debug = struct(), device=to
 
     num_classes = prediction.classification.size(2)
 
-    if debug.predictions:
-        stats = stats._extend(predictions = prediction_stats(target, prediction))
+    # if debug.predictions:
+    #     stats = stats._extend(predictions = prediction_stats(encoding, prediction))
 
-    if debug.boxes:
-        stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
+    # if debug.boxes:
+    #     stats = stats._extend(box_counts=count_classes(encoding.classification, num_classes))
 
-    # if debug.matches:
-    #     stats = stats._extend(box_counts=count_classes(target.classification, num_classes))
 
     return stats
 
-def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_device()):
+def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_device()):
 
     def f(data):
 
@@ -165,10 +163,9 @@ def eval_train(model, loss_func, debug = struct(), device=torch.cuda.current_dev
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
-        target = data.encoding._map(Tensor.to, device)
-        loss = loss_func(target, prediction)
+        loss = encoder.loss(data.encoding, prediction, device=device)
 
-        stats = train_statistics(data, loss, prediction, target, debug, device)
+        stats = train_statistics(data, loss, prediction, data.encoding, debug, device)
         return struct(error = loss.total / image.data.size(0), statistics=stats, size = data.image.size(0))
 
     return f
@@ -304,17 +301,16 @@ def evaluate_decode(model, image, encoder, device, offset = (0, 0), crop_boxes=F
     offset = torch.Tensor([*offset, *offset]).to(device)
     return p._extend(bbox = p.bbox + offset)
 
-def test_loss(data, loss_func, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
-    target = encoding._map(Tensor.to, device)
+def test_loss(data, encoder, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
     def unsqueeze(p):
         return p.unsqueeze(0)
 
     prediction = prediction._map(unsqueeze)
-    loss = loss_func(target, prediction)
-    return train_statistics(data, loss, prediction, target, debug, device)
+    loss = encoder.loss(encoding, prediction, device=device)
+    return train_statistics(data, loss, prediction, encoding, debug, device)
 
 
-def eval_test(model, encoder, loss_func, debug=struct(), nms_params=box.nms_defaults, device=torch.cuda.current_device(), crop_boxes=False):
+def eval_test(model, encoder,  debug=struct(), nms_params=box.nms_defaults, device=torch.cuda.current_device(), crop_boxes=False):
     def f(data):
 
         model.eval()
@@ -322,11 +318,12 @@ def eval_test(model, encoder, loss_func, debug=struct(), nms_params=box.nms_defa
             raw_prediction = evaluate_raw(model, data.image, device)
             prediction = encoder.decode(data.image.squeeze(0), raw_prediction, crop_boxes=crop_boxes)
 
-            train_stats = test_loss(data, loss_func, data.encoding, raw_prediction, debug=debug, device=device)
+            train_stats = test_loss(data, encoder, data.encoding, raw_prediction, debug=debug, device=device)
 
             return struct (
                 id = data.id,
                 target = data.target._map(Tensor.to, device),
+
                 prediction = encoder.nms(prediction, nms_params=nms_params),
 
                 # for summary of loss
@@ -345,6 +342,10 @@ def percentiles(t, n=100):
 def mean(xs):
     return sum(xs) / len(xs)
 
+# def calibrate():
+    
+
+
 def compute_AP(results, class_names):
     thresholds = list(range(30, 100, 5))
 
@@ -355,8 +356,8 @@ def compute_AP(results, class_names):
     assert len(info.classes) == len(class_names)
 
     def summariseAP(ap):
-
-        mAP = {t : pr.mAP for t, pr in zip(thresholds, ap)}
+        prs = {t : pr for t, pr in zip(thresholds, ap)}
+        mAP = {t : pr.mAP for t, pr in prs.items()}
 
         return struct(
             pr30 = mAP[30],
