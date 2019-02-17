@@ -230,8 +230,14 @@ def anchor_sizes(size, aspects, scales):
     return [anchor(size * scale, ar) for scale in scales for ar in aspects]
 
 
+default_match = struct(
+    crop_boxes = False,
+    match_thresholds=(0.4, 0.5), 
+    match_nearest = 0,
+    class_weights = None
+)
 
-def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0):
+def encode(target, anchor_boxes, match_params=default_match):
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
@@ -242,19 +248,23 @@ def encode(target, anchor_boxes, match_thresholds=(0.4, 0.5), match_nearest = 0)
 
     ious = iou(point_form(anchor_boxes), target.bbox)
 
-    if match_nearest > 0:
-        top_ious, inds = ious.topk(match_nearest, dim = 0)
+    if match_params.match_nearest > 0:
+        top_ious, inds = ious.topk(match_params.match_nearest, dim = 0)
         ious = ious.scatter(0, inds, top_ious * 2)
 
     max_ious, max_ids = ious.max(1)
 
+    class_target = encode_classes(target.label, max_ious, max_ids, 
+        match_thresholds=match_params.match_thresholds, class_weights=match_params.class_weights)
+
     return struct (
         location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
-        classification = encode_classes(target.label, max_ious, max_ids, match_thresholds=match_thresholds),
+        classification = class_target
+        # weight = None
     )
 
 
-def encode_classes(label, max_ious, max_ids, match_thresholds=(0.4, 0.5)):
+def encode_classes(label, max_ious, max_ids, match_thresholds=(0.4, 0.5), class_weights=None):
 
     match_neg, match_pos = match_thresholds
     assert match_pos >= match_neg

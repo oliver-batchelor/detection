@@ -19,22 +19,24 @@ def all_eq(xs):
 
 
 
-def focal_loss_softmax(class_target, class_pred, gamma=2, alpha=0.25, eps = 1e-6):
-    #ce = F.cross_entropy(class_pred, class_target, size_average = False)
+# def focal_loss_softmax(class_target, class_pred, gamma=2, alpha=0.25, eps = 1e-6):
+#     #ce = F.cross_entropy(class_pred, class_target, size_average = False)
 
-    p = F.softmax(class_pred, 1).clamp(eps, 1 - eps)
-    p = p.gather(1, class_target.unsqueeze(1))
+#     p = F.softmax(class_pred, 1).clamp(eps, 1 - eps)
+#     p = p.gather(1, class_target.unsqueeze(1))
 
-    errs = -(1 - p).pow(gamma) * p.log()
+#     errs = -(1 - p).pow(gamma) * p.log()
 
-    return errs.sum()
+#     return errs.sum()
 
 
-def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
+def focal_loss_bce(class_target, class_pred, class_weights, gamma=2, eps=1e-6):
 
     num_classes = class_pred.size(1)
     y = one_hot(class_target.detach(), num_classes).float()
     y_inv = 1 - y
+
+    alpha = class_weights[class_target].unsqueeze(1)
 
     p_t = y * class_pred + y_inv * (1 - class_pred)
     a_t = y * alpha      + y_inv * (1 - alpha)
@@ -80,14 +82,18 @@ def focal_loss_bce(class_target, class_pred, gamma=2, alpha=0.25, eps=1e-6):
 
 #     return struct(classification = class_loss / (batch * balance), location = loc_loss / batch)
 
-def batch_focal_loss(target, prediction, balance=4, gamma=2, alpha=0.25, eps=1e-6, averaging = False):
+def batch_focal_loss(target, prediction, class_weights, balance=4, gamma=2, eps=1e-6, averaging = False):
     batch = target.location.size(0)
     num_classes = prediction.classification.size(2)
+
+    class_weights = prediction.classification.new([0.0, *class_weights])
 
     neg_mask = (target.classification == 0).unsqueeze(2).expand_as(prediction.location)
     invalid_mask = (target.classification < 0).unsqueeze(2).expand_as(prediction.classification)
     
-    class_loss = focal_loss_bce(target.classification.clamp(min = 0).view(-1), prediction.classification.view(-1, num_classes), gamma=gamma, alpha=alpha)
+    class_loss = focal_loss_bce(target.classification.clamp(min = 0).view(-1), 
+        prediction.classification.view(-1, num_classes), class_weights=class_weights, gamma=gamma)
+
     loc_loss = F.smooth_l1_loss(prediction.location.view(-1), target.location.view(-1), reduction='none')
 
     class_loss = class_loss.view_as(prediction.classification).masked_fill_(invalid_mask, 0)

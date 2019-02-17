@@ -43,13 +43,17 @@ def count_classes(label, num_classes):
     )
 
 
+def count_instances(label, num_classes):
+    return label.view(-1).bincount(minlength = num_classes + 1)
 
-def log_counts(class_names, counts, log):
+
+
+def log_counts(name, class_names, counts, log):
     assert len(class_names) == counts.classes.size(0)
 
     class_counts = {"class_{}".format(c):count for c, count in zip(class_names, counts.classes) }
 
-    log.scalars("train/boxes",
+    log.scalars(name + "/boxes",
         struct(ignored = counts.ignored, positive = counts.positive, **class_counts))
 
 
@@ -62,20 +66,20 @@ def batch_stats(batch):
     return batch.size(0) * struct(mean=flat.mean(0).cpu(), std=flat.std(0).cpu())
 
 
-def log_predictions(class_names, histograms, log):
+def log_predictions(name, class_names, histograms, log):
 
     assert len(histograms) == len(class_names)
     totals = reduce(operator.add, histograms)
 
     if len(class_names)  > 1:
         for i in range(0, len(class_names)):
-            name = class_names[i]
+            class_name = class_names[i]
 
-            log.histogram("train/positive", histograms[i].positive,  run = name)
-            log.histogram("train/negative", histograms[i].negative,  run = name)
+            log.histogram(name + "/" + class_name + "/positive", histograms[i].positive,  run = name)
+            log.histogram(name + "/" + class_name + "/negative", histograms[i].negative,  run = name)
 
-    log.histogram("train/positive", totals.positive)
-    log.histogram("train/negative", totals.negative)
+    log.histogram(name + "/positive", totals.positive)
+    log.histogram(name + "/negative", totals.negative)
 
 
 def prediction_stats(encoding, prediction, num_bins = 50):
@@ -121,6 +125,7 @@ def sum_results(results):
 def summarize_stats(results, epoch, globals={}):
     avg = mean_results(results)
     counts = avg.box_counts
+    
 
     print ("image: mean = {}, std = {}".format(str(avg.image.mean), str(avg.image.std)))
     print("instances: {:.2f}, anchors {:.2f}, anchors/instance {:.2f}, positive {:.2f},  ignored {:.2f}, negative {:.2f} "
@@ -133,24 +138,27 @@ def summarize_stats(results, epoch, globals={}):
 def train_statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
 
     files = [(file, loss.item()) for file, loss in zip(data.id, loss.batch.detach())]
+    num_classes = prediction.classification.size(2)
 
     stats = struct(error=loss.total.item(),
         loss = loss.parts._map(Tensor.item),
         size = data.image.size(0),
         instances=data.lengths.sum().item(),
+        class_instances=count_instances(data.target.label, num_classes),
         files = files
     )
 
-    num_classes = prediction.classification.size(2)
+    if debug.predictions:
+        stats = stats._extend(predictions = prediction_stats(encoding, prediction))
 
-    # if debug.predictions:
-    #     stats = stats._extend(predictions = prediction_stats(encoding, prediction))
+    if debug.boxes:
+        stats = stats._extend(
+            boxes=count_classes(encoding.classification, num_classes),
+        )
 
-    # if debug.boxes:
-    #     stats = stats._extend(box_counts=count_classes(encoding.classification, num_classes))
-
-
+        
     return stats
+
 
 def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_device()):
 
@@ -167,26 +175,31 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
 
     return f
 
-def summarize_train_stats(results, classes, log):
-    totals = sum_results(results)
-    avg = totals._subset('loss', 'instances', 'error') / totals.size
 
-    log.scalars("loss", avg.loss._extend(total = avg.error))
+def summarize_train_stats(name, results, classes, log):
+    totals = sum_results(results)
+    avg = totals._subset('loss', 'instances', 'error', 'boxes') / totals.size
+
+    log.scalars(name + "/loss", avg.loss._extend(total = avg.error))
 
     class_names = [c['name']['name'] for c in classes]
 
-    if 'box_counts' in avg:
-        log_counts(class_names, avg.box_counts,  log)
+    class_counts = {"class_{}".format(c):count for c, count in zip(class_names, totals.class_instances) }
+    log.scalars(name + "/instances",
+        struct(total = totals.instances, **class_counts))
 
-    if 'predictions' in avg:
-        log_predictions(class_names, totals.predictions,  log)
+    if 'boxes' in totals:
+        log_counts(name, class_names, totals.boxes / totals.size,  log)
+
+    if 'predictions' in totals:
+        log_predictions(name, class_names, totals.predictions, log)
 
     loss_str = " + ".join(["{} : {:.3f}".format(k, v) for k, v in sorted(avg.loss.items())])
     return ('n: {}, instances : {:.2f}, loss: {} = {:.3f}'.format(totals.size, avg.instances, loss_str, avg.error))
 
 
 def summarize_train(name, results, classes, epoch, log):
-    summary = summarize_train_stats(results, classes, log)
+    summary = summarize_train_stats(name, results, classes, log)
     print('{} epoch: {} {}'.format(name, epoch, summary))
 
 
@@ -381,7 +394,7 @@ def summarize_test(name, results, classes, epoch, log):
 
     mAP_strs ='mAP@30: {:.2f}, 50: {:.2f}, 75: {:.2f}'.format(total.mAP[30], total.mAP[50], total.mAP[75])
 
-    train_summary = summarize_train_stats(pluck('train_stats', results), classes, log)
+    train_summary = summarize_train_stats(name, pluck('train_stats', results), classes, log)
     print(name + ' epoch: {} AP: {:.2f} mAP@[0.3-0.95]: [{}] {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
 
     log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))

@@ -485,10 +485,7 @@ def run_trainer(args, conn = None, env = None):
         env.log.set_step(env.epoch)
         model = env.model.to(env.device)
 
-        # print("estimating statistics {}:".format(env.epoch))
-        # stats = trainer.test(env.dataset.sample_train(args, env.encoder), evaluate.eval_stats(env.dataset.classes, device=device))
-        # evaluate.summarize_stats(stats, env.epoch)
-
+        env.log.scalars("dataset", Struct(env.dataset.count_categories()))
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),

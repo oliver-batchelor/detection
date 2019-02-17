@@ -35,13 +35,14 @@ def image_size(inputs):
     return inputs
 
 
-
 class Encoder:
-    def __init__(self, start_layer, box_sizes):
+    def __init__(self, start_layer, box_sizes, class_weights):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
         self.start_layer = start_layer
+
+        self.class_weights=class_weights
 
 
     def anchors(self, input_size, crop_boxes=False):
@@ -59,9 +60,9 @@ class Encoder:
 
 
 
-    def encode(self, inputs, target, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
+    def encode(self, inputs, target, match_params=box.default_match):
         inputs = image_size(inputs)
-        return box.encode(target, self.anchors(inputs, crop_boxes), match_thresholds, match_nearest)
+        return box.encode(target, self.anchors(inputs, match_params.crop_boxes), match_params=match_params)
 
 
     def decode(self, inputs, prediction, crop_boxes=False):
@@ -80,9 +81,9 @@ class Encoder:
 
        
     def loss(self, encoding, prediction, device):
-
+ 
        target = encoding._map(Tensor.to, device)
-       return batch_focal_loss(target, prediction, averaging=False)
+       return batch_focal_loss(target, prediction, averaging=False, class_weights=self.class_weights)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
@@ -348,8 +349,10 @@ def create_fcn(args, dataset_args):
     model = FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, 
                 num_classes=num_classes, features=args.features, shared=args.shared, square=args.square, separate=args.separate)
 
+    class_weights = [c.name.weighting for c in dataset_args.classes]
+
     encoder = SeparateEncoder(args.first, box_sizes, num_classes=num_classes)  \
-        if args.separate else Encoder(args.first, box_sizes)
+        if args.separate else Encoder(args.first, box_sizes, class_weights=class_weights)
 
     return model, encoder
     
@@ -357,7 +360,6 @@ def create_fcn(args, dataset_args):
 models = {
     'fcn' : struct(create=create_fcn, parameters=parameters)
   }
-
 
 
 if __name__ == '__main__':

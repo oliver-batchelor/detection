@@ -262,9 +262,9 @@ def load_testing(args, images, collate_fn=collate_batch):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
-def encode_target(encoder, crop_boxes=False, match_thresholds=(0.4, 0.5), match_nearest = 0):
+def encode_target(encoder, match_params=box.default_match):
     def f(d):
-        encoding = encoder.encode(d.image, d.target, crop_boxes=crop_boxes, match_thresholds=match_thresholds, match_nearest = match_nearest)
+        encoding = encoder.encode(d.image, d.target, match_params=match_params)
 
         return struct(
             image   = d.image,
@@ -280,8 +280,14 @@ def identity(x):
 
 
 def encode_with(args, encoder=None):
-    return identity if encoder is None else  encode_target(encoder, crop_boxes=args.crop_boxes, 
-        match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)    
+    match_params = struct(
+        crop_boxes=args.crop_boxes, 
+        match_thresholds=(args.neg_match, args.pos_match), 
+        match_nearest = args.top_anchors,
+        class_weights = None
+    )
+
+    return identity if encoder is None else  encode_target(encoder, match_params=match_params)    
 
 
 def transform_training(args, encoder=None):
@@ -373,10 +379,18 @@ class DetectionDataset:
     def mark_evalated(self, files, net_id):
         for k in files:
             assert k in self.images, "mark_evaluated, invalid file: " + k
-
             self.images[k].evaluated = net_id
 
   
+    def count_categories(self):
+        categories = {}
+        for image in self.images.values():
+            count = categories.get(image.category, 0)
+            categories[image.category] = count + 1
+
+        return categories
+                
+
     @property
     def train_images(self):
         return self.get_images('train')

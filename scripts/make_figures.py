@@ -1,4 +1,4 @@
-import scripts.history
+from scripts.history import history_statistics
 from scripts.datasets import load_dataset, annotation_summary
 
 from os import path
@@ -11,8 +11,9 @@ def load_all(datasets, base_path):
     def load(filename):
         dataset = load_dataset(path.join(base_path, filename))
         summary = annotation_summary(dataset)
-
-        return struct (summary = summary)
+        
+        history = history_statistics(dataset.history, dataset.config) if 'history' in dataset else None
+        return struct (summary = summary, history = history)
 
     loaded = datasets._map(load)
 

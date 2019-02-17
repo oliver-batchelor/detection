@@ -35,13 +35,15 @@ def set_category_all(images, category):
 def quantiles(xs):
     return np.percentile(np.array(xs), [0, 25, 50, 75, 100])
 
+def image_annotations(image):
+    annotations = [decode_obj(ann) for ann in image.annotations]
+    return [obj for obj in annotations if obj is not None]
 
 def annotation_summary(dataset):
     images = filter_used(dataset)
 
     def count(image):
-        annotations = [decode_obj(ann) for ann in image.annotations]
-        annotations = [obj for obj in annotations if obj is not None]
+        annotations = image_annotations(image)
 
         n = len(annotations)
         categories = struct (

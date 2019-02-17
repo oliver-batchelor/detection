@@ -95,12 +95,13 @@ def extract_sessions(history, config):
             open.detections = detections
 
         elif action.tag  == 'close':
-            time = (t - open.start).total_seconds()
+            if len(open.actions) > 0:
+                time = (t - open.start).total_seconds()
 
-            entry = struct(action = 'close')._extend(time = time, duration = duration)
-            open.actions.append(entry)
+                entry = struct(action = 'close')._extend(time = time, duration = duration)
+                open.actions.append(entry)
+                sessions.append(open._extend(duration = time))
 
-            sessions.append(open._extend(duration = time))
             open = None
         else:
             time = (t - open.start).total_seconds()
@@ -129,28 +130,52 @@ def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
 
-def history_statistics(history, config):
+def history_summary(history):
+
+
+
+def extract_image(image, config):
+    target = annotate.decode_image(image).target
+
+    history = image.history
     history = list(reversed(history))
 
     sessions = extract_sessions(history, config)
-    sessions = drop_while(lambda session: session.detections is None, sessions)
+    # sessions = drop_while(lambda session: session.detections is None, sessions)
 
-    if len(sessions) > 0:
+    if len(sessions) > 0):
+        return struct (
+            filename = image.filename,
+            start = sessions[0].start,
+            target = target,
+            sessions = sessions)
+        
 
-        detections = sessions[0].detections
-        session = join_history(sessions)
 
-        test = struct(prediction = session.detections._sort_on('confidence'), target = image.target)    
-        compute_mAP = evaluate.mAP_classes([test], num_classes = len(config.classes))
+    
+        # detections = sessions[0].detections
+        # session = join_history(sessions)
 
-        pr = compute_mAP(0.5)        
+        # test = struct(prediction = session.detections._sort_on('confidence'), target = image.target)    
+        # compute_mAP = evaluate.mAP_classes([test], num_classes = len(dataset.config.classes))
 
-        return struct(num_actions = len(session.actions), duration = session.duration, 
-            start = session.start,
-            durations = action_durations(actions),
-            mAP50 = pr.total.mAP)
+        # pr = compute_mAP(0.5)        
+
+        # return struct(
+        #     filename = image.filename,
+        #     num_actions = len(session.actions), duration = session.duration, 
+        #     start = session.start,
+        #     durations = action_durations(actions),
+        #     mAP50 = pr.total.mAP)
             
 
+def extract_histories(dataset):
+    images = [extract_image(image.history, dataset.config) for image in  dataset.images]
+
+    return images
+
+
+# def summary
 
 
 # def plot_maps(series, filename, title='title'):
