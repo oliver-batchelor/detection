@@ -56,7 +56,7 @@ def area_under_curve(xs, ys):
 
 
 
-def compute_mAP(matches, num_target, eps=1e-7):
+def compute_mAP(matches, confidence, num_target, eps=1e-7):
 
     false_positives = (1 - matches).cumsum(0)
     true_positives = matches.cumsum(0)
@@ -67,18 +67,21 @@ def compute_mAP(matches, num_target, eps=1e-7):
     recall = bookend(0.0, recall, 1.0)
     precision = rev_cummax(bookend(1.0, precision, 0.0))
 
-    false_positives = bookend(0, false_positives, 0)
-    true_positives = bookend(num_target, true_positives, 0)
+    false_positives = bookend(0, false_positives)
+    true_positives = bookend(0, true_positives)
 
     return struct(
         recall = recall, 
         precision = precision, 
 
+        confidence = bookend(1.0, confidence, 0.0),
+
         false_positives = false_positives,
         true_positives = true_positives,
 
         false_negatives = num_target - true_positives,  
-        true_negatives = true_positives.clone().zero_(),
+
+        n = num_target,
 
         mAP = area_under_curve(recall, precision))
 
@@ -139,10 +142,10 @@ def mAP_classes(image_pairs, num_classes, eps=1e-7):
         matches = torch.cat([match(threshold) for match in matchers])[order]
         def compute_class(i):
             inds = [(predicted_label == i).nonzero().squeeze(1)]
-            return compute_mAP(matches[inds], num_targets[i].item())
+            return compute_mAP(matches[inds], confidence[inds].cpu(), num_targets[i].item())
 
         return struct(
-            total = compute_mAP(matches,  target_label.size(0)), 
+            total = compute_mAP(matches, confidence.cpu(),  target_label.size(0)), 
             classes = [compute_class(i) for i in range(0, num_classes)]
         )
 

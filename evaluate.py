@@ -12,7 +12,7 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import struct, tensor, show_shapes, show_shapes_info, Histogram, ZipList, transpose_structs, transpose_lists, pluck
+from tools import struct, tensor, show_shapes, show_shapes_info, Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct
 
 import detection.box as box
 from detection import evaluate
@@ -352,8 +352,48 @@ def percentiles(t, n=100):
 def mean(xs):
     return sum(xs) / len(xs)
 
-# def calibrate():
+
+def condense_pr(pr, n=100): 
+    positions = [0]
+    size = pr.false_positives.size(0)
+    i = 0
+
+    for t in range(0, n):
+        while pr.recall[i] < (t / n) and i < size:
+            i = i + 1
+
+        if i < size:
+            positions.append(i)
+
+    t = torch.LongTensor(positions)
+    return struct (
+        precision = pr.precision[t],
+        confidence = pr.confidence[t],
+
+        false_positives = pr.false_positives[t],
+        false_negatives = pr.false_negatives[t],
+        true_positives  = pr.true_positives[t]
+    )
     
+
+def compute_thresholds(pr):
+    thresholds = [-20, -10, -5, 0, 5, 10, 20]
+    f1 = 2 * (pr.precision * pr.recall) / (pr.precision + pr.recall)
+
+    def find_threshold(t):
+        diff = pr.false_positives - pr.false_negatives
+        p = int((t / 100) * pr.n)
+
+        zeros = (diff + p == 0).nonzero()
+        i = 0 if zeros.size(0) == 0 else zeros[0]
+
+        return struct(
+            confidence = pr.confidence[i],          
+            pr = (pr.precision[i], pr.recall[i])
+        )
+
+    d = {t : find_threshold(t) for t in thresholds}
+    return Struct(d)
 
 
 def compute_AP(results, class_names):
@@ -375,7 +415,10 @@ def compute_AP(results, class_names):
             pr75 = mAP[75],
 
             mAP = mAP,
-            AP = mean([ap for k, ap in mAP.items() if k >= 50])
+            AP = mean([ap for k, ap in mAP.items() if k >= 50]),
+
+            thresholds = compute_thresholds(prs[50]),
+            pr = condense_pr(prs[50])
         )
 
     return struct (
@@ -398,6 +441,8 @@ def summarize_test(name, results, classes, epoch, log):
     print(name + ' epoch: {} AP: {:.2f} mAP@[0.3-0.95]: [{}] {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
 
     log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))
+
+    log.scalars(name + "/thresholds", total.thresholds._map(lambda x: x.confidence))
 
     if len(classes) > 1:
         aps = {**class_aps, 'total':total}
