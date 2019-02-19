@@ -75,8 +75,8 @@ def log_predictions(name, class_names, histograms, log):
         for i in range(0, len(class_names)):
             class_name = class_names[i]
 
-            log.histogram(name + "/" + class_name + "/positive", histograms[i].positive,  run = name)
-            log.histogram(name + "/" + class_name + "/negative", histograms[i].negative,  run = name)
+            log.histogram(name + "/" + class_name + "/positive", histograms[i].positive)
+            log.histogram(name + "/" + class_name + "/negative", histograms[i].negative)
 
     log.histogram(name + "/positive", totals.positive)
     log.histogram(name + "/negative", totals.negative)
@@ -388,8 +388,8 @@ def compute_thresholds(pr):
         i = 0 if zeros.size(0) == 0 else zeros[0]
 
         return struct(
-            confidence = pr.confidence[i],          
-            pr = (pr.precision[i], pr.recall[i])
+            confidence = pr.confidence[i].item(),          
+            pr = (pr.precision[i].item(), pr.recall[i].item())
         )
 
     d = {t : find_threshold(t) for t in thresholds}
@@ -410,15 +410,11 @@ def compute_AP(results, class_names):
         mAP = {t : pr.mAP for t, pr in prs.items()}
 
         return struct(
-            pr30 = mAP[30],
-            pr50 = mAP[50],
-            pr75 = mAP[75],
-
             mAP = mAP,
             AP = mean([ap for k, ap in mAP.items() if k >= 50]),
 
             thresholds = compute_thresholds(prs[50]),
-            pr = condense_pr(prs[50])
+            pr50 = condense_pr(prs[50])
         )
 
     return struct (
@@ -447,12 +443,13 @@ def summarize_test(name, results, classes, epoch, log):
     if len(classes) > 1:
         aps = {**class_aps, 'total':total}
 
-        log.scalars("mAP50", {name : ap.mAP[50] * 100.0 for name, ap in aps.items()})
-        log.scalars("mAP75", {name : ap.mAP[75] * 100.0 for name, ap in aps.items()})
+        for k, ap in aps.items():
+            log.pr_curve(name + "/pr/" + k, ap.pr50)
 
-        log.scalars("AP", {name : ap.AP * 100.0 for name, ap in aps.items()})
+        log.scalars(name + "/mAP50", {k : ap.mAP[50] * 100.0 for k, ap in aps.items()})
+        log.scalars(name + "/mAP75", {k : ap.mAP[75] * 100.0 for k, ap in aps.items()})
 
+        log.scalars("AP", {k : ap.AP * 100.0 for k, ap in aps.items()})
 
-    # log.pr_curve("pr@50", summary.curves[0])
 
     return total.AP

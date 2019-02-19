@@ -182,7 +182,6 @@ def initialise(config, dataset, args):
     # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
 
     device = torch.cuda.current_device()
-
     tests = args.tests.split(",")
 
     return struct(**locals())
@@ -482,7 +481,7 @@ def run_trainer(args, conn = None, env = None):
         if env == None or len(env.dataset.train_images) == 0:
             return None
 
-        env.log.set_step(env.epoch)
+        env.log.begin_step(env.epoch)
         model = env.model.to(env.device)
 
         env.log.scalars("dataset", Struct(env.dataset.count_categories()))
@@ -545,7 +544,7 @@ def run_trainer(args, conn = None, env = None):
             if env.pause_time == 0:
                 raise UserCommand('pause')
 
-        env.log.flush()
+        env.log.flush_step()
 
 
     def review_all():
@@ -610,6 +609,9 @@ def run_main():
     else:
         config, dataset = load_dataset(args)
         env = initialise(config, dataset, args)
+
+        #Subsequent initialisations want to load
+        args.no_load = False
 
 
     try:
