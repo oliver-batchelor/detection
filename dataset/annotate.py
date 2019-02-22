@@ -99,7 +99,7 @@ def class_mapping(config):
 def decode_image(data, config):
     target = decode_objects(data, class_mapping(config))
 
-    evaluated = data.evaluated if 'evaluated' in data else None
+    evaluated = data.detections.networkId if data.detections else None
 
     return struct(
         id = data.imageFile,

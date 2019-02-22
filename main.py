@@ -27,6 +27,8 @@ from tools.model import tools
 from tools.parameters import default_parameters, get_choice
 from tools import table, struct, logger, show_shapes, to_structs, Struct
 
+from tools.logger import EpochLogger
+
 import connection
 import trainer
 import evaluate
@@ -96,10 +98,12 @@ def load_state_partial(model, src):
 
 def load_state(model, info):
     load_state_partial(model, info.state)
-    return struct(model = model, score = info.score, epoch = info.epoch)
+    return struct(model = model, 
+        thresholds=info.thresholds if 'thresholds' in info else None, 
+        score = info.score, epoch = info.epoch)
 
 def new_state(model):
-    return struct (model = model, score = 0.0, epoch = 0)
+    return struct (model = model, score = 0.0, epoch = 0, thresholds = None)
 
 def try_load(model_path):
     try:
@@ -146,6 +150,7 @@ def load_checkpoint(model_path, model, model_args, args):
 
 
 def initialise(config, dataset, args):
+
     data_root = config.root
 
     model_args = struct (
@@ -171,9 +176,9 @@ def initialise(config, dataset, args):
     set_bn_momentum(model, args.bn_momentum)
 
     best, current, resumed = load_checkpoint(model_path, model, model_args, args)
-    model, epoch = current.model, current.epoch
+    model, epoch = current.model, current.epoch + 1
 
-    pause_time = args.auto_pause
+    pause_time = args.train_epochs
     running_average = [] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
@@ -206,6 +211,7 @@ def encode_shape(box, config):
 
 def make_detections(env, predictions):
     classes = env.dataset.classes
+    thresholds = env.best.thresholds
 
     def detection(p):
         object_class = classes[p.label]
@@ -218,21 +224,31 @@ def make_detections(env, predictions):
             match = p.match.item() if 'match' in p else None
         )
     detections = list(map(detection, predictions))
+    total_confidence = torch.FloatTensor([d.confidence for d in detections])
 
     def score(ds):
-        return sum(d.confidence ** 2 for d in ds)
+        return (total_confidence ** 2).sum().item()
+
+    def count(class_id, t):
+        confidence = torch.FloatTensor([d.confidence for d in detections if d.label == class_id])
+        return {k : (t, (confidence > t).sum().item()) for k, t in t.items()} 
+
+    counts = {k: count(k, t)  for k, t in thresholds.items()} \
+        if thresholds is not None else None
 
     stats = struct (
         score   = score(detections),
-        classes = {c.id : score([d for d in detections if d.label == c.id]) for c in classes}
+        classes = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
+        counts =  counts
     )
 
-    return struct(detections = detections, networkId = (env.run, env.best.epoch), stats = stats)
+    return struct(instances = detections, networkId = (env.run, env.best.epoch), stats = stats)
 
 
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
-    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, nms_params=nms_params, device=env.device, crop_boxes=env.args.crop_boxes)
+    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
+        nms_params=nms_params, device=env.device, crop_boxes=env.args.crop_boxes)
     return make_detections(env, list(detections._sequence()))
 
 
@@ -261,7 +277,8 @@ def evaluate_review(env, image, nms_params, review):
 
     model.eval()
     with torch.no_grad():
-        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, device=env.device, crop_boxes=env.args.crop_boxes)
+        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
+            device=env.device, crop_boxes=env.args.crop_boxes)
         review = review._map(torch.Tensor.to, env.device)
 
         ious = box.iou(prediction.bbox, review.bbox)
@@ -340,23 +357,46 @@ def get_nms_params(args):
             detections = args.max_detections)
 
 def test_images(images, model, env, hook=None):
-    eval_test = evaluate.eval_test(model.eval(), env.encoder, debug = env.debug, nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
+    eval_test = evaluate.eval_test(model.eval(), env.encoder, debug = env.debug, 
+        nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
 
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
 
 
-def run_testing(name, images, model, env, hook=None):
-    score = 0
+def run_testing(name, images, model, env, hook=None, thresholds=None):
     if len(images) > 0:
         print("{} {}:".format(name, env.epoch))
         results = test_images(images, model, env,  hook)
 
-        score = evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, log=env.log)
-    return score
+        return evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, 
+            log=EpochLogger(env.log, env.epoch), thresholds=thresholds)
+
+    return 0, None
+
+
+def log_counts(env, image, stats):
+    step = sum([n for cat, n in env.dataset.count_categories().items() if cat != 'new'], 0)
+
+    class_counts = image.target.label.bincount(minlength = len(env.dataset.classes))
+
+    class_names = {str(c.id) : c.name.name for c in env.dataset.classes}
+    class_counts = {str(c.id) : count for c, count in zip(env.dataset.classes, class_counts)}
+
+    if stats.counts is not None:
+        for k, levels in stats.counts.items():
+            
+            if k in class_counts:
+                counts = levels._map(lambda c: c[1])
+                rel = counts._map(lambda n: n - class_counts[k])
+
+                env.log.scalars("count/" + class_names[k], counts._extend(truth = class_counts[k]), step=step)
+                env.log.scalars("count/relative/" + class_names[k], rel, step=step)
+    
 
 
 def run_detections(model, env, hook=None, n=None):
     images = least_recently_evaluated(env.dataset.new_images, n = n)
+
 
     if len(images) > 0:
         results = test_images(images, model, env, hook)
@@ -414,23 +454,34 @@ def run_trainer(args, conn = None, env = None):
                 config, dataset = init_dataset(data)
                 env = initialise(config, dataset, args)
 
+                args.no_load = False # For subsequent initialisations
+
                 if not args.paused:
                     raise UserCommand('resume')
-
-            elif tag == 'update':
+            
+            elif tag == 'import':
                 file, image_data = data
 
                 image = decode_image(image_data, env.config)
                 env.dataset.update_image(image)
 
+            elif tag == 'update':
+                file, method, image_data = data
+
+                image = decode_image(image_data, env.config)
+                env.dataset.update_image(image)
+
+                if method.tag == 'new' and image_data.detections is not None:
+                    log_counts(env, image, image_data.detections.stats)
+
                 if image.category == 'validate':
                     env.best.score = 0
 
                 if env.pause_time == 0:
-                    env.pause_time = env.args.auto_pause
+                    env.pause_time = env.args.train_epochs
                     raise UserCommand('resume')
                 else:
-                    env.pause_time = env.args.auto_pause
+                    env.pause_time = env.args.train_epochs
 
             elif tag == 'detect':
                 reqId, file, annotations, nms_params = data
@@ -447,6 +498,7 @@ def run_trainer(args, conn = None, env = None):
 
             else:
                 send_command('error', "unknown command: " + tag)
+                print ("unknown command: " + tag)
 
 
         except (JSONDecodeError) as err:
@@ -481,15 +533,18 @@ def run_trainer(args, conn = None, env = None):
         if env == None or len(env.dataset.train_images) == 0:
             return None
 
-        env.log.begin_step(env.epoch)
+        log = EpochLogger(env.log, env.epoch)
+        
         model = env.model.to(env.device)
 
-        env.log.scalars("dataset", Struct(env.dataset.count_categories()))
+        log.scalars("dataset", Struct(env.dataset.count_categories()))
 
         print("training {}:".format(env.epoch))
         train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
-                    evaluate.eval_train(model.train(), env.encoder, env.debug, device=env.device), env.optimizer, hook=train_update)
-        evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=env.log)
+            evaluate.eval_train(model.train(), env.encoder, env.debug, 
+            device=env.device), env.optimizer, hook=train_update)
+
+        evaluate.summarize_train("train", train_stats, env.dataset.classes, env.epoch, log=log)
 
 
         send_command('training', report_training(train_stats))
@@ -509,23 +564,23 @@ def run_trainer(args, conn = None, env = None):
                 evaluate.eval_forward(model.train(), device=env.device))
 
 
-        score = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
-
+        score, thresholds = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
 
         is_best = score >= env.best.score
         if is_best:
-            env.best = struct(model = copy.deepcopy(model), score = score, epoch = env.epoch)
+            env.best = struct(model = copy.deepcopy(model), score = score, thresholds = thresholds, epoch = env.epoch)
 
         if is_averaging:
             load_flattened(model, training_params) # Restore parameters
 
-        current = struct(state = model.state_dict(), epoch = env.epoch, score = score)
-        best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, score = env.best.score)
+        current = struct(state = model.state_dict(), epoch = env.epoch, thresholds = thresholds, score = score)
+        best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, thresholds = env.best.thresholds, score = env.best.score)
 
         # run_testing('test', env.dataset.test_images, model, env, hook=update('test'))
         
         for test_name in env.tests:
-            run_testing(test_name, env.dataset.get_images(test_name), model, env, hook=update('test'))
+            run_testing(test_name, env.dataset.get_images(test_name), model, env, 
+                hook=update('test'), thresholds = env.best.thresholds)
         
 
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
@@ -538,13 +593,16 @@ def run_trainer(args, conn = None, env = None):
             results = run_detections(model, env, hook=update('detect'), n=args.detections)
             send_command('detections', results)
 
+        # if env.best.epoch < env.epoch - args.validation_pause:
+        #     raise UserCommand('pause')
+
         if env.pause_time is not None:
             env.pause_time = env.pause_time - 1
 
             if env.pause_time == 0:
                 raise UserCommand('pause')
 
-        env.log.flush_step()
+        log.flush()
 
 
     def review_all():
@@ -610,8 +668,6 @@ def run_main():
         config, dataset = load_dataset(args)
         env = initialise(config, dataset, args)
 
-        #Subsequent initialisations want to load
-        args.no_load = False
 
 
     try:

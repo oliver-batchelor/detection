@@ -5,8 +5,10 @@ from os import path
 
 import argparse
 
-from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict
+from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_lists, pluck, count_dict, partition_by
 from detection import evaluate
+
+from scripts.datasets import quantiles
 
 from evaluate import compute_AP
 
@@ -53,8 +55,11 @@ def decode_action(action):
 
             return struct(action='add')
         elif edit.tag == 'delete_parts':
-
             return struct(action='delete', ids = edit.contents)
+
+        elif edit.tag == 'clear_all':
+            return struct(action='delete')
+
         elif edit.tag == 'detection':
 
             return struct(action='detection')
@@ -72,8 +77,8 @@ def extract_sessions(history, config):
 
     sessions = []
 
-    def new(t, detections = None):
-        return struct(start = t, detections = None, actions = [])
+    def new(t, type, detections = None):
+        return struct(start = t, detections = detections, actions = [], type = type)
 
     def last_time(session):
         if len(session.actions) > 0:
@@ -86,24 +91,29 @@ def extract_sessions(history, config):
     for (datestr, action) in history:
         t = date.parse(datestr)
 
-        if open is None:
-            open = new(t)
-    
-        if action.tag == 'open_new' or action.tag == 'open_review':
-            detections = action.contents
-            detections = annotate.decode_detections(action.contents, annotate.class_mapping(config))
-            open.detections = detections
+        if action.tag == 'open_new' or action.tag == 'open_review' or action.tag == "open":
+            assert open is None, "open without close!"
+
+            detections = annotate.decode_detections(action.contents, annotate.class_mapping(config)) \
+                if 'contents' in action else None
+
+            open = new(t, action.tag, detections)
 
         elif action.tag  == 'close':
-            if len(open.actions) > 0:
+            if open is not None:
+
                 time = (t - open.start).total_seconds()
 
-                entry = struct(action = 'close')._extend(time = time, duration = duration)
-                open.actions.append(entry)
+                # entry = struct(action = 'close')._extend(time = time)
+                # open.actions.append(entry)
                 sessions.append(open._extend(duration = time))
 
             open = None
         else:
+            # assert open is not None, "close without open!"
+            if open is None:
+                open = new(t, None, 'open_new')
+
             time = (t - open.start).total_seconds()
             duration = time - last_time(open)
 
@@ -130,26 +140,65 @@ def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
 
+
+
+def image_summary(image):
+
+    return struct (
+        actions = image.actions,
+        n_actions = len(image.actions)
+
+    )
+
+
 def history_summary(history):
+    
+    summaries = [image_summary(image) for image in history]
+
+    totals = sum_lists(summaries)
+    n = len(history)
+
+
+
+    actions_count = count_dict(pluck('action', totals.actions))
+    durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
+
+    return struct (
+        n_actions = quantiles(pluck('n_actions', summaries)),
+        actions_count = actions_count
+    )
+
 
 
 
 def extract_image(image, config):
-    target = annotate.decode_image(image).target
+    target = annotate.decode_image(image, config).target
+
+    # print(image.imageFile, len(image.annotations), target.label.size(0))
 
     history = image.history
     history = list(reversed(history))
 
     sessions = extract_sessions(history, config)
-    # sessions = drop_while(lambda session: session.detections is None, sessions)
+   
+    if len(sessions) > 0:
+        session = join_history(sessions)      
 
-    if len(sessions) > 0):
         return struct (
-            filename = image.filename,
-            start = sessions[0].start,
-            target = target,
-            sessions = sessions)
+            filename = image.imageFile,
+            start = session.start,
+            detections = sessions[0].detections,
+            duration = session.duration,
+            actions = session.actions,
+            target = target)
         
+
+def extract_histories(dataset):
+    images = [extract_image(image, dataset.config) for image in dataset.images]
+
+    images = sorted(filter_none(images), key = lambda image: image.start)
+
+    return images
 
 
     
@@ -169,10 +218,7 @@ def extract_image(image, config):
         #     mAP50 = pr.total.mAP)
             
 
-def extract_histories(dataset):
-    images = [extract_image(image.history, dataset.config) for image in  dataset.images]
 
-    return images
 
 
 # def summary

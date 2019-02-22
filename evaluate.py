@@ -182,7 +182,7 @@ def summarize_train_stats(name, results, classes, log):
 
     log.scalars(name + "/loss", avg.loss._extend(total = avg.error))
 
-    class_names = [c['name']['name'] for c in classes]
+    class_names = [c.name.name for c in classes]
 
     class_counts = {"class_{}".format(c):count for c, count in zip(class_names, totals.class_instances) }
     log.scalars(name + "/instances",
@@ -366,6 +366,7 @@ def condense_pr(pr, n=100):
             positions.append(i)
 
     t = torch.LongTensor(positions)
+
     return struct (
         precision = pr.precision[t],
         confidence = pr.confidence[t],
@@ -377,7 +378,7 @@ def condense_pr(pr, n=100):
     
 
 def compute_thresholds(pr):
-    thresholds = [-20, -10, -5, 0, 5, 10, 20]
+    
     f1 = 2 * (pr.precision * pr.recall) / (pr.precision + pr.recall)
 
     def find_threshold(t):
@@ -387,26 +388,31 @@ def compute_thresholds(pr):
         zeros = (diff + p == 0).nonzero()
         i = 0 if zeros.size(0) == 0 else zeros[0]
 
-        return struct(
-            confidence = pr.confidence[i].item(),          
-            pr = (pr.precision[i].item(), pr.recall[i].item())
-        )
+        return pr.confidence[i].item()
 
-    d = {t : find_threshold(t) for t in thresholds}
-    return Struct(d)
+    margin = 10
+
+    return struct (
+        lower   = find_threshold(-margin), 
+        middle  = find_threshold(0), 
+        upper   = find_threshold(margin)
+    )
+
+def threshold_count(confidence, thresholds):
+    return {k : (confidence > t).sum().item() for k, t in thresholds.items()}
 
 
-def compute_AP(results, class_names):
-    thresholds = list(range(30, 100, 5))
+def compute_AP(results, class_ids, conf_thresholds=None):
+    iou_thresholds = list(range(30, 100, 5))
 
-    compute_mAP = evaluate.mAP_classes(results, num_classes = len(class_names))
-    info = transpose_structs ([compute_mAP(t / 100) for t in thresholds])
+    compute_mAP = evaluate.mAP_classes(results, num_classes = len(class_ids))
+    info = transpose_structs ([compute_mAP(t / 100) for t in iou_thresholds])
 
     info.classes = transpose_lists(info.classes)
-    assert len(info.classes) == len(class_names)
+    assert len(info.classes) == len(class_ids)
 
     def summariseAP(ap):
-        prs = {t : pr for t, pr in zip(thresholds, ap)}
+        prs = {t : pr for t, pr in zip(iou_thresholds, ap)}
         mAP = {t : pr.mAP for t, pr in prs.items()}
 
         return struct(
@@ -414,21 +420,25 @@ def compute_AP(results, class_names):
             AP = mean([ap for k, ap in mAP.items() if k >= 50]),
 
             thresholds = compute_thresholds(prs[50]),
-            pr50 = condense_pr(prs[50])
+            pr50 = condense_pr(prs[50]),
+
+            counts = threshold_count(prs[50].confidence, conf_thresholds) \
+                if conf_thresholds is not None else None
         )
 
     return struct (
         total   = summariseAP(info.total),
-        classes = {name : summariseAP(ap) for name, ap in zip(class_names, info.classes)}
+        classes = {name : summariseAP(ap) for name, ap in zip(class_ids, info.classes)}
     )
 
 
 
-def summarize_test(name, results, classes, epoch, log):
+def summarize_test(name, results, classes, epoch, log, thresholds=None):
 
-    class_names = [c['name']['name'] for c in classes]
+    class_names = {c.id : c.name.name for c in classes}
+    class_ids = [c.id for c in classes]
 
-    summary = compute_AP(results, class_names)
+    summary = compute_AP(results, class_ids, thresholds)
     total, class_aps = summary.total, summary.classes
 
     mAP_strs ='mAP@30: {:.2f}, 50: {:.2f}, 75: {:.2f}'.format(total.mAP[30], total.mAP[50], total.mAP[75])
@@ -438,18 +448,24 @@ def summarize_test(name, results, classes, epoch, log):
 
     log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))
 
-    log.scalars(name + "/thresholds", total.thresholds._map(lambda x: x.confidence))
+    for k, ap in class_aps.items():
+        if ap.counts is not None:
+            log.scalars(name + "/counts/" + class_names[k], ap.counts)
+
+        log.scalars(name + "/thresholds/" + class_names[k], ap.thresholds)
+
+
+    aps = {class_names[k] : ap for k, ap in class_aps.items()}
+    aps['total'] = total
+
+    for k, ap in aps.items():
+        log.pr_curve(name + "/pr/" + k, ap.pr50)
 
     if len(classes) > 1:
-        aps = {**class_aps, 'total':total}
-
-        for k, ap in aps.items():
-            log.pr_curve(name + "/pr/" + k, ap.pr50)
-
         log.scalars(name + "/mAP50", {k : ap.mAP[50] * 100.0 for k, ap in aps.items()})
         log.scalars(name + "/mAP75", {k : ap.mAP[75] * 100.0 for k, ap in aps.items()})
 
         log.scalars("AP", {k : ap.AP * 100.0 for k, ap in aps.items()})
 
 
-    return total.AP
+    return total.AP, {k : ap.thresholds for k, ap in class_aps.items()}

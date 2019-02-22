@@ -18,19 +18,18 @@ train_parameters = struct (
     average_start  = param(2,    help='start weight averaging after epochs'),
     average_window = param(1,    help='use a window of size for averaging, 1 = no averaging'),
 
-
     seed            = param(1,      help='random seed'),
     batch_size      = param(8,     help='input batch size for training'),
-
 
     reviews      = param(0,     help = 'number of reviews conducted per epoch'),
     detections   = param(0,     help = 'number of detections conducted per epoch on new images'),
 
     tests = param('test', help='comma separated list of test sets to use'),
     
-    
-    epoch_size      = param(1024,   help='epoch size for training'),
-    auto_pause      = param(64, type='int', help='automatically pause training after epochs'),
+    epoch_size          = param(1024, help='epoch size for training'),
+    validation_pause    = param(8,    type='int', help='automatically pause training if validation does not improve after epochs'),
+
+    train_epochs      = param(64, type='int', help='automatically pause training after epochs'),
     
     paused          = param(False, help='start trainer paused'),
 

@@ -1,4 +1,4 @@
-from scripts.history import history_statistics
+from scripts.history import history_summary, extract_histories
 from scripts.datasets import load_dataset, annotation_summary
 
 from os import path
@@ -10,9 +10,16 @@ def load_all(datasets, base_path):
 
     def load(filename):
         dataset = load_dataset(path.join(base_path, filename))
+
+        dataset.images = [image for image in dataset.images if len(image.history) > 0 
+            and (image.category == 'train' or image.category == "validate")]
+
         summary = annotation_summary(dataset)
         
-        history = history_statistics(dataset.history, dataset.config) if 'history' in dataset else None
+        history = extract_histories(dataset) 
+        summary = summary._merge(history_summary(history))
+
+
         return struct (summary = summary, history = history)
 
     loaded = datasets._map(load)
@@ -23,12 +30,12 @@ def load_all(datasets, base_path):
     
 datasets = struct(
     penguins = 'penguins.json',
+    trees_josh = 'trees_josh.json',
     # scallops = 'scallops.json',
-    trees   = 'trees_josh.json',
-    #hallett = 'penguins_hallett.json',
-    #cotter = 'penguins_cotter.json',
-    #royds = 'penguins_royds.json',
-    combined = 'penguins_combined.json',
+    # hallett = 'penguins_hallett.json',
+    # cotter = 'penguins_cotter.json',
+    # royds = 'penguins_royds.json',
+    # combined = 'penguins_combined.json',
 )
 
 base_path = '/home/oliver/storage/export/'
