@@ -394,9 +394,8 @@ def log_counts(env, image, stats):
     
 
 
-def run_detections(model, env, hook=None, n=None):
-    images = least_recently_evaluated(env.dataset.new_images, n = n)
 
+def run_detections(model, env, images, hook=None):
 
     if len(images) > 0:
         results = test_images(images, model, env, hook)
@@ -589,8 +588,10 @@ def run_trainer(args, conn = None, env = None):
         send_command("checkpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
 
-        if args.detections > 0 and conn:
-            results = run_detections(model, env, hook=update('detect'), n=args.detections)
+        if (args.detections > 0 or args.detect_all) and conn:
+            detect_images = env.dataset.get_images() if args.detect_all else least_recently_evaluated(env.dataset.new_images, n = args.detections)
+
+            results = run_detections(model, env, detect_images, hook=update('detect'))
             send_command('detections', results)
 
         # if env.best.epoch < env.epoch - args.validation_pause:

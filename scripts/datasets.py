@@ -6,16 +6,21 @@ from dataset.annotate import decode_obj
 
 import operator
 from functools import reduce
+from datetime import datetime
+import dateutil.parser as date
 
 import math
 
 import json
+import os
+from os import path
 
 def load_dataset(filename):
     return to_structs(import_json(filename))
 
-def filter_used(dataset):
-    return  [image for image in dataset.images if image.category in ['train', 'validate', 'test']]
+def filter_categories(dataset, categories=['train', 'validate', 'test']):
+    return  [image for image in dataset.images if image.category in categories]
+
 
 
 def get_category(dataset, category):
@@ -40,7 +45,7 @@ def image_annotations(image):
     return [obj for obj in annotations if obj is not None]
 
 def annotation_summary(dataset):
-    images = filter_used(dataset)
+    images = filter_categories(dataset)
 
     def count(image):
         annotations = image_annotations(image)
@@ -105,4 +110,25 @@ def decode_dataset(data):
     images = filter_none([decode_image(i, config) for i in data.images])
     images.sort(key = lambda image: image.start)
 
-    return struct(classes = classes, images = images)
+    return struct(classes = classes, images = images, config=config)
+
+def image_date(filename):
+    cmd = 'identify -format "%[EXIF:DateTimeOriginal]" ' + filename
+    datestr = os.popen(cmd).read()
+    
+    return datetime.strptime(datestr.strip(), '%Y:%m:%d %H:%M:%S')
+
+
+def get_counts(dataset):
+    images = filter_categories(dataset, ['train', 'validate', 'new'])
+
+    def count(image):
+        n = len(image.annotations)
+        t = date.parse(image.imageCreation)
+
+        counts = image.detections.stats.counts["0"]._map(lambda x: x[0])
+        
+        return struct(imageFile = image.imageFile, time = t, count = n, category = image.category, counts = counts)
+
+    return list(map(count, images))
+    

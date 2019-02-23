@@ -372,8 +372,8 @@ class DetectionDataset:
     def update_image(self, image):
         self.images[image.id] = image
 
-    def get_images(self, k):
-        return [image for image in self.images.values() if image.category == k] 
+    def get_images(self, k=None):
+        return [image for image in self.images.values() if k is None or (image.category == k)] 
 
 
     def mark_evalated(self, files, net_id):

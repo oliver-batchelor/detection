@@ -33,7 +33,6 @@ def decode_action(action):
 
         if edit.tag == 'confirm_detection':
 
-
             return struct(action='confirm')
         elif edit.tag == 'transform_parts':
 
@@ -60,9 +59,6 @@ def decode_action(action):
         elif edit.tag == 'clear_all':
             return struct(action='delete')
 
-        elif edit.tag == 'detection':
-
-            return struct(action='detection')
         else:
             assert False, "unknown edit type: " + edit.tag
 
@@ -70,13 +66,14 @@ def decode_action(action):
         assert False, "unknown action type: " + action.tag
 
 
+# def merge_confirms(actions):
+
 
 
 
 def extract_sessions(history, config):
 
     sessions = []
-
     def new(t, type, detections = None):
         return struct(start = t, detections = detections, actions = [], type = type)
 
@@ -91,19 +88,21 @@ def extract_sessions(history, config):
     for (datestr, action) in history:
         t = date.parse(datestr)
 
-        if action.tag == 'open_new' or action.tag == 'open_review' or action.tag == "open":
+        if action.tag == action.tag == "open":
             assert open is None, "open without close!"
 
-            detections = annotate.decode_detections(action.contents, annotate.class_mapping(config)) \
-                if 'contents' in action else None
+            open = action.contents.openType
+            detections = None
 
-            open = new(t, action.tag, detections)
+            if open.tag == 'new':
+                detections = annotate.decode_detections(open.contents.instances, annotate.class_mapping(config)) 
+                
+            open = new(t, open.tag, detections)
 
         elif action.tag  == 'close':
             if open is not None:
 
                 time = (t - open.start).total_seconds()
-
                 # entry = struct(action = 'close')._extend(time = time)
                 # open.actions.append(entry)
                 sessions.append(open._extend(duration = time))
@@ -139,16 +138,20 @@ def join_history(sessions):
 def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
-
-
-
 def image_summary(image):
+    action_durations = map(lambda action: min(action.duration, 10.0), image.actions)
+    
+    if len(image.actions) > 0:
+        print(image.duration, sum(action_durations))
 
     return struct (
         actions = image.actions,
-        n_actions = len(image.actions)
-
+        n_actions = len(image.actions), 
+        duration = image.duration
     )
+
+
+
 
 
 def history_summary(history):
@@ -159,7 +162,6 @@ def history_summary(history):
     n = len(history)
 
 
-
     actions_count = count_dict(pluck('action', totals.actions))
     durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
 
@@ -167,9 +169,6 @@ def history_summary(history):
         n_actions = quantiles(pluck('n_actions', summaries)),
         actions_count = actions_count
     )
-
-
-
 
 def extract_image(image, config):
     target = annotate.decode_image(image, config).target

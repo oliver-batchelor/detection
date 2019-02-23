@@ -30,7 +30,7 @@ def load_all(datasets, base_path):
     
 datasets = struct(
     penguins = 'penguins.json',
-    trees_josh = 'trees_josh.json',
+    # trees_josh = 'trees_josh.json',
     # scallops = 'scallops.json',
     # hallett = 'penguins_hallett.json',
     # cotter = 'penguins_cotter.json',
