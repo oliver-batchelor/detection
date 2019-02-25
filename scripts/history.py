@@ -103,8 +103,9 @@ def extract_sessions(history, config):
             if open is not None:
 
                 time = (t - open.start).total_seconds()
-                # entry = struct(action = 'close')._extend(time = time)
-                # open.actions.append(entry)
+                entry = struct(action = 'close')._extend(time = time)
+                open.actions.append(entry)
+              
                 sessions.append(open._extend(duration = time))
 
             open = None
@@ -139,7 +140,7 @@ def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
 def image_summary(image):
-    action_durations = map(lambda action: min(action.duration, 10.0), image.actions)
+    action_durations = map(lambda action: min(action.duration, 20.0), image.actions)
     
     if len(image.actions) > 0:
         print(image.duration, sum(action_durations))
@@ -149,8 +150,6 @@ def image_summary(image):
         n_actions = len(image.actions), 
         duration = image.duration
     )
-
-
 
 
 

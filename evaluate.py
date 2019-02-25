@@ -411,9 +411,13 @@ def compute_AP(results, class_ids, conf_thresholds=None):
     info.classes = transpose_lists(info.classes)
     assert len(info.classes) == len(class_ids)
 
-    def summariseAP(ap):
+    def summariseAP(ap, class_id = None):
         prs = {t : pr for t, pr in zip(iou_thresholds, ap)}
         mAP = {t : pr.mAP for t, pr in prs.items()}
+
+        counts = threshold_count(prs[50].confidence, conf_thresholds[class_id]) \
+            if (None not in [conf_thresholds, class_id]) else None
+            
 
         return struct(
             mAP = mAP,
@@ -422,13 +426,12 @@ def compute_AP(results, class_ids, conf_thresholds=None):
             thresholds = compute_thresholds(prs[50]),
             pr50 = condense_pr(prs[50]),
 
-            counts = threshold_count(prs[50].confidence, conf_thresholds) \
-                if conf_thresholds is not None else None
+            counts = counts
         )
 
     return struct (
         total   = summariseAP(info.total),
-        classes = {name : summariseAP(ap) for name, ap in zip(class_ids, info.classes)}
+        classes = {id : summariseAP(ap, id) for id, ap in zip(class_ids, info.classes)}
     )
 
 

@@ -126,9 +126,16 @@ def get_counts(dataset):
         n = len(image.annotations)
         t = date.parse(image.imageCreation)
 
-        counts = image.detections.stats.counts["0"]._map(lambda x: x[0])
-        
-        return struct(imageFile = image.imageFile, time = t, count = n, category = image.category, counts = counts)
+        def f(entry):
+            threshold, count = entry
+            return count
 
-    return list(map(count, images))
-    
+        counts = image.detections.stats.counts["0"]._map(f)
+
+        
+        return struct(imageFile = image.imageFile, time = t, count = n, category = image.category, estimate = counts)
+
+    counts = list(map(count, images))
+    return sorted(counts, key = lambda count: count.time)
+
+
