@@ -399,10 +399,20 @@ def compute_thresholds(pr):
     )
 
 def threshold_count(confidence, thresholds):
-    return {k : (confidence > t).sum().item() for k, t in thresholds.items()}
+    d = {k : (confidence > t).sum().item() for k, t in thresholds.items()}
+    return Struct(d)
 
 
-def compute_AP(results, class_ids, conf_thresholds=None):
+
+def count_target_classes(image_pairs, class_ids):
+    labels = torch.cat([i.target.label for i in image_pairs])
+    counts = labels.bincount(minlength = len(class_ids))
+
+    return {k : count for k, count in zip(class_ids, counts)}
+
+def compute_AP(results, classes, conf_thresholds=None):
+
+    class_ids = pluck('id', classes)
     iou_thresholds = list(range(30, 100, 5))
 
     compute_mAP = evaluate.mAP_classes(results, num_classes = len(class_ids))
@@ -411,14 +421,18 @@ def compute_AP(results, class_ids, conf_thresholds=None):
     info.classes = transpose_lists(info.classes)
     assert len(info.classes) == len(class_ids)
 
+    target_counts = count_target_classes(results, class_ids)
+
     def summariseAP(ap, class_id = None):
         prs = {t : pr for t, pr in zip(iou_thresholds, ap)}
         mAP = {t : pr.mAP for t, pr in prs.items()}
 
-        counts = threshold_count(prs[50].confidence, conf_thresholds[class_id]) \
-            if (None not in [conf_thresholds, class_id]) else None
-            
+        counts = None
 
+        if None not in [conf_thresholds, class_id]:
+            counts = threshold_count(prs[50].confidence, conf_thresholds[class_id]
+                )._extend(truth = target_counts.get(class_id))
+            
         return struct(
             mAP = mAP,
             AP = mean([ap for k, ap in mAP.items() if k >= 50]),
@@ -439,9 +453,8 @@ def compute_AP(results, class_ids, conf_thresholds=None):
 def summarize_test(name, results, classes, epoch, log, thresholds=None):
 
     class_names = {c.id : c.name.name for c in classes}
-    class_ids = [c.id for c in classes]
 
-    summary = compute_AP(results, class_ids, thresholds)
+    summary = compute_AP(results, classes, thresholds)
     total, class_aps = summary.total, summary.classes
 
     mAP_strs ='mAP@30: {:.2f}, 50: {:.2f}, 75: {:.2f}'.format(total.mAP[30], total.mAP[50], total.mAP[75])
@@ -468,7 +481,7 @@ def summarize_test(name, results, classes, epoch, log, thresholds=None):
         log.scalars(name + "/mAP50", {k : ap.mAP[50] * 100.0 for k, ap in aps.items()})
         log.scalars(name + "/mAP75", {k : ap.mAP[75] * 100.0 for k, ap in aps.items()})
 
-        log.scalars("AP", {k : ap.AP * 100.0 for k, ap in aps.items()})
+        log.scalars(name + "/AP", {k : ap.AP * 100.0 for k, ap in aps.items()})
 
 
     return total.AP, {k : ap.thresholds for k, ap in class_aps.items()}

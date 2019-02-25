@@ -125,6 +125,8 @@ def mAP(images, threshold=0.5, eps=1e-7):
     return mAP_at(images, eps)(threshold)
 
 
+
+
 def mAP_classes(image_pairs, num_classes, eps=1e-7):
     confidence    = torch.cat([i.prediction.confidence for i in image_pairs])
     confidence, order = confidence.sort(0, descending=True)    
