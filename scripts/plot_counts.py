@@ -7,6 +7,10 @@ import tools.window as window
 
 import datetime
 import random
+
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -16,81 +20,78 @@ import torch
 base_path = '/home/oliver/storage/export/'
 
 
-def smooth(size=11):
+def subset(text, image_counts):
+    return [count for count in image_counts if text in count.image_file]
+
+def plot_estimate(images, colour):
+    estimates = transpose_structs(pluck('estimate', images))
+    times = pluck('time', images)
+
+    mask = torch.ByteTensor([1 if i.category != 'discard' else 0 for i in images])
+
     def f(xs):
-        return window.rolling_window(torch.Tensor(xs), window=size).mean(1).numpy()
-    return f
+        return window.masked_mean(torch.Tensor(xs), mask=mask, window=5, clamp=False).numpy()
+
+    # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
+    estimates = estimates._map(f)
+    
+    plt.plot(times, estimates.middle, colour)
+    plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
+
+def plot_points(images, marker, key=lambda i: i.truth):
+    truth = list(map(key, images))
+    times = pluck('time', images)
+
+    plt.plot(times, truth, marker, markersize=8)
 
 
-def load(filename):
-    dataset = load_dataset(path.join(base_path, filename))
-
-    image_counts = get_counts(dataset)
-
-    def subset(text):
-        return [count for count in image_counts if text in count.image_file]
-
-    def plot_estimate(images, colour, label):
-        estimates = transpose_structs(pluck('estimate', images))
-        times = pluck('time', images)
-
-        # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
-        estimates = estimates._map(smooth(5))
-      
-        
-        plt.plot(times, estimates.middle, colour, label='estimate ' + label)
-        plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
-
-    def plot_truth(images, marker, label):
-        truth = pluck('truth', images)
-        times = pluck('time', images)
-
-        plt.plot(times, truth, marker, label=label)
+def pick(images, classes):
+    return [i for i in images if i.category in classes]
 
 
-    def plot_subset(images, colour, label):
+def plot_subset(images, colour):
 
-        images = [i for i in images if i.category != 'discard']
-        plot_estimate(images, colour, label)
+    plot_estimate(images, colour)
 
-        train = [i for i in images if i.category == 'train']
-        plot_truth(train, colour + '+', label = 'train ' + label)
-
-        validate = [i for i in images if i.category == 'validate']
-        plot_truth(validate, colour + '.', label = 'validate ' + label)
+    plot_points(pick(images, ['test']), colour + 'D')
+    plot_points(pick(images, ['train']), colour + '+')
+    plot_points(pick(images, ['validate']), colour + 'o')
+    plot_points(pick(images, ['discard']), colour + 'X')
 
 
-            
-    cam_c  = subset("CamC")
-    cam_b  = subset("CamB")
+def plot_runs(*runs):
+  
+    def run_legend(run):
+        return Line2D([0], [0], color=run.colour, label=run.label)
+
+    legend = list(map(run_legend, runs)) + [
+        Line2D([0], [0], marker='+', color='black', linestyle='None', label='train'),
+        Line2D([0], [0], marker='X', color='black', linestyle='None', label='discard'),
+
+        Line2D([0], [0], marker='o', color='black', linestyle='None', label='validate'),
+        Line2D([0], [0], marker='D', color='black', linestyle='None', label='test'),
+    ]
+
+    fig, ax = plt.subplots()
 
     plt.xlabel("Date")
     plt.ylabel("Count")
 
     plt.gcf().autofmt_xdate()
 
+    for run in runs:
+        plot_subset(run.data, run.colour)
     
-    plot_subset(cam_b, 'y', 'b')
-    plot_subset(cam_c, 'g', 'c')
 
-
-    plt.legend(loc='upper left')
-
+    ax.legend(handles=legend, loc='upper left')
     plt.show()
 
 
 
-    # pl.fill_between(x, y-error, y+error)
+def load(filename):
+    dataset = load_dataset(path.join(base_path, filename))
+    image_counts = get_counts(dataset)
 
-    # def plot_counts(counts):
-        
-
-
-    # def plot_validation(counts):
-
-    # plt.scatter(, y)
-
-    
 
 
 
@@ -99,8 +100,18 @@ datasets = struct(
 )
 
 if __name__ == '__main__':
-         
+      
 
     loaded = datasets._map(load)
+
+    cam_c  = subset("CamB", image_counts)
+    cam_b  = subset("CamC", image_counts)
+
+    plot_runs(
+        struct(data = cam_b, color='g', label="camera b"),
+        struct(data = cam_c, color='y', label="camera c" )
+    )
+
+
 
     # plot_counts(path.join())

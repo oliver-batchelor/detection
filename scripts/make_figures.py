@@ -19,7 +19,6 @@ def load_all(datasets, base_path):
         history = extract_histories(dataset) 
         summary = summary._merge(history_summary(history))
 
-
         return struct (summary = summary, history = history)
 
     loaded = datasets._map(load)
@@ -30,8 +29,9 @@ def load_all(datasets, base_path):
     
 datasets = struct(
     penguins = 'penguins.json',
-    # trees_josh = 'trees_josh.json',
-    # scallops = 'scallops.json',
+    trees_josh = 'trees_josh.json',
+    scallops = 'scallops.json'
+
     # hallett = 'penguins_hallett.json',
     # cotter = 'penguins_cotter.json',
     # royds = 'penguins_royds.json',

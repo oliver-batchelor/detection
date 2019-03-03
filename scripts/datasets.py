@@ -119,19 +119,24 @@ def image_date(filename):
     return datetime.strptime(datestr.strip(), '%Y:%m:%d %H:%M:%S')
 
 
-def get_counts(dataset):
+def class_annotations(image, class_id):
+    return [ann for ann in image.annotations if ann.label == class_id]
+    
+
+def get_counts(dataset, class_id=None):
     images = filter_categories(dataset, ['train', 'validate', 'new', 'discard'])
 
     def count(image):
-        n = len(image.annotations)
+        n =  len(image.annotations) if class_id is None else len(class_annotations(image, class_id))
+
         t = date.parse(image.image_creation)
 
         def f(entry):
             threshold, count = entry
             return count
 
-        counts = image.detections.stats.counts._map(f)
-
+        counts = image.detections.stats.counts._map(f) if class_id is None \
+            else image.detections.stats.class_counts[class_id]._map(f)
         
         return struct(image_file = image.image_file, time = t, truth = n, category = image.category, estimate = counts)
 

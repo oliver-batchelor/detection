@@ -87,7 +87,7 @@ def extract_sessions(history, config):
         if action.tag == action.tag == "open":
             assert open is None, "open without close!"
 
-            open = action.contents.openType
+            open = action.contents.open_type
             detections = None
 
             if open.tag == 'new':

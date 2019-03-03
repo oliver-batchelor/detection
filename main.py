@@ -209,6 +209,15 @@ def encode_shape(box, config):
 
     assert False, "unsupported shape config: " + config.shape
 
+
+def weight_counts(weight):
+    def f(counts):
+       return counts[1] * weight
+
+    return f
+
+
+
 def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
@@ -240,9 +249,7 @@ def make_detections(env, predictions):
 
     if thresholds is not None:
         class_counts = {k: count(k, t)  for k, t in thresholds.items()}
-        counts = tools.sum_list([class_map[k].count_weight * counts for k, counts in class_counts.items()])
-
-        
+        counts = tools.sum_list([counts._map(weight_counts(class_map[k].count_weight)) for k, counts in class_counts.items()])
 
     stats = struct (
         score   = score(detections),
@@ -428,6 +435,8 @@ def run_detections(model, env, images, hook=None, variation_window=None):
 
             for v, d in zip(variation, detections):
                 d.stats.frame_variation = v
+
+        print(images[0].id, detections[0].stats)
 
         return {image.id : d for image, d in zip(images, detections)}
     
@@ -628,6 +637,7 @@ def run_trainer(args, conn = None, env = None):
             detect_images = env.dataset.get_images()
 
             results = run_detections(model, env, detect_images, hook=update('detect'), variation_window=args.variation_window)
+
             send_command('detections', results)
 
 
