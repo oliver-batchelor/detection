@@ -120,20 +120,20 @@ def image_date(filename):
 
 
 def get_counts(dataset):
-    images = filter_categories(dataset, ['train', 'validate', 'new'])
+    images = filter_categories(dataset, ['train', 'validate', 'new', 'discard'])
 
     def count(image):
         n = len(image.annotations)
-        t = date.parse(image.imageCreation)
+        t = date.parse(image.image_creation)
 
         def f(entry):
             threshold, count = entry
             return count
 
-        counts = image.detections.stats.counts["0"]._map(f)
+        counts = image.detections.stats.counts._map(f)
 
         
-        return struct(imageFile = image.imageFile, time = t, count = n, category = image.category, estimate = counts)
+        return struct(image_file = image.image_file, time = t, truth = n, category = image.category, estimate = counts)
 
     counts = list(map(count, images))
     return sorted(counts, key = lambda count: count.time)

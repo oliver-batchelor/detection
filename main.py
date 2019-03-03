@@ -22,10 +22,11 @@ from dataset.detection import least_recently_evaluated
 from detection.models import models
 from detection import box
 
-from tools.model import tools
+import tools.model.tools as model_tools
+import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, show_shapes, to_structs, Struct
+from tools import table, struct, logger, show_shapes, to_structs, Struct, window
 
 from tools.logger import EpochLogger
 
@@ -117,7 +118,7 @@ def load_model(model_path):
 
     args = loaded.args
 
-    model, encoder = tools.create(models, args.model, args.dataset)
+    model, encoder = model_tools.create(models, args.model, args.dataset)
     best = load_state(model, loaded.best)
 
     return model, encoder, args
@@ -171,7 +172,7 @@ def initialise(config, dataset, args):
     output_path, log = logger.make_experiment(data_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
 
-    model, encoder = tools.create(models, model_args.model, model_args.dataset)
+    model, encoder = model_tools.create(models, model_args.model, model_args.dataset)
 
     set_bn_momentum(model, args.bn_momentum)
 
@@ -208,10 +209,10 @@ def encode_shape(box, config):
 
     assert False, "unsupported shape config: " + config.shape
 
-
 def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
+    class_map = {c.id: c.name for c in classes}
 
     def detection(p):
         object_class = classes[p.label]
@@ -231,18 +232,26 @@ def make_detections(env, predictions):
 
     def count(class_id, t):
         confidence = torch.FloatTensor([d.confidence for d in detections if d.label == class_id])
-        return {k : (t, (confidence > t).sum().item()) for k, t in t.items()} 
+        levels = {k : (t, (confidence > t).sum().item()) for k, t in t.items()}
+        return Struct(levels)
 
-    counts = {k: count(k, t)  for k, t in thresholds.items()} \
-        if thresholds is not None else None
+    class_counts = None
+    counts = None
+
+    if thresholds is not None:
+        class_counts = {k: count(k, t)  for k, t in thresholds.items()}
+        counts = tools.sum_list([class_map[k].count_weight * counts for k, counts in class_counts.items()])
+
+        
 
     stats = struct (
         score   = score(detections),
-        classes = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
-        counts =  counts
-    )
+        class_score = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
+        counts = counts,
+        class_counts =  class_counts
+    ) 
 
-    return struct(instances = detections, networkId = (env.run, env.best.epoch), stats = stats)
+    return struct(instances = detections, network_id = (env.run, env.best.epoch), stats = stats)
 
 
 def evaluate_detections(env, image, nms_params):
@@ -382,8 +391,8 @@ def log_counts(env, image, stats):
     class_names = {str(c.id) : c.name.name for c in env.dataset.classes}
     class_counts = {str(c.id) : count for c, count in zip(env.dataset.classes, class_counts)}
 
-    if stats.counts is not None:
-        for k, levels in stats.counts.items():
+    if stats.class_counts is not None:
+        for k, levels in stats.class_counts.items():
             
             if k in class_counts:
                 counts = levels._map(lambda c: c[1])
@@ -394,14 +403,35 @@ def log_counts(env, image, stats):
     
 
 
+def class_counts(detection, class_id):
+    t, count = detection.stats.class_counts[class_id].middle
+    return count
 
-def run_detections(model, env, images, hook=None):
+def is_masked(image):
+    return (0 if image.category in ['discard'] else 1)
 
+def run_detections(model, env, images, hook=None, variation_window=None):
     if len(images) > 0:
+        images = sorted(images, key = lambda img: img.key)
         results = test_images(images, model, env, hook)
 
-        # print(show_shapes(results[0].prediction))
-        return {result.id[0] : make_detections(env, table_list(result.prediction)) for result in results}
+        mask = torch.ByteTensor([is_masked(image) for image in images])
+        detections = [make_detections(env, table_list(result.prediction)) for result in results]
+
+        if variation_window is not None:
+            variation = torch.Tensor(len(images)).zero_()
+            for c in env.dataset.classes:
+                counts = [class_counts(detection, c.id) for detection in detections]
+                counts = torch.Tensor(counts)
+
+                variation += window.masked_diff(counts, mask=mask, window=variation_window)
+
+            for v, d in zip(variation, detections):
+                d.stats.frame_variation = v
+
+        return {image.id : d for image, d in zip(images, detections)}
+    
+
 
 def add_multimap(m, k, x):
     xs = m[k] if k in m else []
@@ -588,11 +618,18 @@ def run_trainer(args, conn = None, env = None):
         send_command("checkpoint", ((env.run, env.epoch), score, is_best))
         env.epoch = env.epoch + 1
 
-        if (args.detections > 0 or args.detect_all) and conn:
-            detect_images = env.dataset.get_images() if args.detect_all else least_recently_evaluated(env.dataset.new_images, n = args.detections)
+        if (args.detections > 0) and conn:
+            detect_images = least_recently_evaluated(env.dataset.new_images, n = args.detections)
 
             results = run_detections(model, env, detect_images, hook=update('detect'))
             send_command('detections', results)
+
+        if args.detect_all and conn:
+            detect_images = env.dataset.get_images()
+
+            results = run_detections(model, env, detect_images, hook=update('detect'), variation_window=args.variation_window)
+            send_command('detections', results)
+
 
         # if env.best.epoch < env.epoch - args.validation_pause:
         #     raise UserCommand('pause')

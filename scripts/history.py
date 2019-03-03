@@ -5,7 +5,7 @@ from os import path
 
 import argparse
 
-from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_lists, pluck, count_dict, partition_by
+from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_list, pluck, count_dict, partition_by
 from detection import evaluate
 
 from scripts.datasets import quantiles
@@ -66,10 +66,6 @@ def decode_action(action):
         assert False, "unknown action type: " + action.tag
 
 
-# def merge_confirms(actions):
-
-
-
 
 def extract_sessions(history, config):
 
@@ -103,7 +99,7 @@ def extract_sessions(history, config):
             if open is not None:
 
                 time = (t - open.start).total_seconds()
-                entry = struct(action = 'close')._extend(time = time)
+                entry = struct(action = 'close')._extend(time = min(time, 20))
                 open.actions.append(entry)
               
                 sessions.append(open._extend(duration = time))
@@ -140,7 +136,7 @@ def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
 def image_summary(image):
-    action_durations = map(lambda action: min(action.duration, 20.0), image.actions)
+    action_durations = map(lambda action: action.duration, image.actions)
     
     if len(image.actions) > 0:
         print(image.duration, sum(action_durations))
@@ -157,9 +153,8 @@ def history_summary(history):
     
     summaries = [image_summary(image) for image in history]
 
-    totals = sum_lists(summaries)
+    totals = sum_list(summaries)
     n = len(history)
-
 
     actions_count = count_dict(pluck('action', totals.actions))
     durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
@@ -172,8 +167,6 @@ def history_summary(history):
 def extract_image(image, config):
     target = annotate.decode_image(image, config).target
 
-    # print(image.imageFile, len(image.annotations), target.label.size(0))
-
     history = image.history
     history = list(reversed(history))
 
@@ -183,7 +176,7 @@ def extract_image(image, config):
         session = join_history(sessions)      
 
         return struct (
-            filename = image.imageFile,
+            filename = image.image_file,
             start = session.start,
             detections = sessions[0].detections,
             duration = session.duration,
@@ -193,12 +186,14 @@ def extract_image(image, config):
 
 def extract_histories(dataset):
     images = [extract_image(image, dataset.config) for image in dataset.images]
-
     images = sorted(filter_none(images), key = lambda image: image.start)
 
     return images
 
 
+# def extract_replay(dataset):
+
+    
     
         # detections = sessions[0].detections
         # session = join_history(sessions)

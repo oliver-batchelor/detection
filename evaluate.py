@@ -48,7 +48,7 @@ def count_instances(label, num_classes):
 
 
 
-def log_counts(name, class_names, counts, log):
+def log_boxes(name, class_names, counts, log):
     assert len(class_names) == counts.classes.size(0)
 
     class_counts = {"class_{}".format(c):count for c, count in zip(class_names, counts.classes) }
@@ -88,7 +88,7 @@ def prediction_stats(encoding, prediction, num_bins = 50):
     dist_histogram = torch.LongTensor(2, num_classes, num_bins)
 
     def class_histogram(i):
-        pos_mask = encoding.classification == i + 1
+        pos_mask = encoding.classification == (i + 1)
         neg_mask = (encoding.classification > 0) & ~pos_mask
 
         class_pred = prediction.classification.select(2, i)
@@ -189,7 +189,7 @@ def summarize_train_stats(name, results, classes, log):
         struct(total = totals.instances, **class_counts))
 
     if 'boxes' in totals:
-        log_counts(name, class_names, totals.boxes / totals.size,  log)
+        log_boxes(name, class_names, totals.boxes / totals.size,  log)
 
     if 'predictions' in totals:
         log_predictions(name, class_names, totals.predictions, log)
@@ -427,10 +427,10 @@ def compute_AP(results, classes, conf_thresholds=None):
         prs = {t : pr for t, pr in zip(iou_thresholds, ap)}
         mAP = {t : pr.mAP for t, pr in prs.items()}
 
-        counts = None
+        class_counts = None
 
         if None not in [conf_thresholds, class_id]:
-            counts = threshold_count(prs[50].confidence, conf_thresholds[class_id]
+            class_counts = threshold_count(prs[50].confidence, conf_thresholds[class_id]
                 )._extend(truth = target_counts.get(class_id))
             
         return struct(
@@ -440,7 +440,7 @@ def compute_AP(results, classes, conf_thresholds=None):
             thresholds = compute_thresholds(prs[50]),
             pr50 = condense_pr(prs[50]),
 
-            counts = counts
+            class_counts = class_counts
         )
 
     return struct (
@@ -465,8 +465,8 @@ def summarize_test(name, results, classes, epoch, log, thresholds=None):
     log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))
 
     for k, ap in class_aps.items():
-        if ap.counts is not None:
-            log.scalars(name + "/counts/" + class_names[k], ap.counts)
+        if ap.class_counts is not None:
+            log.scalars(name + "/counts/" + class_names[k], ap.class_counts)
 
         log.scalars(name + "/thresholds/" + class_names[k], ap.thresholds)
 

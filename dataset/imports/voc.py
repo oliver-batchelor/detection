@@ -92,7 +92,7 @@ def import_subset(input_path, year, subset, target_category, class_map):
 
         size = root['size']
         return {
-            'imageFile':file_name,
+            'image_file':file_name,
             'imageSize':[size['width'], size['height']],
             'category':target_category,
             'annotations':annotations

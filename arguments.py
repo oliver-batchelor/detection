@@ -25,6 +25,7 @@ train_parameters = struct (
     detections   = param(0,     help = 'number of detections conducted per epoch on new images'),
 
     detect_all   = param(False,     help = 'run detections for all images'),
+    variation_window = param(2,         help = 'size of window to compute frame variation with'),
 
 
     tests = param('test', help='comma separated list of test sets to use'),

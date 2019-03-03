@@ -2,6 +2,8 @@ from scripts.datasets import load_dataset, get_counts
 from os import path
 
 from tools import *
+import tools.window as window
+
 
 import datetime
 import random
@@ -13,52 +15,11 @@ import torch
 
 base_path = '/home/oliver/storage/export/'
 
-def differences(xs):
-    return [t2 - t1 for t1, t2 in zip (xs, xs[1:])]
 
-def pad(xs, n_before, n_after):
-    before = xs.new(n_before).fill_(xs[0])
-    after = xs.new(n_after).fill_(xs[-1])
-    return  torch.cat([before, xs,  after])
-
-
-def rolling_window(xs, window=5):
-    n_before = window // 2
-
-    xs = pad(xs, n_before, window - n_before - 1)
-    return xs.unfold(0, window, 1)
-
-def rolling_diff(xs, window=5):
-    means = rolling_window(torch.Tensor(xs), window=window).mean(1)
-    return (xs - means).abs()
-    
-
-def high_variance(xs, window=5, n = 10):
-
-    xs = torch.Tensor(xs)
-    windows = rolling_window(xs, window=window)
-    diffs = windows.mean(1) - xs
-
-    return [(i.item(), v.item()) for v, i in zip(*diffs.topk(n))]
-
-def get_clamped(xs):
-    n = len(xs) - 1
-
-    def f(i):
-        return xs[max(0, min(i, n))]
-
+def smooth(size=11):
+    def f(xs):
+        return window.rolling_window(torch.Tensor(xs), window=size).mean(1).numpy()
     return f
-
-
-def get_window(xs, i, window=5):
-    
-    x = []
-    n_before = window // 2
-    n_after = window - n_before - 1
-
-    f = get_clamped(xs)
-    return [f(i + d) for d in range(-n_before, n_after + 1)]
-
 
 
 def load(filename):
@@ -67,24 +28,55 @@ def load(filename):
     image_counts = get_counts(dataset)
 
     def subset(text):
-        return [count for count in image_counts if text in count.imageFile]
+        return [count for count in image_counts if text in count.image_file]
 
-
-    def plot_estimates(images, window=2):
-        images = [image for image in images if image.category in ['validate', 'new']]
-
+    def plot_estimate(images, colour, label):
         estimates = transpose_structs(pluck('estimate', images))
         times = pluck('time', images)
-        # files = pluck('imageFile', images)
-        for i, v in high_variance(estimates.middle, window=window, n = 20):
-            print(images[i].imageFile, v)
 
-            list(map(lambda i: print(i._subset('imageFile', 'estimate')), get_window(images, i, window=window)))
+        # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
+        estimates = estimates._map(smooth(5))
+      
+        
+        plt.plot(times, estimates.middle, colour, label='estimate ' + label)
+        plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
+
+    def plot_truth(images, marker, label):
+        truth = pluck('truth', images)
+        times = pluck('time', images)
+
+        plt.plot(times, truth, marker, label=label)
+
+
+    def plot_subset(images, colour, label):
+
+        images = [i for i in images if i.category != 'discard']
+        plot_estimate(images, colour, label)
+
+        train = [i for i in images if i.category == 'train']
+        plot_truth(train, colour + '+', label = 'train ' + label)
+
+        validate = [i for i in images if i.category == 'validate']
+        plot_truth(validate, colour + '.', label = 'validate ' + label)
+
+
             
     cam_c  = subset("CamC")
     cam_b  = subset("CamB")
 
-    plot_estimates(cam_b)
+    plt.xlabel("Date")
+    plt.ylabel("Count")
+
+    plt.gcf().autofmt_xdate()
+
+    
+    plot_subset(cam_b, 'y', 'b')
+    plot_subset(cam_c, 'g', 'c')
+
+
+    plt.legend(loc='upper left')
+
+    plt.show()
 
 
 
@@ -98,7 +90,7 @@ def load(filename):
 
     # plt.scatter(, y)
 
-    plt.gcf().autofmt_xdate()
+    
 
 
 

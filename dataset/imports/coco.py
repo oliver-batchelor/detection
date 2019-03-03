@@ -100,7 +100,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
         annotations = [import_ann(ann) for ann in anns]
 
         return {
-            'imageFile':input_image,
+            'image_file':input_image,
             'imageSize':[info['width'], info['height']],
             'category':target_category,
             'annotations':annotations

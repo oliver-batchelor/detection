@@ -99,14 +99,15 @@ def class_mapping(config):
 def decode_image(data, config):
     target = decode_objects(data, class_mapping(config))
 
-    evaluated = data.detections.networkId if data.detections else None
+    evaluated = data.detections.network_id if data.detections else None
 
     return struct(
-        id = data.imageFile,
-        file = path.join(config.root, data.imageFile),
+        id = data.image_file,
+        file = path.join(config.root, data.image_file),
         target = target,
         category = data.category,
-        evaluated = evaluated
+        evaluated = evaluated,
+        key = data.natural_key
     )
 
 def filterDict(d):
@@ -118,7 +119,7 @@ def decode_dataset(data):
     config = data.config
     classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
 
-    images = { i.imageFile:decode_image(i, config) for i in data.images }
+    images = { i.image_file:decode_image(i, config) for i in data.images }
     return config, DetectionDataset(classes=classes, images = images)
 
 

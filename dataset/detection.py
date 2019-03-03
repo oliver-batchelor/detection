@@ -369,6 +369,7 @@ class DetectionDataset:
         self.classes = classes
 
 
+
     def update_image(self, image):
         self.images[image.id] = image
 

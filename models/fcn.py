@@ -17,7 +17,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
-from tools import struct, table, show_shapes, sum_lists, cat_tables
+from tools import struct, table, show_shapes, sum_list, cat_tables
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
@@ -48,12 +48,13 @@ class Encoder:
     def anchors(self, input_size, crop_boxes=False):
         def layer_size(i):
             stride = 2 ** i
-            return (max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
+            return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
         input_args = (input_size, crop_boxes)
 
         if not (input_args in self.anchor_cache):
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
+
             self.anchor_cache[input_args] = box.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
 
         return self.anchor_cache[input_args]
@@ -132,7 +133,7 @@ class SeparateEncoder:
             return self.encoder.loss(encoding[i], split_prediction_batch(prediction, i), device)
 
         losses = [class_loss(i) for i in range(0, self.num_classes)]
-        return sum_lists(losses)
+        return sum_list(losses)
 
     def decode(self, inputs, prediction, crop_boxes=False):
         def decode_class(i):

@@ -121,7 +121,7 @@ def iou(box_a, box_b):
 nms_defaults = struct(
     nms         = 0.5,
     threshold   = 0.05,
-    detections  = 100
+    detections  = 500
 )
 
 
@@ -198,15 +198,15 @@ def nms(prediction, params, max_box_factor=200):
     
 
 def make_boxes(box_sizes, box_dim, image_dim):
-    w, h = box_dim
-
+    stride, w, h = box_dim
     n = len(box_sizes)
 
-    xs = torch.arange(0, w, dtype=torch.float).add_(0.5).view(1, w, 1, 1).expand(h, w, n, 1)
-    ys = torch.arange(0, h, dtype=torch.float).add_(0.5).view(h, 1, 1, 1).expand(h, w, n, 1)
+    sx, sy = stride, stride
+    #sx, sy = image_dim[0] / w, image_dim[1] / h
 
-    xs = xs.mul(image_dim[0] / w)
-    ys = ys.mul(image_dim[1] / h)
+    xs = torch.arange(0, w, dtype=torch.float).add_(0.5).mul_(sx).view(1, w, 1, 1).expand(h, w, n, 1)
+    ys = torch.arange(0, h, dtype=torch.float).add_(0.5).mul_(sy).view(h, 1, 1, 1).expand(h, w, n, 1)
+
 
     box_sizes = torch.FloatTensor(box_sizes).view(1, 1, n, 2).expand(h, w, n, 2)
     boxes = torch.cat([xs, ys, box_sizes], 3).view(-1, 4)
