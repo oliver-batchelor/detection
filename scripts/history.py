@@ -8,6 +8,10 @@ import argparse
 from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_list, pluck, count_dict, partition_by
 from detection import evaluate
 
+from collections import deque
+
+import tools
+
 from scripts.datasets import quantiles
 
 from evaluate import compute_AP
@@ -126,7 +130,7 @@ def extract_sessions(history, config):
             detections = None
 
             if open.tag == 'new':
-                detections = annotate.decode_detections(open.contents.instances, annotate.class_mapping(config)) 
+                detections = annotate.decode_detections(open.contents.instances, annotate.class_mapping(config))
                 
             open = new(t, open.tag, detections)
 
@@ -154,7 +158,7 @@ def join_history(sessions):
 
         duration += s.duration
 
-    return struct(start = sessions[0].start, actions = actions, duration = duration)
+    return struct(start = sessions[0].start, detections = sessions[0].detections, actions = actions, duration = duration)
 
 
 def action_durations(actions):
@@ -168,6 +172,50 @@ def split(a, n):
 
 def image_summaries(history):
     return [image_summary(image) for image in history]
+
+
+def instance_windows(history, window=100):
+    windows = []
+
+    for i in range(len(history)):
+        images = []
+        n = 0 
+        
+        def add(k):
+            nonlocal n
+
+            if n < window and k >= 0 and k < len(history):
+                images.append(k)
+                n = n + history[k].target._size
+
+        j = 1
+        add(i)
+        while n < window:
+            add(i + j)
+            add(i - j)
+            
+            j = j + 1
+
+        windows.append(images)
+
+    return windows
+
+
+
+
+
+def running_mAP(history, window=100, iou=0.5):
+    windows = instance_windows(history, window)
+    #windows = [[i] for i in range(len(history))]
+    
+    def image_result(image):
+
+        return struct(target = image.target, prediction = image.detections)
+
+    image_pairs =  [image_result(image) for image in history]
+    mAP = evaluate.mAP_subset(image_pairs, iou=iou)
+
+    return [mAP(w).mAP for w in windows]
 
 
 def action_histogram(history, n_splits=None):
@@ -196,6 +244,7 @@ def image_summary(image):
         duration = image.duration,
         instances = image.target._size
     )
+
 
 
 def history_summary(history):

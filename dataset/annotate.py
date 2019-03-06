@@ -43,6 +43,7 @@ def decode_obj(obj):
 
 
 def decode_detection(det):
+
     obj = decode_obj(det)
     if obj is not None:
         obj = obj._extend(confidence = det.confidence)
@@ -63,7 +64,7 @@ def decode_detections(detections, class_mapping):
 
     return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
                   label = torch.LongTensor(labels),
-                  confidence = torch.LongTensor(pluck('confidence', objs))
+                  confidence = torch.FloatTensor(pluck('confidence', objs))
         )
 
 

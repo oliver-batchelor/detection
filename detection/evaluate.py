@@ -121,16 +121,29 @@ def match_positives(pred, target):
     return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
 
 
-def mAP(images, threshold=0.5, eps=1e-7):   
-    return mAP_at(images, eps)(threshold)
+
+def list_subset(xs, inds):
+    return [xs[i] for i in inds]
 
 
+def mAP_subset(image_pairs, iou):
+    all_matches =  [match_positives(i.prediction, i.target)(iou) for i in image_pairs]
+
+    def f (inds):
+        pairs = list_subset(image_pairs, inds)
+        confidence    = torch.cat([i.prediction.confidence for i in pairs]).float()
+        confidence, order = confidence.sort(0, descending=True)    
+
+        matches = torch.cat(list_subset(all_matches, inds))[order]
+        n = sum(i.target.label.size(0) for i in pairs)
+
+        return compute_mAP(matches, confidence.cpu(), n)
+    return f
 
 
 def mAP_classes(image_pairs, num_classes, eps=1e-7):
-    confidence    = torch.cat([i.prediction.confidence for i in image_pairs])
+    confidence    = torch.cat([i.prediction.confidence for i in image_pairs]).float()
     confidence, order = confidence.sort(0, descending=True)    
-
 
     matchers =  [match_positives(i.prediction, i.target) for i in image_pairs]
 

@@ -1,4 +1,4 @@
-from scripts.history import history_summary, extract_histories, action_histogram, image_summaries
+from scripts.history import history_summary, extract_histories, action_histogram, image_summaries, running_mAP
 from scripts.datasets import load_dataset, annotation_summary
 from scripts.figures import *
 
@@ -34,14 +34,14 @@ def load_all(datasets, base_path):
     
     
 datasets = struct(
-    # penguins = 'penguins.json',
-    # trees_josh = 'trees_josh.json',
-    scallops = 'scallops.json',
-    # buoys = 'buoys.json',
-    # branches = 'branches.json',
+    #penguins = 'penguins.json',
+    #trees_josh = 'trees_josh.json',
+    #scallops = 'scallops.json',
+    #buoys = 'buoys.json',
+    #branches = 'branches.json',
 
-    # seals = 'seals.json',
-    # scott_base = 'scott_base.json'
+    #seals = 'seals.json',
+    scott_base = 'scott_base.json'
 
 
 )
@@ -89,31 +89,69 @@ def plot_instances_time(dataset, smoothing = 1):
     plt.show()
 
 
-def cumulative_instances(dataset):
-
-    summaries = image_summaries(dataset.history)
-
-    instances = torch.Tensor(pluck('instances', summaries)).cumsum(0)
-    durations = torch.Tensor(pluck('duration', summaries)).cumsum(0)
+def running_mAPs(datasets, window=200, iou=0.1):
 
     fig, ax = plt.subplots(figsize=(24, 12))
-    plt.plot(durations.numpy(), instances.numpy())
+
+    for k, dataset in datasets.items():
+        summaries = image_summaries(dataset.history)
+        durations = torch.Tensor(pluck('duration', summaries)).cumsum(0)
+
+        scores = running_mAP(dataset.history, window=window, iou=iou)
+        plt.plot((durations / 60).numpy(), scores, label = k)
+        # plt.plot(range(len(scores)), scores, label = k)
+
+    ax.set_ylim(ymin=0)
+    ax.set_xlim(xmin=0)
+
+    ax.set_title("Running mAP vs anotation time")
+
+    ax.set_xlabel("Time (m)")
+    ax.set_ylabel("mAP @ 0.5")
+
+    ax.legend()
+    plt.show()
+
+
+def cumulative_instances(datasets):
+
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    for k, dataset in datasets.items():
+        summaries = image_summaries(dataset.history)
+
+        instances = torch.Tensor(pluck('instances', summaries)).cumsum(0)
+        durations = torch.Tensor(pluck('duration', summaries)).cumsum(0)
+
+        plt.plot((durations / 60).numpy(), instances.numpy(), label = k)
+
+    ax.set_ylim(ymin=0)
+    ax.set_xlim(xmin=0)
+
+    ax.set_title("Cumulative annotated instances vs. time")
+
+    ax.set_xlabel("Time (m)")
+    ax.set_ylabel("Count")
+
+    ax.legend()
 
     plt.show()
 
     
-
 base_path = '/home/oliver/storage/export/'
 
 
 if __name__ == '__main__':
     loaded = load_all(datasets, base_path)
+
     
-    oliver = load_all(penguins_oliver, base_path)
+    
+    # oliver = load_all(penguins_oliver, base_path)
     # dad = load_all(penguins_dad, base_path)
 
-    cumulative_instances(loaded.scallops)
+    #cumulative_instances(loaded)
 
+    running_mAPs(loaded)
 
     # pprint_struct(pluck_struct('summary', loaded))
 
