@@ -436,8 +436,6 @@ def run_detections(model, env, images, hook=None, variation_window=None):
             for v, d in zip(variation, detections):
                 d.stats.frame_variation = v
 
-        print(images[0].id, detections[0].stats)
-
         return {image.id : d for image, d in zip(images, detections)}
     
 

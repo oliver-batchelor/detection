@@ -1,6 +1,7 @@
 import numpy as np
 from dataset.imports import import_json
 from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct
+import tools
 
 from dataset.annotate import decode_obj
 
@@ -123,21 +124,26 @@ def class_annotations(image, class_id):
     return [ann for ann in image.annotations if ann.label == class_id]
     
 
+def weighted_total(image, config):
+
+    return sum([config.classes[ann.label].count_weight for ann in image.annotations], 0)
+
+
 def get_counts(dataset, class_id=None):
-    images = filter_categories(dataset, ['train', 'validate', 'new', 'discard'])
+    images = dataset.images
 
     def count(image):
-        n =  len(image.annotations) if class_id is None else len(class_annotations(image, class_id))
-
+        n =  weighted_total(image, dataset.config) if class_id is None else len(class_annotations(image, class_id))
         t = date.parse(image.image_creation)
 
         def f(entry):
             threshold, count = entry
             return count
 
-        counts = image.detections.stats.counts._map(f) if class_id is None \
-            else image.detections.stats.class_counts[class_id]._map(f)
-        
+        counts = image.detections.stats.counts if class_id is None \
+            else image.detections.stats.class_counts[str(class_id)]._map(f)
+
+       
         return struct(image_file = image.image_file, time = t, truth = n, category = image.category, estimate = counts)
 
     counts = list(map(count, images))
