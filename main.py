@@ -635,7 +635,6 @@ def run_trainer(args, conn = None, env = None):
             detect_images = env.dataset.get_images()
 
             results = run_detections(model, env, detect_images, hook=update('detect'), variation_window=args.variation_window)
-
             send_command('detections', results)
 
 
@@ -656,6 +655,14 @@ def run_trainer(args, conn = None, env = None):
 
     def detect_all():
         print("detecting...")
+        model = env.model.to(env.device)
+        detect_images = env.dataset.get_images()
+
+        results = run_detections(model, env, detect_images, hook=update('detect'), variation_window=args.variation_window)
+        send_command('detections', results)
+
+        raise UserCommand('resume')
+
 
 
     def paused():
