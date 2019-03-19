@@ -31,7 +31,7 @@ def plot_estimate(images, colour):
     mask = torch.ByteTensor([1 if i.category != 'discard' else 0 for i in images])
 
     def f(xs):
-        return window.masked_mean(torch.Tensor(xs), mask=mask, window=5, clamp=False).numpy()
+        return window.masked_mean(torch.Tensor(xs), mask=mask, window=7, clamp=False).numpy()
 
     # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
     estimates = estimates._map(f)
@@ -77,6 +77,8 @@ def plot_runs(*runs, loc='upper left'):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
+
+
     plt.xlabel("Date")
     plt.ylabel("Count")
 
@@ -84,7 +86,9 @@ def plot_runs(*runs, loc='upper left'):
 
     for run in runs:
         plot_subset(run.data, run.colour)
-    
+
+    ax.set_ylim(ymin=0)
+
 
     ax.legend(handles=legend, loc=loc)
     return fig
@@ -101,7 +105,11 @@ figure_path = "/home/oliver/sync/figures"
 
 datasets = struct(
     scott_base = 'scott_base.json',
+    scott_base_100 = 'scott_base_100.json',
     seals      = 'seals.json',
+    seals_102  = 'seals_102.json',
+
+    seals_shanelle  = 'seals_shanelle.json',
 )
 
 
@@ -142,35 +150,36 @@ if __name__ == '__main__':
       
     loaded = datasets._map(load)
 
+    for k in ['scott_base', 'scott_base_100']:
+        scott_base = get_counts(loaded[k])
 
-    scott_base = get_counts(loaded.scott_base)
+        cam_b  = subset("CamB", scott_base)
+        cam_c  = subset("CamC", scott_base)
 
-    cam_b  = subset("CamB", scott_base)
-    cam_c  = subset("CamC", scott_base)
+        fig = plot_runs(
+            struct(data = cam_b, colour='g', label="camera b"),
+            struct(data = cam_c, colour='y', label="camera c" ),
+        )
 
-    fig = plot_runs(
-        struct(data = cam_b, colour='g', label="camera b"),
-        struct(data = cam_c, colour='y', label="camera c" ),
-    )
-
-    fig.savefig(path.join(figure_path, "scott_base.pdf"), bbox_inches='tight')
-    export_counts(path.join(figure_path, "scott_cam_b.csv"), cam_b)
-    export_counts(path.join(figure_path, "scott_cam_c.csv"), cam_c)
+        fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
+        export_counts(path.join(figure_path, k + "_cam_b.csv"), cam_b)
+        export_counts(path.join(figure_path, k + "_cam_c.csv"), cam_c)
 
 
-    seals_total = get_counts(loaded.seals)
-    seals_pairs = get_counts(loaded.seals, class_id = 1)
+    for k in ['seals', 'seals_102', 'seals_shanelle']:
+        seals_total = get_counts(loaded[k])
+        seals_pairs = get_counts(loaded[k], class_id = 1)
 
-    fig = plot_runs(
-        struct(data = seals_total, colour='y', label="total"),
-        struct(data = seals_pairs, colour='c', label="pairs"),
+        fig = plot_runs(
+            struct(data = seals_total, colour='y', label="total"),
+            struct(data = seals_pairs, colour='c', label="pairs"),
 
-        loc='upper right'
-    )
+            loc='upper right'
+        )
 
-    fig.savefig(path.join(figure_path, "seals.pdf"), bbox_inches='tight')
-    export_counts(path.join(figure_path, "seals.csv"), seals_total)
-    export_counts(path.join(figure_path, "seals_pairs.csv"), seals_pairs)
+        fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
+        export_counts(path.join(figure_path, k + ".csv"), seals_total)
+        export_counts(path.join(figure_path, k + "_pairs.csv"), seals_pairs)
     
 
 

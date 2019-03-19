@@ -40,7 +40,7 @@ train_parameters = struct (
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),
 
-    bn_momentum    = param(0.1, "momentum for batch normalisation modules"),
+    bn_momentum    = param(0.9, "momentum for batch normalisation modules"),
 
     no_load         = param(False,   help="don't attempt to load previously saved model"),
     dry_run         = param(False,   help="run for testing only (don't store results or log progress)"),

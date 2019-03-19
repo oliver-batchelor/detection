@@ -87,7 +87,7 @@ def import_subset(input_path, year, subset, target_category, class_map):
         if not type(root['object']) == list:
             objects = [root['object']]
 
-        annotations = map_list(import_object, objects)
+        annotations = dict(enumerate(map_list(import_object, objects)))
         file_name = path.join(year, 'JPEGImages', root['filename'])
 
         size = root['size']

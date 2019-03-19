@@ -663,8 +663,6 @@ def run_trainer(args, conn = None, env = None):
 
         raise UserCommand('resume')
 
-
-
     def paused():
         send_command('progress', None)
 

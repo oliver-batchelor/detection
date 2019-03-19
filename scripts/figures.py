@@ -26,13 +26,13 @@ def plot_stacks(x, stacks, keys, width):
     total = torch.Tensor(len(stacks)).zero_()
     bars = []
 
-    for k in keys:
-        values = pluck(k, stacks, 0)
-        upper = total + torch.Tensor(values)
 
-        p = plt.bar(x, upper.tolist(), width, bottom=total.tolist())
+    for k in keys:
+
+        values = pluck(k, stacks, 0)
+        p = plt.bar(x, values, width, bottom=total.tolist())
 
         bars.append(p[0])
-        total = upper
+        total = total + torch.Tensor(values)
 
     plt.legend(bars, keys)

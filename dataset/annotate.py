@@ -68,14 +68,14 @@ def decode_detections(detections, class_mapping):
         )
 
 
-def decode_objects(data, class_mapping):
-    objs = filter_map(decode_obj, data.annotations)
+# def decode_objects(data, class_mapping):
+#     objs = filter_map(decode_obj, data.annotations)
 
-    boxes = pluck('box', objs)
-    labels = list(map(lookup(class_mapping), pluck('label', objs)))
+#     boxes = pluck('box', objs)
+#     labels = list(map(lookup(class_mapping), pluck('label', objs)))
 
-    return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
-                  label = torch.LongTensor(labels))
+#     return table (bbox = torch.FloatTensor(boxes) if len(boxes) else torch.FloatTensor(0, 4),
+#                   label = torch.LongTensor(labels))
 
 def decode_object_map(annotations, config):
     mapping = class_mapping(config)
@@ -98,7 +98,7 @@ def class_mapping(config):
 
 
 def decode_image(data, config):
-    target = decode_objects(data, class_mapping(config))
+    target = decode_object_map(data, class_mapping(config))
 
     evaluated = data.detections.network_id if data.detections else None
 

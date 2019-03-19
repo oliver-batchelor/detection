@@ -97,7 +97,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
             }
 
         anns = coco.loadAnns(coco.getAnnIds(id, catIds=cat_ids))
-        annotations = [import_ann(ann) for ann in anns]
+        annotations = {k:import_ann(ann) for k, ann in enumerate(anns)}
 
         return {
             'image_file':input_image,

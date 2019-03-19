@@ -86,19 +86,7 @@ def annotation_summary(dataset):
 # pprint_struct(datasets._map(summary))
 
 
-def combine_penguins(datasets):
-    val_royd = set_category_all(get_category(datasets.royd, 'validate'), 'test_royd')
-    val_hallett = set_category_all(get_category(datasets.hallett, 'validate'), 'test_hallett')
-    val_cotter = set_category_all(get_category(datasets.cotter, 'validate'), 'test_cotter')
 
-    train = list(concat_lists([get_category(datasets.royd, 'train'), 
-        get_category(datasets.cotter, 'train'), 
-        get_category(datasets.hallett, 'train')]))   
-
-    combined = struct(config=datasets.royd.config, images=concat_lists([train, val_royd, val_hallett, val_cotter]))
-
-    with open(combined_file, 'w') as outfile:
-        json.dump(to_dicts(combined), outfile, sort_keys=True, indent=4, separators=(',', ': '))
 
 
 

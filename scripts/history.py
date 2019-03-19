@@ -5,7 +5,7 @@ from os import path
 
 import argparse
 
-from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_list, pluck, count_dict, partition_by
+from tools import table, struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes
 from detection import evaluate
 
 from collections import deque
@@ -21,6 +21,8 @@ import dateutil.parser as date
 from matplotlib import rc
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+
+import torch
 
 
 def decode_action(action):
@@ -62,10 +64,13 @@ def decode_action(action):
             return struct(action='add')
         elif edit.tag == 'delete_parts':
 
-            return struct(action='delete', ids = list(edit.contents.keys()))
+            ids = list(edit.contents.keys())
+
+            return struct(action='delete', ids = ids)
 
 
         elif edit.tag == 'clear_all':
+
             return struct(action='delete')
 
         elif edit.tag == 'set_class':
@@ -106,18 +111,19 @@ def extract_sessions(history, config):
         #     previous = open.actions[-1]
 
 
+
+
         if previous and (action.action == 'delete' or action.action == 'transform'):
             if previous.action == 'select' and action.ids == previous.ids:
                 time = previous.time 
                 open.actions.pop()
               
-       
+  
         duration = time - last_time(open)
-
         if previous is not None and (action.action == previous.action and action.get('ids') == previous.get('ids')):
-            return
+            open.actions.pop()
 
-        entry = action._extend(time = time, duration = min(20, duration))
+        entry = action._extend(time = time, duration = min(30, duration))
         open.actions.append(entry)
 
     for (datestr, action) in history:
@@ -202,17 +208,20 @@ def instance_windows(history, window=100):
 
 
 
-
+empty_detections = table (
+        bbox = torch.FloatTensor(0, 4),
+        label = torch.LongTensor(0),
+        confidence = torch.FloatTensor(0))
 
 def running_mAP(history, window=100, iou=0.5):
     windows = instance_windows(history, window)
     #windows = [[i] for i in range(len(history))]
     
-    def image_result(image):
+    def image_result(image):      
+        prediction = empty_detections if image.detections is None else image.detections
+        return struct(target = image.target, prediction = prediction )
 
-        return struct(target = image.target, prediction = image.detections)
-
-    image_pairs =  [image_result(image) for image in history]
+    image_pairs =  filter_none([image_result(image) for image in history])
     mAP = evaluate.mAP_subset(image_pairs, iou=iou)
 
     return [mAP(w).mAP for w in windows]
@@ -225,7 +234,8 @@ def action_histogram(history, n_splits=None):
         summaries = list(map(sum_list, split(summaries, n_splits)))
 
     def f(totals):
-        return count_dict(pluck('action', totals.actions))
+       d = count_dict(pluck('action', totals.actions))
+       return d
 
     return list(map(f, summaries))
 

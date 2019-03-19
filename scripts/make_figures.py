@@ -1,6 +1,9 @@
-from scripts.history import history_summary, extract_histories, action_histogram, image_summaries, running_mAP
+from scripts.history import history_summary, extract_histories, action_histogram, image_summaries, running_mAP, image_summary
 from scripts.datasets import load_dataset, annotation_summary
 from scripts.figures import *
+
+from matplotlib.collections import PathCollection
+from matplotlib.legend_handler import HandlerPathCollection
 
 import tools.window as window
 
@@ -20,7 +23,7 @@ def load_all(datasets, base_path):
             if (image.category == 'train' or image.category == "validate")]
 
         summary = annotation_summary(dataset)
-        
+ 
         history = extract_histories(dataset) 
         summary = summary._merge(history_summary(history))
 
@@ -29,43 +32,48 @@ def load_all(datasets, base_path):
     return datasets._map(load)
     # pprint_struct(pluck_struct('summary', loaded))
 
-
-# def combined_summary()
     
-    
-datasets = struct(
-    #penguins = 'penguins.json',
-    #trees_josh = 'trees_josh.json',
-    #scallops = 'scallops.json',
-    #buoys = 'buoys.json',
-    #branches = 'branches.json',
+def actions_time(datasets):
 
-    #seals = 'seals.json',
-    scott_base = 'scott_base.json'
+    fig, ax = plt.subplots(figsize=(24, 12))
+    scatters = []
+
+    for k, dataset in datasets.items():
+        summaries = image_summaries(dataset.history)
+
+        instances = np.array(pluck('instances', summaries))
+        duration = np.array(pluck('duration', summaries))
+        actions = np.array(pluck('n_actions', summaries))
+
+        plt.scatter(actions, duration, s=instances*5, alpha=0.5, label = k)
+
+        # z = np.polyfit(actions, duration, 1)
+        # p = np.poly1d(z)
+
+        # plt.plot(actions, p(actions), '--')
 
 
-)
+    def update(handle, orig):
+        handle.update_from(orig)
+        handle.set_sizes([64])
 
-penguins_oliver = struct(
-    hallett = 'oliver/penguins_hallett.json',
-    cotter = 'oliver/penguins_cotter.json',
-    # royds = 'oliver/penguins_royds.json',
-)
+    plt.legend(handler_map={PathCollection : HandlerPathCollection(update_func=update)})
 
-penguins_dad = struct(
-    hallett = 'dad/penguins_hallett.json',
-    cotter = 'dad/penguins_cotter.json',
-    royds = 'dad/penguins_royds.json',
-)
+    ax.set_ylim(ymin=0, ymax=150)
+    ax.set_xlim(xmin=0, xmax=50)
+
+
+    plt.show()
+
+
 
 
 def plot_actions(dataset, n_splits=None):
-    keys = ['add', 'transform', 'confirm', 'submit', 'delete']
+    keys = ['transform', 'confirm', 'add', 'delete', 'submit']
     
     actions = action_histogram(dataset.history, n_splits = n_splits)
     n = len(actions)
-    print(n)
-
+    
     fig, ax = plt.subplots(figsize=(24, 12))
     plot_stacks(np.array(range(n)) + 0.5, actions, keys, width= 0.5)
 
@@ -89,7 +97,7 @@ def plot_instances_time(dataset, smoothing = 1):
     plt.show()
 
 
-def running_mAPs(datasets, window=200, iou=0.1):
+def running_mAPs(datasets, window=250, iou=0.5):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
@@ -107,7 +115,7 @@ def running_mAPs(datasets, window=200, iou=0.1):
     ax.set_title("Running mAP vs anotation time")
 
     ax.set_xlabel("Time (m)")
-    ax.set_ylabel("mAP @ 0.5")
+    ax.set_ylabel("mAP @" + iou)
 
     ax.legend()
     plt.show()
@@ -134,26 +142,80 @@ def cumulative_instances(datasets):
     ax.set_ylabel("Count")
 
     ax.legend()
-
     plt.show()
+
+
+# def summary_figures(datasets):
+
 
     
 base_path = '/home/oliver/storage/export/'
 
 
+datasets = struct(
+    penguins = 'penguins.json',
+    scallops = 'scallops.json',
+    branches = 'new/branches.json',
+    
+    seals = 'seals.json',
+    scott_base = 'scott_base.json',
+    apples = 'apples.json'
+)
+
+other = struct(
+    trees_josh  = 'trees_josh.json',
+    branches    = 'mum/branches.json',
+    seals       = 'seals_shanelle.json',
+
+    scallops    = 'mum/scallops.json', 
+    scallops_niwa = 'scallops_niwa.json',
+    buoys       = 'mum/buoys.json',
+)
+
+
+penguins_dad = struct(
+    hallett = 'dad/penguins_hallett.json',
+    cotter = 'dad/penguins_cotter.json',
+    royds = 'dad/penguins_royds.json',
+)
+
+
+penguins_new = struct(
+    hallett = 'new/penguins_hallett.json',
+    cotter = 'new/penguins_cotter.json',
+    royds = 'new/penguins_royds.json',
+    
+)
+
 if __name__ == '__main__':
     loaded = load_all(datasets, base_path)
+    pprint_struct(pluck_struct('summary', loaded))
 
-    
-    
+
+
+    loaded = load_all(penguins_dad, base_path)
+    pprint_struct(pluck_struct('summary', loaded))
+
+
+    loaded = load_all(penguins_new, base_path)
+    pprint_struct(pluck_struct('summary', loaded))
+
+
+    loaded = load_all(other, base_path)
+    pprint_struct(pluck_struct('summary', loaded))
+
+
+
+    # actions_time(loaded)
+
+    #plot_actions(loaded.apples)
+
     # oliver = load_all(penguins_oliver, base_path)
     # dad = load_all(penguins_dad, base_path)
 
-    #cumulative_instances(loaded)
+    # cumulative_instances(loaded)
+    # running_mAPs(loaded, iou=0.75)
 
-    running_mAPs(loaded)
-
-    # pprint_struct(pluck_struct('summary', loaded))
 
     # load_all(penguins_oliver, base_path)
     # load_all(penguins_dad, base_path)
