@@ -52,7 +52,7 @@ def decode_detection(det):
 
 def lookup(mapping):
     def f(i):
-        assert i in mapping
+        assert i in mapping, "missing key in mapping" + str(list(mapping.keys())) + ": " + str(i)
         return mapping[i]
     return f
 
@@ -98,7 +98,7 @@ def class_mapping(config):
 
 
 def decode_image(data, config):
-    target = decode_object_map(data, class_mapping(config))
+    target = decode_object_map(data.annotations, config)
 
     evaluated = data.detections.network_id if data.detections else None
 
