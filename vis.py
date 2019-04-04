@@ -128,9 +128,6 @@ def benchmark(model, encoder, iter, args):
         pass
 
 
-
-
-
 def visualise(model, encoder, iter, args):
 
     threshold = 50

@@ -226,7 +226,6 @@ class FCN(nn.Module):
         self.box_layers = self.num_classes if self.separate else 1
         self.localisers = Parallel(named([output(len(boxes) * self.box_layers * self.box_outputs) for boxes in self.box_sizes]))
 
-
         self.new_modules = [self.localisers, self.classifiers, self.reduce, self.decoder]
         nn.ModuleList(self.new_modules).apply(init_weights)
         self.classifiers.apply(init_classifier)
@@ -319,7 +318,9 @@ def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
 
 def extend_layers(layers, size, features=32):
 
-    features_in = pretrained.layer_sizes(layers)[-1]
+    layer_sizes = pretrained.layer_sizes(layers)
+
+    features_in = layer_sizes[-1]
     num_extra = max(0, size - len(layers))
 
     layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]

@@ -13,6 +13,7 @@ from pretrainedmodels.models import senet
 import pretrainedmodels
 
 from models.cifar.wrn import WideResNet
+from models.mobilenetv2 import MobileNetV2, InvertedResidual
 
 
 import models.common as c
@@ -28,7 +29,30 @@ def make_encoder(name, depth = None):
     return make_cascade(layers)
 
 
+def create_mobilenet(filename):
+    def f ():
+        model = MobileNetV2()
 
+        model_path = path.join('weights', filename)
+        weights = torch.load(model_path)
+
+        model.load_state_dict(weights)
+
+        layers = []
+        layer = []
+
+        for m in model.features:
+            if isinstance(m, nn.Sequential) or m.stride == 2:
+                layers.append(nn.Sequential(*layer))
+                layer = []
+            layer.append(m)
+       
+        if len(layer) > 0:
+            layers.append(nn.Sequential(*layer))
+
+        return layers
+
+    return f
 
 def create_wrn(filename, depth, num_classes=100, widen_factor=1):
     def f ():
@@ -74,7 +98,8 @@ models = {
     'se_resnet50':create_imagenet('se_resnet50'),
     'se_resnext50':create_imagenet('se_resnext50_32x4d'),
     'wrn22-6': create_wrn('WRN-22-6.pth', depth=22, num_classes=100, widen_factor=6),
-    'wrn28-10': create_wrn('WRN-28-10.pth', depth=28, num_classes=100, widen_factor=10)
+    'wrn28-10': create_wrn('WRN-28-10.pth', depth=28, num_classes=100, widen_factor=10),
+    'mobilenet_v2':create_mobilenet('mobilenet_v2.pth')
 }
 
 
