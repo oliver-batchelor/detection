@@ -12,7 +12,8 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import struct, tensor, show_shapes, show_shapes_info, Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct
+from tools import struct, tensor, show_shapes, cat_tables, show_shapes_info, \
+    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none
 
 import detection.box as box
 from detection import evaluate
@@ -148,7 +149,7 @@ def train_statistics(data, loss, prediction, encoding, debug = struct(), device=
         files = files
     )
 
-    if debug.predictions:
+    if debug.predictions and prediction is not None:
         stats = stats._extend(predictions = prediction_stats(encoding, prediction))
 
     if debug.boxes:
@@ -203,87 +204,37 @@ def summarize_train(name, results, classes, epoch, log):
     print('{} epoch: {} {}'.format(name, epoch, summary))
 
 
-def splits(size, n, overlap=0):
-    div = (size + (n - 1) * overlap) / n
+def axis_splits(size, eval_size, min_overlap=0):
+    if eval_size >= size:
+        return [(0, size)]
 
-    prev = div
-    ranges = [(0, round(div))]
-    for i in range(n - 1):
-        start = prev - overlap
-        prev = start + div
-        r = (round(start), round(prev))
-        ranges.append(r)
+    n = math.ceil((size - min_overlap) / (eval_size - min_overlap))
+    overlap = (n * eval_size - size) / (n - 1)
+    size_crop = eval_size - overlap
+    offsets = [int(i * size_crop) for i in range(n)]
+    return [(x, x + eval_size) for x in offsets]
 
-    return ranges
-
-def image_splits(size, n=(1, 1), overlap=0):
+def image_splits(size, eval_size, overlap=0):
     w, h = size
-    nx, ny = n
-
+    ex, ey = eval_size
     return [((lx, ly), (ux, uy))
-        for lx, ux in splits(w, nx, overlap)
-        for ly, uy in splits(h, ny, overlap) ]
+        for lx, ux in axis_splits(w, ex, overlap)
+        for ly, uy in axis_splits(h, ey, overlap) ]
 
-
-def split_image(image, n=(1, 1), overlap=0):
-
+def split_image(image, eval_size, overlap=0):
     def sub_image(ranges):
         (lx, ly), (ux, uy) = ranges
         return ((lx, ly), image.narrow(0, ly, uy - ly).narrow(1, lx, ux - lx))
 
     size = (image.size(1), image.size(0))
-    return [ sub_image(r) for r in image_splits(size, n, overlap) ]
+    return [ sub_image(r) for r in image_splits(size, eval_size, overlap) ]
 
 
 
-def split_sizes(min_splits, aspect):
-    """
-    Find the split sizes (how many divisions on each axis)
-    to split an image, depending on aspect ratio.
-    """
-
-    max_aspect = max(aspect, 1/aspect)
-    minor, major = 1, 1
-
-    while minor * major < min_splits:
-        if major / minor <= pow(max_aspect, 1.8):
-            major = major + 1
-        else:
-            minor = minor + 1
-            major = minor
-
-    if aspect >= 1:
-        return major, minor
-    else:
-        return minor, major
-
-
-
-def find_split_config(image, max_pixels=None):
-    pixels = image.size(1) * image.size(0)
-
-    if max_pixels is not None:
-        min_splits = math.ceil(max_pixels / pixels)
-        return split_sizes(min_splits, image.size(0) / image.size(1))
-
-    return (1, 1)
-
-
-# def evaluate_split(model, image, encoder, nms_params=box.nms_defaults, n=(1, 1), overlap=0, device=torch.cuda.current_device()):
-#     model.eval()
-#     with torch.no_grad():
-#         splits = split_image(image, n, overlap)
-
-#         outputs = [evaluate_decode(model, image, encoder, device=device, offset=offset) for offset, image in splits]
-#         boxes, label, confs = zip(*outputs)
-
-#         return encoder.nms(torch.cat(boxes, 0), torch.cat(label, 0), torch.cat(confs, 0), nms_params=nms_params)
-
-
-def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device(), crop_boxes=False):
+def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
-        prediction = evaluate_decode(model, image, encoder, device, crop_boxes=crop_boxes)
+        prediction, _ = evaluate_decode(model, image, encoder, device, crop_boxes=nms_params.crop_boxes)
         return  encoder.nms(prediction, nms_params=nms_params)
 
 
@@ -293,8 +244,7 @@ def evaluate_raw(model, image, device):
         image = image.unsqueeze(0)
 
     assert image.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
-    assert image.size(0) == 1, "evaluate: expected batch size of 1 for evaluation"
-
+    
     def detach(p):
         return p.detach()[0]
 
@@ -305,43 +255,75 @@ def evaluate_raw(model, image, device):
     return predictions
 
 def evaluate_decode(model, image, encoder, device, offset = (0, 0), crop_boxes=False):
-    preds = evaluate_raw(model, image, device=device)
-    p = encoder.decode(image, preds, crop_boxes=crop_boxes)
+    raw = evaluate_raw(model, image, device=device)
+    p = encoder.decode(image, raw, crop_boxes=crop_boxes)
 
     offset = torch.Tensor([*offset, *offset]).to(device)
-    return p._extend(bbox = p.bbox + offset)
+    return p._extend(bbox = p.bbox + offset), raw
 
 def test_loss(data, encoder, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
     def unsqueeze(p):
         return p.unsqueeze(0)
 
-    prediction = prediction._map(unsqueeze)
+    if prediction is not None:
+        prediction = prediction._map(unsqueeze)
+
     loss = encoder.loss(encoding, prediction, device=device)
     return train_statistics(data, loss, prediction, encoding, debug, device)
 
 
-def eval_test(model, encoder,  debug=struct(), nms_params=box.nms_defaults, device=torch.cuda.current_device(), crop_boxes=False):
+eval_defaults = struct(
+    overlap = 256,
+    split = False,
+
+    image_size = (600, 600),
+    batch_size = 1,
+    nms_params = box.nms_defaults,
+    crop_boxes = False,
+
+    device=torch.cuda.current_device(),
+    debug = ()
+)  
+
+def evaluate_full(model, data, encoder, params=eval_defaults):
+    model.eval()
+    with torch.no_grad():
+        prediction, raw = evaluate_decode(model, data.image.squeeze(0), encoder, 
+            device=params.device, crop_boxes=params.crop_boxes)
+
+        train_stats = test_loss(data, encoder, data.encoding, raw, debug=params.debug, device=params.device)
+        return encoder.nms(prediction, nms_params=params.nms_params), train_stats
+
+
+def evaluate_split(model, data, encoder, params=eval_defaults):
+    model.eval()
+    with torch.no_grad():
+        splits = split_image(data.image.squeeze(0), params.image_size, params.overlap)
+
+        outputs = [evaluate_decode(model, image, encoder, device=params.device, offset=offset) for offset, image in splits]
+        prediction, raw = zip(*outputs)
+
+        #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
+        return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
+
+
+def eval_test(model, encoder, params=eval_defaults):
+    evaluate = evaluate_split if params.split else evaluate_full
+
     def f(data):
+        prediction, train_stats = evaluate(model, data, encoder, params)
+        return struct (
+            id = data.id,
+            target = data.target._map(Tensor.to, params.device),
 
-        model.eval()
-        with torch.no_grad():
-            raw_prediction = evaluate_raw(model, data.image, device)
-            prediction = encoder.decode(data.image.squeeze(0), raw_prediction, crop_boxes=crop_boxes)
+            prediction = prediction,
 
-            train_stats = test_loss(data, encoder, data.encoding, raw_prediction, debug=debug, device=device)
+            # for summary of loss
+            instances=data.lengths.sum().item(),
+            train_stats = train_stats,
 
-            return struct (
-                id = data.id,
-                target = data.target._map(Tensor.to, device),
-
-                prediction = encoder.nms(prediction, nms_params=nms_params),
-
-                # for summary of loss
-                instances=data.lengths.sum().item(),
-                train_stats = train_stats,
-
-                size = data.image.size(0),
-            )
+            size = data.image.size(0),
+        )
     return f
 
 
@@ -459,7 +441,11 @@ def summarize_test(name, results, classes, epoch, log, thresholds=None):
 
     mAP_strs ='mAP@30: {:.2f}, 50: {:.2f}, 75: {:.2f}'.format(total.mAP[30], total.mAP[50], total.mAP[75])
 
-    train_summary = summarize_train_stats(name, pluck('train_stats', results), classes, log)
+    train_stats = filter_none(pluck('train_stats', results))
+
+    train_summary = summarize_train_stats(name, train_stats, classes, log) \
+        if len(train_stats) > 0 else ''
+
     print(name + ' epoch: {} AP: {:.2f} mAP@[0.3-0.95]: [{}] {}'.format(epoch, total.AP * 100, mAP_strs, train_summary))
 
     log.scalars(name, struct(AP = total.AP * 100.0, mAP30 = total.mAP[30] * 100.0, mAP50 = total.mAP[50] * 100.0, mAP75 = total.mAP[75] * 100.0))

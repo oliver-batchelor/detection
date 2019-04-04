@@ -6,6 +6,7 @@ import arguments
 # import pyximport; pyximport.install()
 
 from dataset.imports import load_dataset
+from dataset.detection import get_match_params
 from detection.display import overlay_batch
 
 from arguments import detection_parameters, train_parameters, make_input_parameters, debug_parameters
@@ -35,11 +36,8 @@ pp = pprint.PrettyPrinter(indent=2)
 vis_parameters = struct (
     batch_size  = param(1,           help='batch size to display'),
     test        = param(False,       help='show test images instead of training'),
-    validate        = param(False,       help='show validation images instead of training'),
-    
+    validate        = param(False,       help='show validation images instead of training'),   
     no_augment  = param(False,    help='dont use preprocessing even for training'),
-
-
 
     best = param (False, help='use best model for evaluation'),
     action = param ("visualise",    help='action to take (visualise|evaluate|benchmark)')
@@ -47,11 +45,11 @@ vis_parameters = struct (
 
 
 
-def find_anchors(image, target, encoder, num_classes, match_thresholds=(0.4, 0.5), match_nearest = 0, crop_boxes = False):
+def find_anchors(image, target, encoder, num_classes, match_params=box.default_match):
     size = (image.size(1), image.size(0))
-    anchors = box.point_form(encoder.anchors(size, crop_boxes = crop_boxes))
+    anchors = box.point_form(encoder.anchors(size, crop_boxes = match_params.crop_boxes))
 
-    target_enc = encoder.encode(image, target, match_thresholds=match_thresholds, match_nearest=match_nearest)
+    target_enc = encoder.encode(image, target, match_params=match_params)
     matches = []
 
     for i in range(0, num_classes):
@@ -93,9 +91,7 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
         target = data.target._map(Tensor.to, prediction._device)
 
         matches = match_boxes(prediction, target, threshold = iou)
-        anchors = find_anchors(data.image, data.target, encoder, len(dataset.classes),
-            match_thresholds=(args.neg_match, args.pos_match), match_nearest = args.top_anchors)
-
+        anchors = find_anchors(data.image, data.target, encoder, len(dataset.classes), match_params=get_match_params(args))
 
         result = mAP_matches(matches, target.label.size(0))
 
@@ -165,27 +161,28 @@ def visualise(model, encoder, iter, args):
     nms = struct (
         nms = 0.5,
         threshold = 0.05,
-        detections = 100
+        detections = 400
     )
 
 
     print(help_str)
 
     for batch in iter:
-        evals = [evaluate_vis(model, encoder, i, nms, args) for i in batch]
-
-        def show2(x):
-            return "{:.2f}".format(x)
-
-        def show_vector(v):
-            return "({})".format(",".join(map(show2, v.tolist())))
-
-        for e in evals:
-            print("{}: {:d}x{:d} {}".format(e.file, e.image_size[0], e.image_size[1], str(e.stats._map(show_vector))))
-
 
         key = 0
         while (not key in [keys.escape, keys.space]):
+
+            evals = [evaluate_vis(model, encoder, i, nms, args) for i in batch]
+
+            def show2(x):
+                return "{:.2f}".format(x)
+
+            def show_vector(v):
+                return "({})".format(",".join(map(show2, v.tolist())))
+
+            for e in evals:
+                print("{}: {:d}x{:d} {}".format(e.file, e.image_size[0], e.image_size[1], str(e.stats._map(show_vector))))
+
 
             display = overlay_batch(evals, mode=mode, scale=100 / zoom, classes=dataset.classes, threshold = threshold/100, cols=4)
             if zoom != 100:
@@ -201,21 +198,19 @@ def visualise(model, encoder, iter, args):
                 threshold += 5
                 print("increasing threshold: ", threshold)
 
-            elif chr(key) == '(' and nms.nms_threshold > 0:
-                nms.nms_threshold -= 0.05
-                print("decreasing nms threshold: ", nms.nms_threshold)
+            elif chr(key) == '(' and nms.nms > 0:
+                nms.nms = max(0, nms.nms - 0.05) 
+                print("decreasing nms threshold: ", nms.nms)
 
-            elif chr(key) == ')' and nms.nms_threshold < 1:
-                nms.nms_threshold += 0.05
-                print("increasing nms threshold: ", nms.nms_threshold)   
+            elif chr(key) == ')' and nms.nms < 1:
+                nms.nms = min(1, 0.05 + nms.nms)
+                print("increasing nms threshold: ", nms.nms)   
             elif chr(key) == '<' and nms.max_detections > 50:
-                nms.max_detections -= 50
-                print("decreasing max detections: ", nms.max_detections)
-
+                nms.detections -= 50
+                print("decreasing max detections: ", nms.detections)
             elif chr(key) == '>':
-                nms.max_detections += 50
-                print("increasing max detections: ", nms.max_detections)
-
+                nms.detections += 50
+                print("increasing max detections: ", nms.detections)
 
             elif key == 91 and zoom > 10:
                 zoom -= 5

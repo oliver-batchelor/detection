@@ -34,6 +34,9 @@ train_parameters = struct (
     validation_pause    = param(8,    type='int', help='automatically pause training if validation does not improve after epochs'),
 
     train_epochs      = param(64, type='int', help='automatically pause training after epochs'),
+
+    eval_split      = param(False, help='evaluate images split into crops of image_size'),
+    overlap         = param(200, type='int', help='margin of overlap when splitting images for evaluation'),
     
     paused          = param(False, help='start trainer paused'),
 

@@ -279,15 +279,16 @@ def identity(x):
     return x
 
 
-def encode_with(args, encoder=None):
-    match_params = struct(
+def get_match_params(args):
+    return struct(
         crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), 
         match_nearest = args.top_anchors,
         class_weights = None
     )
 
-    return identity if encoder is None else  encode_target(encoder, match_params=match_params)    
+def encode_with(args, encoder=None):
+    return identity if encoder is None else  encode_target(encoder, match_params=get_match_params(args))    
 
 
 def transform_training(args, encoder=None):

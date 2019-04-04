@@ -109,12 +109,11 @@ def image_date(filename):
 
 
 def class_annotations(image, class_id):
-    return [ann for ann in image.annotations if ann.label == class_id]
+    return [ann for ann in image.annotations.values() if ann.label == class_id]
     
 
 def weighted_total(image, config):
-
-    return sum([config.classes[ann.label].count_weight for ann in image.annotations], 0)
+    return sum([config.classes[ann.label].count_weight for ann in image.annotations.values()], 0)
 
 
 def get_counts(dataset, class_id=None):

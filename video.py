@@ -22,7 +22,6 @@ parameters = struct (
     end = param(None, type='int', help = "start end number"),
 
     threshold = param(0.5, "detection threshold"),
-
     batch = param(8, "batch size for faster evaluation")
 )
 

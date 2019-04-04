@@ -293,7 +293,7 @@ def evaluate_review(env, image, nms_params, review):
 
     model.eval()
     with torch.no_grad():
-        prediction = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
+        prediction, _ = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
             device=env.device, crop_boxes=env.args.crop_boxes)
         review = review._map(torch.Tensor.to, env.device)
 
@@ -373,9 +373,18 @@ def get_nms_params(args):
             detections = args.max_detections)
 
 def test_images(images, model, env, hook=None):
-    eval_test = evaluate.eval_test(model.eval(), env.encoder, debug = env.debug, 
-        nms_params=get_nms_params(env.args), device=env.device, crop_boxes=env.args.crop_boxes)
+    eval_params = struct(
+        overlap = env.args.overlap,
+        split = env.args.eval_split,
+        image_size = (env.args.image_size, env.args.image_size),
+        batch_size = env.args.batch_size,
+        nms_params = get_nms_params(env.args),
+        crop_boxes = env.args.crop_boxes,
+        device = env.device,
+        debug = env.debug
+    )  
 
+    eval_test = evaluate.eval_test(model.eval(), env.encoder, eval_params)
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
 
 
@@ -570,7 +579,6 @@ def run_trainer(args, conn = None, env = None):
             return None
 
         log = EpochLogger(env.log, env.epoch)
-        
         model = env.model.to(env.device)
 
         log.scalars("dataset", Struct(env.dataset.count_categories()))
