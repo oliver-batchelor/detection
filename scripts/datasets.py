@@ -42,13 +42,14 @@ def quantiles(xs):
     return np.percentile(np.array(xs), [0, 25, 50, 75, 100])
 
 def image_annotations(image):
-    annotations = [decode_obj(ann) for ann in image.annotations]
+    annotations = [decode_obj(ann) for ann in image.annotations.values()]
     return [obj for obj in annotations if obj is not None]
 
 def annotation_summary(dataset):
     images = filter_categories(dataset)
 
     def count(image):
+
         annotations = image_annotations(image)
 
         n = len(annotations)

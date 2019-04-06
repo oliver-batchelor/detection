@@ -15,7 +15,6 @@ import pretrainedmodels
 from models.cifar.wrn import WideResNet
 from models.mobilenetv2 import MobileNetV2, InvertedResidual
 
-
 import models.common as c
 
 from tools import struct

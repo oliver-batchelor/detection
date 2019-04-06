@@ -1,4 +1,6 @@
-from scripts.history import history_summary, extract_histories, action_histogram, image_summaries, running_mAP, image_summary
+from scripts.history import history_summary, extract_histories, \
+     image_summaries, running_mAP, image_summary
+
 from scripts.datasets import load_dataset, annotation_summary
 from scripts.figures import *
 
@@ -11,12 +13,15 @@ import tools.window as window
 from os import path
 import torch
 
-from tools import struct, to_structs, filter_none, drop_while, concat_lists, map_dict, pprint_struct, pluck_struct
+from tools import struct, to_structs, filter_none, drop_while, concat_lists, \
+        map_dict, pprint_struct, pluck_struct, count_dict
 
 
 def load_all(datasets, base_path):
 
     def load(filename):
+        print("loading: ", filename)
+
         dataset = load_dataset(path.join(base_path, filename))
 
         dataset.images = [image for image in dataset.images 
@@ -67,17 +72,54 @@ def actions_time(datasets):
 
 
 
+def image_histograms(dataset, get_histogram, keys, n_splits=None):
+    actions = [get_histogram(image) for image in dataset.history]        
 
-def plot_actions(dataset, n_splits=None):
-    keys = ['transform', 'confirm', 'add', 'delete', 'submit']
-    
-    actions = action_histogram(dataset.history, n_splits = n_splits)
+    if n_splits is not None:
+        actions = sum_splits(actions, n_splits=n_splits)
+
     n = len(actions)
     
     fig, ax = plt.subplots(figsize=(24, 12))
     plot_stacks(np.array(range(n)) + 0.5, actions, keys, width= 0.5)
 
-    plt.show()
+    plt.show()    
+
+def thresholds(image):
+    changes = [action.value for action in image.actions if action.action=='threshold']
+    return [image.threshold] + changes
+
+def annotation_histogram(dataset, n_splits=None):
+    def make_histogram(image):
+        mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'strong positive'}
+
+        t = image.threshold
+
+        def created_by(s):
+            if s.status.tag == "active":
+                return mapping.get(s.created_by.tag)
+
+            if s.created_by.tag == "detect" and s.status.tag == "deleted":
+                d = s.created_by.contents
+                if d.confidence >= t:
+                    return "false positive"
+
+        created = filter_none([created_by(s) for s in image.ann_summaries])
+        d = count_dict(created)
+
+        return d
+
+    keys = ['false negative', 'weak positive', 'false positive']
+    return image_histograms(dataset, make_histogram, keys=keys, n_splits=n_splits)
+    
+
+def action_histogram(dataset, n_splits=None):
+    def make_histogram(image):
+        summary = image_summary(image)
+        return count_dict(pluck('action', summary.actions))
+        
+    keys = ['transform', 'confirm', 'add', 'delete', 'submit']
+    return image_histograms(dataset, make_histogram, keys=keys, n_splits=n_splits)
 
      
 def plot_instances_time(dataset, smoothing = 1):
@@ -153,25 +195,22 @@ base_path = '/home/oliver/storage/export/'
 
 
 datasets = struct(
-    penguins = 'penguins.json',
-    scallops = 'scallops.json',
-    branches = 'new/branches.json',
+   penguins = 'penguins.json',
+   # branches = 'branches.json',
     
-    seals = 'seals.json',
-    scott_base = 'scott_base.json',
-    apples = 'apples.json'
+   # seals = 'seals.json',
+   # scott_base = 'scott_base.json',
+   apples = 'apples.json',
+   # fisheye = 'victor.json',
 )
 
 other = struct(
-    trees_josh  = 'trees_josh.json',
     branches    = 'mum/branches.json',
     seals       = 'seals_shanelle.json',
-
-    scallops    = 'mum/scallops.json', 
     scallops_niwa = 'scallops_niwa.json',
+    scallops    = 'mum/scallops.json', 
     buoys       = 'mum/buoys.json',
 )
-
 
 penguins_dad = struct(
     hallett = 'dad/penguins_hallett.json',
@@ -180,10 +219,10 @@ penguins_dad = struct(
 )
 
 
-penguins_new = struct(
-    hallett = 'new/penguins_hallett.json',
-    cotter = 'new/penguins_cotter.json',
-    royds = 'new/penguins_royds.json',
+penguins = struct(
+    hallett = 'oliver/penguins_hallett.json',
+    cotter = 'oliver/penguins_cotter.json',
+    royds = 'oliver/penguins_royds.json',
     
 )
 
@@ -192,23 +231,22 @@ if __name__ == '__main__':
     pprint_struct(pluck_struct('summary', loaded))
 
 
-
-    loaded = load_all(penguins_dad, base_path)
-    pprint_struct(pluck_struct('summary', loaded))
+    annotation_histogram(loaded.apples)
 
 
-    loaded = load_all(penguins_new, base_path)
-    pprint_struct(pluck_struct('summary', loaded))
+    # loaded = load_all(penguins_dad, base_path)
+    # pprint_struct(pluck_struct('summary', loaded))
 
 
-    loaded = load_all(other, base_path)
-    pprint_struct(pluck_struct('summary', loaded))
+    # loaded = load_all(penguins, base_path)
+    # pprint_struct(pluck_struct('summary', loaded))
 
 
+    # loaded = load_all(other, base_path)
+    # pprint_struct(pluck_struct('summary', loaded))
 
     # actions_time(loaded)
-
-    #plot_actions(loaded.apples)
+    # plot_actions(loaded.apples)
 
     # oliver = load_all(penguins_oliver, base_path)
     # dad = load_all(penguins_dad, base_path)

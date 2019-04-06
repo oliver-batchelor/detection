@@ -120,8 +120,6 @@ def match_positives(pred, target):
     ious = box.iou(pred.bbox, target.bbox)
     return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
 
-
-
 def list_subset(xs, inds):
     return [xs[i] for i in inds]
 
