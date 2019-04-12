@@ -9,7 +9,14 @@ import detection.models as models
 train_parameters = struct (
     optimizer = group('optimizer settings',
         lr              = param(0.001,    help='learning rate'),
-        lr_epoch_decay  = param(0.1,    help='decay lr during epoch by factor'),
+
+        lr_decay        = param('decay_log', help='type of LR decay to use (log|cosine|step)'),
+       
+        lr_schedule     = param(30, type='int', help='epochs before dropping LR for step decay'),
+        lr_step         = param(10, type='float', help='step factor to drop LR'),
+
+        lr_min          = param(0.1,    help='minimum learning rate to decay to (factor of initial lr)'),
+      
         fine_tuning     = param(1.0,    help='fine tuning as proportion of learning rate'),
         momentum        = param(0.5,    help='SGD momentum'),
         weight_decay    = param(1e-4, help='weight decay rate')
@@ -31,7 +38,7 @@ train_parameters = struct (
     tests = param('test', help='comma separated list of test sets to use'),
     
     epoch_size          = param(1024, help='epoch size for training'),
-    validation_pause    = param(8,    type='int', help='automatically pause training if validation does not improve after epochs'),
+    validation_pause    = param(16,    type='int', help='automatically pause training if validation does not improve after epochs'),
 
     train_epochs      = param(64, type='int', help='automatically pause training after epochs'),
 
@@ -39,7 +46,6 @@ train_parameters = struct (
     overlap         = param(200, type='int', help='margin of overlap when splitting images for evaluation'),
     
     paused          = param(False, help='start trainer paused'),
-
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),
 
@@ -50,6 +56,7 @@ train_parameters = struct (
 
     restore_best    = param(False,   help="restore weights from best validation model"),
 
+    log_dir         = param(None, type='str', help="output directory for logging"),
     run_name        = param('training', help='name for training run')
 )
 

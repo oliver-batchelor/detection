@@ -12,9 +12,11 @@ import tools.window as window
 
 from os import path
 import torch
+import math
 
 from tools import struct, to_structs, filter_none, drop_while, concat_lists, \
-        map_dict, pprint_struct, pluck_struct, count_dict
+        map_dict, pprint_struct, pluck_struct, count_dict, sum_list, Struct, sum_dicts
+
 
 
 def load_all(datasets, base_path):
@@ -43,19 +45,16 @@ def actions_time(datasets):
     fig, ax = plt.subplots(figsize=(24, 12))
     scatters = []
 
-    for k, dataset in datasets.items():
+    for k in sorted(datasets.keys()):
+        dataset = datasets[k]
+
         summaries = image_summaries(dataset.history)
 
         instances = np.array(pluck('instances', summaries))
         duration = np.array(pluck('duration', summaries))
         actions = np.array(pluck('n_actions', summaries))
 
-        plt.scatter(actions, duration, s=instances*5, alpha=0.5, label = k)
-
-        # z = np.polyfit(actions, duration, 1)
-        # p = np.poly1d(z)
-
-        # plt.plot(actions, p(actions), '--')
+        plt.scatter(actions, duration, s=instances * 5, alpha=0.5, label = k)
 
 
     def update(handle, orig):
@@ -64,16 +63,25 @@ def actions_time(datasets):
 
     plt.legend(handler_map={PathCollection : HandlerPathCollection(update_func=update)})
 
-    ax.set_ylim(ymin=0, ymax=150)
-    ax.set_xlim(xmin=0, xmax=50)
+    # ax.set_ylim(ymin=0, ymax=150)
+    # ax.set_xlim(xmin=0, xmax=50)
+
+    plt.xlabel("number of actions")
+    plt.ylabel("annotation duration")
+
+    return fig, ax
 
 
-    plt.show()
 
+def sum_splits(xs, n_splits=None):
+    def split(a, n):
+        k, m = divmod(len(a), n)
+        return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
 
+    return list(map(sum_dicts, split(xs, n_splits)))
 
-def image_histograms(dataset, get_histogram, keys, n_splits=None):
-    actions = [get_histogram(image) for image in dataset.history]        
+def image_histograms(dataset, get_values, keys, n_splits=None):
+    actions = [get_values(image) for image in dataset.history]        
 
     if n_splits is not None:
         actions = sum_splits(actions, n_splits=n_splits)
@@ -82,36 +90,111 @@ def image_histograms(dataset, get_histogram, keys, n_splits=None):
     
     fig, ax = plt.subplots(figsize=(24, 12))
     plot_stacks(np.array(range(n)) + 0.5, actions, keys, width= 0.5)
-
     plt.show()    
+
+
+
+def cumulative_lines(dataset, get_values, keys):
+
+    actions = [get_values(image) for image in dataset.history]        
+    durations = torch.Tensor(pluck('duration', dataset.history)).cumsum(0)
+
+    fig, ax = plt.subplots(figsize=(24, 12))
+    plot_cumulative_line_stacks(durations, actions, keys)
+    plt.show()    
+
+
 
 def thresholds(image):
     changes = [action.value for action in image.actions if action.action=='threshold']
     return [image.threshold] + changes
 
+
+def annotation_categories(image):
+    mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'positive'}
+    t = image.threshold
+
+    def get_category(s):
+
+        if s.status.tag == "active":
+            if s.created_by.tag == "detect":
+                return "modified positive" if (s.changed_class or s.transformed) else "positive"
+            return mapping.get(s.created_by.tag)
+
+        if s.created_by.tag == "detect" and s.status.tag == "deleted":
+            detection = s.created_by.contents
+            if dconfidence_iou_scatteretection.confidence >= t:
+                return "false positive"
+
+    created = filter_none([get_category(s) for s in image.ann_summaries])
+    return count_dict(created)
+
+annotion_types = ['positive', 'weak positive', 'modified positive', 'false negative', 'false positive']
+
+
+
+def annotation_lines(dataset):
+    return cumulative_lines(dataset, annotation_categories, keys=annotion_types)
+
 def annotation_histogram(dataset, n_splits=None):
-    def make_histogram(image):
-        mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'strong positive'}
+    return image_histograms(dataset, annotation_categories, keys=annotion_types, n_splits=n_splits)
 
-        t = image.threshold
+def area(box):
+    lx, ly = box.lower
+    ux, uy = box.upper
 
-        def created_by(s):
-            if s.status.tag == "active":
-                return mapping.get(s.created_by.tag)
+    return (max(0, ux - lx)) * (max(0, uy - ly))
 
-            if s.created_by.tag == "detect" and s.status.tag == "deleted":
-                d = s.created_by.contents
-                if d.confidence >= t:
-                    return "false positive"
 
-        created = filter_none([created_by(s) for s in image.ann_summaries])
-        d = count_dict(created)
+def iou_box(box1, box2):
+    overlap = struct(lower = np.maximum(box1.lower, box2.lower),  
+    upper = np.minimum(box1.upper, box2.upper))
 
-        return d
-
-    keys = ['false negative', 'weak positive', 'false positive']
-    return image_histograms(dataset, make_histogram, keys=keys, n_splits=n_splits)
+    i = area(overlap)
+    u = (area(box1) + area(box2) - i)
     
+    return i / u
+
+def bounds_circle(c):
+    r = np.array([c.radius, c.radius])
+    return struct(lower = np.array(c.centre) - r, upper = np.array(c.centre) + r)
+
+def iou_circle(c1, c2):
+    return iou_box(bounds_circle(c1), bounds_circle(c2))
+
+def iou_shape(shape1, shape2):
+    assert shape1.tag == shape2.tag, shape1.tag + ", " + shape2.tag
+
+    if shape1.tag == "box":
+        return iou_box(shape1.contents, shape2.contents)
+    elif shape1.tag == "circle":
+        return iou_circle(shape1.contents, shape2.contents)
+    else:
+        assert False, "unknown shape: " + shape1.tag
+
+
+
+def confidence_iou_scatter(datasets):
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    def get_point(s):
+        if s.status.tag == "active" and s.created_by.tag in ["detect", "confirm"]:
+            detection = s.created_by.contents
+            ann = s.status.contents
+
+            return (detection.confidence, iou_shape(detection.shape, ann.shape))
+
+    for k, dataset in datasets.items():
+        points = filter_none([get_point(s) for image in dataset.history 
+            for s in image.ann_summaries])
+
+        conf, iou = zip(*points)
+
+        plt.scatter(conf, iou, alpha=0.4, label = k)
+
+    plt.legend()
+    plt.show()
+
 
 def action_histogram(dataset, n_splits=None):
     def make_histogram(image):
@@ -154,7 +237,7 @@ def running_mAPs(datasets, window=250, iou=0.5):
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0)
 
-    ax.set_title("Running mAP vs anotation time")
+    ax.set_title("Running mAP vs Anotation time")
 
     ax.set_xlabel("Time (m)")
     ax.set_ylabel("mAP @" + iou)
@@ -167,7 +250,9 @@ def cumulative_instances(datasets):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
-    for k, dataset in datasets.items():
+    for k in sorted(datasets.keys()):
+        dataset = datasets[k]
+        
         summaries = image_summaries(dataset.history)
 
         instances = torch.Tensor(pluck('instances', summaries)).cumsum(0)
@@ -180,11 +265,14 @@ def cumulative_instances(datasets):
 
     ax.set_title("Cumulative annotated instances vs. time")
 
-    ax.set_xlabel("Time (m)")
+    ax.set_xlabel("Annotation time (m)")
     ax.set_ylabel("Count")
 
+    ax.set_title("Cumulative instances vs Annotation time")
+
     ax.legend()
-    plt.show()
+    
+    return fig, ax
 
 
 # def summary_figures(datasets):
@@ -196,46 +284,57 @@ base_path = '/home/oliver/storage/export/'
 
 datasets = struct(
    penguins = 'penguins.json',
-   # branches = 'branches.json',
+   branches = 'branches.json',
     
-   # seals = 'seals.json',
-   # scott_base = 'scott_base.json',
-   apples = 'apples.json',
-   # fisheye = 'victor.json',
+   seals = 'seals.json',
+   scott_base = 'scott_base.json',
+   apples1 = 'apples.json',
+   apples2 = 'apples_lincoln.json',
+
+   scallops_niwa = 'scallops_niwa.json',
+   
+   #scallops    = 'mum/scallops.json', 
+   fisheye = 'victor.json',
+   buoys       = 'mum/buoys.json',
 )
 
 other = struct(
-    branches    = 'mum/branches.json',
-    seals       = 'seals_shanelle.json',
-    scallops_niwa = 'scallops_niwa.json',
-    scallops    = 'mum/scallops.json', 
-    buoys       = 'mum/buoys.json',
-)
-
-penguins_dad = struct(
-    hallett = 'dad/penguins_hallett.json',
-    cotter = 'dad/penguins_cotter.json',
-    royds = 'dad/penguins_royds.json',
+    #branches    = 'mum/branches.json',
+    #seals       = 'seals_shanelle.json',  
 )
 
 
-penguins = struct(
-    hallett = 'oliver/penguins_hallett.json',
-    cotter = 'oliver/penguins_cotter.json',
-    royds = 'oliver/penguins_royds.json',
-    
+
+penguins_a = struct(
+    hallett_a = 'oliver/penguins_hallett.json',
+    cotter_a = 'oliver/penguins_cotter.json',
+    royds_a = 'oliver/penguins_royds.json',
 )
+
+penguins_b = struct(
+    hallett_b = 'dad/penguins_hallett.json',
+    cotter_b = 'dad/penguins_cotter.json',
+    royds_b = 'dad/penguins_royds.json',
+)
+
+
 
 if __name__ == '__main__':
     loaded = load_all(datasets, base_path)
     pprint_struct(pluck_struct('summary', loaded))
 
 
-    annotation_histogram(loaded.apples)
+    #confidence_iou_scatter(loaded)
+    # annotation_histogram(loaded.penguins, n_splits=10)
 
+    loaded = load_all(penguins_all, base_path)
+    pprint_struct(pluck_struct('summary', loaded))
 
-    # loaded = load_all(penguins_dad, base_path)
-    # pprint_struct(pluck_struct('summary', loaded))
+    # oliver = load_all(penguins_oliver, base_path)
+    # dad = load_all(penguins_dad, base_path)
+
+    cumulative_instances(loaded)
+
 
 
     # loaded = load_all(penguins, base_path)
@@ -248,8 +347,7 @@ if __name__ == '__main__':
     # actions_time(loaded)
     # plot_actions(loaded.apples)
 
-    # oliver = load_all(penguins_oliver, base_path)
-    # dad = load_all(penguins_dad, base_path)
+
 
     # cumulative_instances(loaded)
     # running_mAPs(loaded, iou=0.75)

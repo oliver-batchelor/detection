@@ -117,9 +117,7 @@ def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
 
 
-def split(a, n):
-    k, m = divmod(len(a), n)
-    return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
 
 
 def image_summaries(history):
@@ -185,13 +183,6 @@ def running_mAP(history, window=100, iou=0.5):
     return [mAP(w).mAP for w in windows]
 
 
-
-
-
-def sum_splits(xs, n_splits=None):
-    return list(map(sum_list, split(xs, n_splits)))
-
-
 def image_summaries(history):
     return [image_summary(image) for image in history]
 
@@ -216,15 +207,28 @@ def history_summary(history):
     n = len(history)
 
     actions_count = count_dict(pluck('action', totals.actions))
+    durations = pluck('duration', summaries)
+    total_actions = sum(actions_count.values(), 0)
+    total_duration = sum(durations, 0)
+
+    instances = sum(pluck('instances', summaries), 0)
+
+
     # durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
 
     return struct (
 
         action_durations = quantiles(pluck('duration', totals.actions)),
-        image_durations = quantiles(pluck('duration', summaries)),
+        image_durations = quantiles(durations),
 
         n_actions = quantiles(pluck('n_actions', summaries)),
-        actions_count = actions_count
+        actions_count = actions_count,
+
+        total_minutes = total_duration / 60,
+        total_actions = total_actions,
+
+        actions_minute      = 60 * total_actions / total_duration,
+        instances_minute    = 60 * instances / total_duration
     )
         
 

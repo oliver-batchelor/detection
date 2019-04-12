@@ -100,7 +100,7 @@ def load(filename):
     return load_dataset(path.join(base_path, filename))
 
 
-figure_path = "/home/oliver/sync/figures"
+figure_path = "/home/oliver/sync/figures/seals/"
 
 
 datasets = struct(

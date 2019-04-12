@@ -24,10 +24,7 @@ def read_log(file):
     return struct (tags=tags.keys(), steps={i : Struct(entry) for i, entry in steps.items()})
 
 
-log_files = struct(
-    #seals = 'seals.json'
-    scott_base = 'scott_base.json'
-)
+
 
 
 def sortdict(d, **opts):
@@ -49,18 +46,29 @@ def get_prs(log, category='validate'):
     return get_keys(log, category + "/pr")
     
 
-base_path = '/home/oliver/storage/logs/'
+
+log_files = struct(
+    #seals = 'seals.json'
+    scott_base = 'scott_base',
+    fisheye = 'victor',
+
+)    
+
+
+def read_logs(base_path, log_files):
+
+    def load(filename):
+        filename = path.join(base_path, run_name, "log.json")
+        if path.isfile(filename):
+            return read_log(filename)
+
+    return log_files._map_maybe(load)
+
 
 if __name__ == '__main__':
 
-    def load(filename):
-        return read_log(path.join(base_path, filename))
 
-    logs = log_files._map(load)
-
-    prs = get_prs(logs.scott_base)
-
-    print(prs[1].keys())
+    read_logs('/home/oliver/logs/validate', log_files)
 
     # d = get_entry(logs.scott_base, 'dataset')
     # print(d)

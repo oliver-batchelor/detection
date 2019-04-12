@@ -153,6 +153,7 @@ def load_checkpoint(model_path, model, model_args, args):
 def initialise(config, dataset, args):
 
     data_root = config.root
+    log_root = args.log_dir or data_root
 
     model_args = struct (
         dataset = struct(
@@ -169,7 +170,7 @@ def initialise(config, dataset, args):
         boxes = args.debug_boxes  or args.debug_all
     )
 
-    output_path, log = logger.make_experiment(data_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
+    output_path, log = logger.make_experiment(log_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
 
     model, encoder = model_tools.create(models, model_args.model, model_args.dataset)
@@ -333,9 +334,13 @@ def detect_request(env, file, nms_params, review=None):
         return evaluate_review(env, image, nms_params, review)
 
 
-def log_lerp(range, t):
+def log_anneal(range, t):
     begin, end = range
     return math.exp(math.log(begin) * (1 - t) + math.log(end) * t)
+
+def cosine_anneal(range, t):
+    begin, end = range
+    return end + 0.5 * (begin - end) * (1 + math.cos(t * math.pi))
 
 def adjust_learning_rate(lr, optimizer):
     for param_group in optimizer.param_groups:
@@ -372,10 +377,10 @@ def get_nms_params(args):
             threshold = args.class_threshold,
             detections = args.max_detections)
 
-def test_images(images, model, env, hook=None):
+def test_images(images, model, env, split=False, hook=None):
     eval_params = struct(
         overlap = env.args.overlap,
-        split = env.args.eval_split,
+        split = split,
         image_size = (env.args.image_size, env.args.image_size),
         batch_size = env.args.batch_size,
         nms_params = get_nms_params(env.args),
@@ -388,10 +393,10 @@ def test_images(images, model, env, hook=None):
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
 
 
-def run_testing(name, images, model, env, hook=None, thresholds=None):
+def run_testing(name, images, model, env, split=False, hook=None, thresholds=None):
     if len(images) > 0:
         print("{} {}:".format(name, env.epoch))
-        results = test_images(images, model, env,  hook)
+        results = test_images(images, model, env, split=split, hook=hook)
 
         return evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, 
             log=EpochLogger(env.log, env.epoch), thresholds=thresholds)
@@ -556,9 +561,21 @@ def run_trainer(args, conn = None, env = None):
             process_command(cmd)
 
     def train_update(n, total):
-        lr = log_lerp((args.lr, args.lr * args.lr_epoch_decay), n / total) if args.lr > 0 else 0
 
-        adjust_learning_rate(lr, env.optimizer)
+        lr = 0
+        lr_min = args.lr * args.lr_min
+
+        if args.lr_decay == "log":
+            lr = log_anneal((args.lr, lr_min), n / total) 
+        elif args.lr_decay == "cosine":
+            lr = cosine_anneal((args.lr, lr_min), n / total) 
+        elif args.lr_decay == "step":
+            n = math.floor(env.epoch / args.lr_schedule)
+            lr = max(lr_min, args.lr * math.pow(args.lr_step, -n))
+        else:
+            assert False, "unknown lr decay method: " + args.lr_decay
+
+        adjust_learning_rate(lr, env.optimizer)        
 
         activity = struct(tag = 'train', epoch = env.epoch)
         send_command('progress', struct(activity = activity, progress = (n, total)))
@@ -609,6 +626,9 @@ def run_trainer(args, conn = None, env = None):
 
 
         score, thresholds = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
+        if env.args.eval_split:           
+            run_testing('validate_split', env.dataset.validate_images, model, env, split=True, hook=update('validate'))            
+
 
         is_best = score >= env.best.score
         if is_best:
@@ -624,7 +644,7 @@ def run_trainer(args, conn = None, env = None):
         
         for test_name in env.tests:
             run_testing(test_name, env.dataset.get_images(test_name), model, env, 
-                hook=update('test'), thresholds = env.best.thresholds)
+                hook=update('test'), thresholds = env.best.thresholds)                
         
 
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
@@ -634,7 +654,7 @@ def run_trainer(args, conn = None, env = None):
         env.epoch = env.epoch + 1
 
         if (args.detections > 0) and conn:
-            detect_images = least_recently_evaluated(env.dataset.new_images, n = args.detections)
+            detect_images = least_recently_evaluated(env.dataset.new_images, n = args.detections, invalidate = args.invalidate)
 
             results = run_detections(model, env, detect_images, hook=update('detect'))
             send_command('detections', results)
