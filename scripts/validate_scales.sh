@@ -15,7 +15,7 @@ do
         first=2
       fi
 
-      common="$common --image_size $image_size --log_dir $root/logs/scales/$scale/$image_size --train_epochs 1 --no_load"
+      common="$common --image_size $image_size --log_dir $root/logs/scales/$scale/$image_size --train_epochs 80 --no_load"
 
       $cmd "json --path $prefix/seals.json" --model "fcn --square --first $first"  $common --run_name seals
       $cmd "json --path $prefix/apples.json" --model "fcn --square --first $first"  $common --run_name apples
