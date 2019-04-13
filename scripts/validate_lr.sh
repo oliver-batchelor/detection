@@ -13,9 +13,7 @@ do
     epoch=$((1024*cycle))
     lr_step=$((40/cycle))
 
-    echo "--log_dir /home/oliver/logs/lr/$method$epoch/"
-
-    common="$base --log_dir /home/oliver/logs/lr/$method/$epoch/ --lr_step $lr_step --lr_decay $method --epoch_size $epoch --train_epochs $len"
+    common="$base --scale 0.5 --log_dir /home/oliver/logs/lr/$method/$epoch/ --lr_step $lr_step --lr_decay $method --epoch_size $epoch --train_epochs $len"
 
     $cmd "json --path $prefix/oliver/combined.json" --model "fcn --square --first 2" --image_size 400 $common --run_name oliver_penguins
     $cmd "json --path $prefix/apples.json" --model "fcn --square" --image_size 1024 $common --run_name apples
