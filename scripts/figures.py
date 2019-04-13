@@ -53,3 +53,27 @@ def plot_cumulative_line_stacks(x, stacks, keys):
     plt.legend(loc='upper left')
 
 
+def quartile_dict(k, data):
+    l, lq, m, uq, u = data
+    return {'med': m, 'q1': lq, 'q3': uq, 'whislo': l, 'whishi': u}
+
+def make_legend(ax, colours, keys):
+
+    legend = [Line2D([0], [0], color=colours, label=k) 
+         for k in keys]
+    ax.legend(handles=legend, loc='upper left')
+
+
+def box_plot(quartiles, keys, colours):
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    for i, k in enumerate(keys):
+        boxprops = dict(color=colours[k])
+
+        d = quartile_dict(k, quartiles[k])
+        plot = ax.bxp([d], positions=[i], widths=[0.5], vert=False, showfliers=False, boxprops=boxprops)
+
+    ax.set_ylim(ymin=-0.5, ymax=len(keys)-0.5)
+
+    plt.yticks(range(len(keys)), keys)
+    return fig, ax

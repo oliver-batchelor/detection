@@ -57,18 +57,28 @@ log_files = struct(
 
 def read_logs(base_path, log_files):
 
-    def load(filename):
+    def load(run_name):
         filename = path.join(base_path, run_name, "log.json")
         if path.isfile(filename):
             return read_log(filename)
 
-    return log_files._map_maybe(load)
+    return log_files._map(load)._filter_none()
+
+
+def plot_training_lines(key, f, xlabel, ylabel, title):
+
+
+    fig, ax = plt.subplots(figsize=(24, 12))
+    plot_cumulative_line_stacks(durations, actions, keys)
+    plt.show()        
 
 
 if __name__ == '__main__':
 
 
-    read_logs('/home/oliver/logs/validate', log_files)
+    logs = read_logs('/home/oliver/logs/validate', log_files)
+
+    plot_training_lines(logs)
 
     # d = get_entry(logs.scott_base, 'dataset')
     # print(d)

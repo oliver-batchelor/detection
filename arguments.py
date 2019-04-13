@@ -10,7 +10,7 @@ train_parameters = struct (
     optimizer = group('optimizer settings',
         lr              = param(0.001,    help='learning rate'),
 
-        lr_decay        = param('decay_log', help='type of LR decay to use (log|cosine|step)'),
+        lr_decay        = param('log', help='type of LR decay to use (log|cosine|step)'),
        
         lr_schedule     = param(30, type='int', help='epochs before dropping LR for step decay'),
         lr_step         = param(10, type='float', help='step factor to drop LR'),

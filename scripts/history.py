@@ -216,12 +216,14 @@ def history_summary(history):
 
     # durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
 
-    return struct (
-
+    return summaries, struct (
+        
         action_durations = quantiles(pluck('duration', totals.actions)),
         image_durations = quantiles(durations),
 
         n_actions = quantiles(pluck('n_actions', summaries)),
+        instances_image = quantiles(pluck('instances', summaries)),
+
         actions_count = actions_count,
 
         total_minutes = total_duration / 60,

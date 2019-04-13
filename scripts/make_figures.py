@@ -32,18 +32,31 @@ def load_all(datasets, base_path):
         summary = annotation_summary(dataset)
  
         history = extract_histories(dataset) 
-        summary = summary._merge(history_summary(history))
+        image_summaries, history_summaries = history_summary(history)
 
-        return struct (summary = summary, history = history, images = dataset.images)
+        summary = summary._merge(history_summaries)
+        return struct (summary = summary, history = history, images = dataset.images, image_summaries=image_summaries)
 
     return datasets._map(load)
     # pprint_struct(pluck_struct('summary', loaded))
 
     
+# def dataset_size(datasets):
+#     fig, ax = plt.subplots(figsize=(24, 12))
+
+#     for k in sorted(datasets.keys()):
+#         dataset = datasets[k]
+
+#         instances = np.array(pluck('instances', summaries))
+#         instances = np.array(pluck('n_images', summaries))
+        
+
+#         summary = 
+
+
 def actions_time(datasets):
 
     fig, ax = plt.subplots(figsize=(24, 12))
-    scatters = []
 
     for k in sorted(datasets.keys()):
         dataset = datasets[k]
@@ -70,6 +83,39 @@ def actions_time(datasets):
     plt.ylabel("annotation duration")
 
     return fig, ax
+
+
+def instances_duration(datasets):
+
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    for k in sorted(datasets.keys()):
+        dataset = datasets[k]
+
+        summaries = image_summaries(dataset.history)
+
+        instances = np.array(pluck('instances', summaries))
+        duration = np.array(pluck('duration', summaries))
+        actions = np.array(pluck('n_actions', summaries))
+
+        plt.scatter(actions, duration, s=actions*5, label = k)
+
+
+    def update(handle, orig):
+        handle.update_from(orig)
+        handle.set_sizes([64])
+
+    plt.legend(handler_map={PathCollection : HandlerPathCollection(update_func=update)})
+
+    # ax.set_ylim(ymin=0, ymax=150)
+    # ax.set_xlim(xmin=0, xmax=50)
+
+    plt.xlabel("number of instances")
+    plt.ylabel("annotation time (s)")
+
+    return fig, ax
+
+
 
 
 
@@ -246,6 +292,9 @@ def running_mAPs(datasets, window=250, iou=0.5):
     plt.show()
 
 
+
+        
+
 def cumulative_instances(datasets):
 
     fig, ax = plt.subplots(figsize=(24, 12))
@@ -286,23 +335,18 @@ datasets = struct(
    penguins = 'penguins.json',
    branches = 'branches.json',
     
-   seals = 'seals.json',
-   scott_base = 'scott_base.json',
-   apples1 = 'apples.json',
-   apples2 = 'apples_lincoln.json',
+#    seals = 'seals.json',
+#    scott_base = 'scott_base.json',
+#    apples1 = 'apples.json',
+#    apples2 = 'apples_lincoln.json',
 
-   scallops_niwa = 'scallops_niwa.json',
-   
-   #scallops    = 'mum/scallops.json', 
-   fisheye = 'victor.json',
-   buoys       = 'mum/buoys.json',
+#    scallops = 'scallops_niwa.json',
+  
+#    fisheye = 'victor.json',
+#    buoys       = 'mum/buoys.json',
+
+    aerial_penguins = 'oliver/combined.json',
 )
-
-other = struct(
-    #branches    = 'mum/branches.json',
-    #seals       = 'seals_shanelle.json',  
-)
-
 
 
 penguins_a = struct(
@@ -317,7 +361,8 @@ penguins_b = struct(
     royds_b = 'dad/penguins_royds.json',
 )
 
-
+tab10 = plt.get_cmap("tab10")
+colour_map = {k : tab10(i) for i, k in enumerate (datasets.keys()) }
 
 if __name__ == '__main__':
     loaded = load_all(datasets, base_path)
