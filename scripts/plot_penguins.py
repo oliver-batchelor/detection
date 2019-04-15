@@ -17,15 +17,16 @@ if __name__ == '__main__':
     fig.savefig(path.join(figure_path, "cum_instances.pdf"), bbox_inches='tight')
 
 
-
-    fig, ax = actions_time(loaded_b)
+    fig, ax = actions_time_scatter(loaded_b)
     ax.set_ylim(ymin=0, ymax=150)
     ax.set_xlim(xmin=0, xmax=50)
 
     fig.savefig(path.join(figure_path, "actions_time_b.pdf"), bbox_inches='tight')
 
-    fig, ax = actions_time(loaded_a)
+    fig, ax = actions_time_scatter(loaded_a)
     ax.set_ylim(ymin=0, ymax=150)
     ax.set_xlim(xmin=0, xmax=50)
 
     fig.savefig(path.join(figure_path, "actions_time_a.pdf"), bbox_inches='tight')
+
+

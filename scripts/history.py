@@ -5,7 +5,9 @@ from os import path
 
 import argparse
 
-from tools import table, struct, to_structs, filter_none, drop_while, concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes
+from tools import table, struct, to_structs, filter_none, drop_while, \
+     concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes, Struct
+
 from detection import evaluate
 
 from collections import deque
@@ -103,21 +105,17 @@ def extract_session(session, config):
         time = (t - start).total_seconds()    
         duration = time - previous_time()
             
-        actions.append(action._extend(time = time, duration = min(30, duration)))        
+        actions.append(action._extend(time = time, duration = min(60, duration)))        
 
     duration = sum (pluck('duration', actions))
+    end = actions[-1].time
+
     return struct(start = start, detections = detections, actions = actions, \
-        duration = duration, type = session.open.tag, threshold=session.threshold)
-
-
-
+        duration = duration, real_duration = end,  type = session.open.tag, threshold=session.threshold)
 
 
 def action_durations(actions):
     return [action.duration for action in actions if action.duration > 0]
-
-
-
 
 
 def image_summaries(history):
@@ -186,8 +184,29 @@ def running_mAP(history, window=100, iou=0.5):
 def image_summaries(history):
     return [image_summary(image) for image in history]
 
+annotation_types = ['positive', 'weak positive', 'modified positive', 'false negative', 'false positive']
+
+def annotation_categories(image):
+    mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'positive'}
+    t = image.threshold
+
+    def get_category(s):
+        if s.status.tag == "active":
+            if s.created_by.tag == "detect":
+                return "modified positive" if (s.changed_class or s.transformed) else "positive"
+            return mapping.get(s.created_by.tag)
+
+        if s.created_by.tag == "detect" and s.status.tag == "deleted":
+            detection = s.created_by.contents
+            if detection.confidence >= t:
+                return "false positive"
+
+    created = filter_none([get_category(s) for s in image.ann_summaries])
+    return count_struct(created, annotation_types)
+
 def image_summary(image):
     action_durations = map(lambda action: action.duration, image.actions)
+    
     
     # if len(image.actions) > 0:
     #     print(image.duration, sum(action_durations))
@@ -196,8 +215,17 @@ def image_summary(image):
         actions = image.actions,
         n_actions = len(image.actions), 
         duration = image.duration,
-        instances = image.target._size
+        real_duration = image.real_duration,
+        instances = image.target._size,
+        annotation_types = annotation_categories(image)
     )
+
+def count_struct(values, keys):
+    d = count_dict(values)
+    zeroes = Struct({k:0 for k in keys})
+
+    return zeroes._extend(**d)
+
 
 
 def history_summary(history):
@@ -208,6 +236,8 @@ def history_summary(history):
 
     actions_count = count_dict(pluck('action', totals.actions))
     durations = pluck('duration', summaries)
+    real_durations = pluck('real_duration', summaries)
+
     total_actions = sum(actions_count.values(), 0)
     total_duration = sum(durations, 0)
 
@@ -224,10 +254,14 @@ def history_summary(history):
         n_actions = quantiles(pluck('n_actions', summaries)),
         instances_image = quantiles(pluck('instances', summaries)),
 
+        annotation_types = totals.annotation_types,
+
         actions_count = actions_count,
 
         total_minutes = total_duration / 60,
         total_actions = total_actions,
+
+        real_minutes = sum(real_durations, 0),
 
         actions_minute      = 60 * total_actions / total_duration,
         instances_minute    = 60 * instances / total_duration
@@ -237,16 +271,15 @@ def history_summary(history):
 def extract_image(image, config):
     target = annotate.decode_image(image, config).target
 
-    if len(image.sessions) > 0:
-            
+    if len(image.sessions) > 0:          
         session = extract_session(image.sessions[0], config)
-        
     
         return struct (
             filename = image.image_file,
             start = session.start,
             detections = session.detections,
             duration = session.duration,
+            real_duration = session.real_duration,
             actions = session.actions,
             threshold = session.threshold,
             ann_summaries = image.summaries,

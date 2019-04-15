@@ -46,19 +46,18 @@ def image_annotations(image):
     return [obj for obj in annotations if obj is not None]
 
 def annotation_summary(dataset):
-    images = filter_categories(dataset)
-
     def count(image):
 
         annotations = image_annotations(image)
-
         n = len(annotations)
+
         categories = struct (
             test = n if image.category == 'test' else 0,
             validate = n if image.category == 'validate' else 0,
             train = n if image.category == 'train' else 0,
-        )
-
+            new = n if image.category == 'new' else 0,
+            discard = n if image.category == 'discard' else 0,
+        )            
 
         def box_area(ann):
             x1, y1, x2, y2 = ann.box
@@ -75,20 +74,15 @@ def annotation_summary(dataset):
 
         return struct(n = n, categories=categories, box_areas=box_areas, box_lengths=box_lengths)
     
-    infos = list(map(count, images))
-    totals = reduce(operator.add, infos)
+    infos = list(map(count, filter_categories(dataset)))
 
-    return struct(n_images = len(infos), categories = totals.categories, 
+    totals = reduce(operator.add, infos)
+    return struct(n_images = len(infos), 
+        categories = totals.categories, 
         n_annotations = totals.n, 
         n = quantiles(pluck('n', infos)), 
         box_length=quantiles(totals.box_lengths), 
         box_area = quantiles(totals.box_areas))
-
-# pprint_struct(datasets._map(summary))
-
-
-
-
 
 
 def decode_dataset(data):
@@ -130,9 +124,9 @@ def get_counts(dataset, class_id=None):
 
         counts = image.detections.stats.counts if class_id is None \
             else image.detections.stats.class_counts[str(class_id)]._map(f)
-
-       
-        return struct(image_file = image.image_file, time = t, truth = n, category = image.category, estimate = counts)
+ 
+        return struct(image_file = image.image_file, time = t, truth = n, \
+             category = image.category, estimate = counts, error=abs(n - counts.middle))
 
     counts = list(map(count, images))
     return sorted(counts, key = lambda count: count.time)

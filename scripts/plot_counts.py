@@ -145,11 +145,7 @@ def export_counts(file, counts):
 
     export_csv(file, fields, list(map(f, counts)))
 
-
-if __name__ == '__main__':
-      
-    loaded = datasets._map(load)
-
+def plot_counts(loaded):
     for k in ['scott_base', 'scott_base_100']:
         scott_base = get_counts(loaded[k])
 
@@ -179,8 +175,40 @@ if __name__ == '__main__':
 
         fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
         export_counts(path.join(figure_path, k + ".csv"), seals_total)
-        export_counts(path.join(figure_path, k + "_pairs.csv"), seals_pairs)
+        export_counts(path.join(figure_path, k + "_pairs.csv"), seals_pairs)   
+
+
+def show_errors(loaded):
+
+    # print ("--------" + k + "--------")
+    truth = {image.image_file:image.truth
+        for image in get_counts(loaded['seals']) if image.category=='test'}
+
+    truth2 = {image.image_file:image.truth
+        for image in get_counts(loaded['seals_shanelle']) if image.category=='test'}
+
+    estimate = {image.image_file:image.estimate.middle 
+        for image in get_counts(loaded['seals']) if image.category=='test'}
+
+    # [(k, truth[k] - estimate[k], truth[k] - truth2[k]) for k in truth.keys()]
+
+    errors = struct (
+        human_human = [abs(truth[k] - truth2[k]) for k in truth.keys()],
+        human_estimate = [abs(truth[k] - estimate[k]) for k in truth.keys()],
+        human_estimate2 = [abs(truth2[k] - estimate[k]) for k in truth.keys()]
+    )
+
+    print(errors._map(np.mean))
+
+
     
+
+if __name__ == '__main__':
+      
+    loaded = datasets._map(load)
+
+
+    show_errors(loaded)
 
 
 

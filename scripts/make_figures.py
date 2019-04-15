@@ -54,7 +54,7 @@ def load_all(datasets, base_path):
 #         summary = 
 
 
-def actions_time(datasets):
+def actions_time_scatter(datasets):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
@@ -85,11 +85,11 @@ def actions_time(datasets):
     return fig, ax
 
 
-def instances_duration(datasets):
+def instances_duration_scatter(datasets, keys):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
-    for k in sorted(datasets.keys()):
+    for k in keys:
         dataset = datasets[k]
 
         summaries = image_summaries(dataset.history)
@@ -98,20 +98,23 @@ def instances_duration(datasets):
         duration = np.array(pluck('duration', summaries))
         actions = np.array(pluck('n_actions', summaries))
 
-        plt.scatter(actions, duration, s=actions*5, label = k)
+        progress = np.cumsum(duration) / 60
+        # progress = progress / np.amax(progress)
+
+        plt.scatter(instances, duration, c=progress, s=actions*5, label = k, cmap='plasma')
 
 
-    def update(handle, orig):
-        handle.update_from(orig)
-        handle.set_sizes([64])
+    bar=plt.colorbar()
+    bar.set_label('prior annotation time(min)')
 
-    plt.legend(handler_map={PathCollection : HandlerPathCollection(update_func=update)})
 
-    # ax.set_ylim(ymin=0, ymax=150)
-    # ax.set_xlim(xmin=0, xmax=50)
+    ax.set_ylim(ymin=0)
+    ax.set_xlim(xmin=0)
 
     plt.xlabel("number of instances")
     plt.ylabel("annotation time (s)")
+
+    plt.title('number of instances vs annotation time')
 
     return fig, ax
 
@@ -150,40 +153,19 @@ def cumulative_lines(dataset, get_values, keys):
     plt.show()    
 
 
-
 def thresholds(image):
     changes = [action.value for action in image.actions if action.action=='threshold']
     return [image.threshold] + changes
 
 
-def annotation_categories(image):
-    mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'positive'}
-    t = image.threshold
-
-    def get_category(s):
-
-        if s.status.tag == "active":
-            if s.created_by.tag == "detect":
-                return "modified positive" if (s.changed_class or s.transformed) else "positive"
-            return mapping.get(s.created_by.tag)
-
-        if s.created_by.tag == "detect" and s.status.tag == "deleted":
-            detection = s.created_by.contents
-            if dconfidence_iou_scatteretection.confidence >= t:
-                return "false positive"
-
-    created = filter_none([get_category(s) for s in image.ann_summaries])
-    return count_dict(created)
-
-annotion_types = ['positive', 'weak positive', 'modified positive', 'false negative', 'false positive']
-
 
 
 def annotation_lines(dataset):
-    return cumulative_lines(dataset, annotation_categories, keys=annotion_types)
+    return cumulative_lines(dataset, annotation_categories, keys=annotation_types)
 
 def annotation_histogram(dataset, n_splits=None):
-    return image_histograms(dataset, annotation_categories, keys=annotion_types, n_splits=n_splits)
+    return image_histograms(dataset, annotation_categories, keys=annotation_types, n_splits=n_splits)
+
 
 def area(box):
     lx, ly = box.lower
@@ -241,14 +223,14 @@ def confidence_iou_scatter(datasets):
     plt.legend()
     plt.show()
 
+action_types = ['transform', 'confirm', 'add', 'delete', 'submit']
 
 def action_histogram(dataset, n_splits=None):
     def make_histogram(image):
         summary = image_summary(image)
         return count_dict(pluck('action', summary.actions))
         
-    keys = ['transform', 'confirm', 'add', 'delete', 'submit']
-    return image_histograms(dataset, make_histogram, keys=keys, n_splits=n_splits)
+    return image_histograms(dataset, make_histogram, keys=action_types, n_splits=n_splits)
 
      
 def plot_instances_time(dataset, smoothing = 1):
@@ -332,18 +314,18 @@ base_path = '/home/oliver/storage/export/'
 
 
 datasets = struct(
-   penguins = 'penguins.json',
-   branches = 'branches.json',
-    
-#    seals = 'seals.json',
-#    scott_base = 'scott_base.json',
-#    apples1 = 'apples.json',
-#    apples2 = 'apples_lincoln.json',
+    penguins = 'penguins.json',
+    branches = 'branches.json',
 
-#    scallops = 'scallops_niwa.json',
+    seals = 'seals.json',
+    scott_base = 'scott_base.json',
+    apples1 = 'apples.json',
+    apples2 = 'apples_lincoln.json',
+
+    scallops = 'scallops_niwa.json', 
   
-#    fisheye = 'victor.json',
-#    buoys       = 'mum/buoys.json',
+    fisheye = 'victor.json',
+    buoys       = 'mum/buoys.json',
 
     aerial_penguins = 'oliver/combined.json',
 )
@@ -379,8 +361,6 @@ if __name__ == '__main__':
     # dad = load_all(penguins_dad, base_path)
 
     cumulative_instances(loaded)
-
-
 
     # loaded = load_all(penguins, base_path)
     # pprint_struct(pluck_struct('summary', loaded))
