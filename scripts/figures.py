@@ -47,28 +47,27 @@ def plot_cumulative_line_stacks(x, stacks, keys):
     total = torch.Tensor(len(stacks)).zero_()
     values = [np.cumsum(pluck(k, stacks, 0)) for k in keys]
 
-    print(x)
-
     plt.stackplot(x, *values, labels=keys)
     plt.legend(loc='upper left')
+
 
 
 def quartile_dict(k, data):
     l, lq, m, uq, u = data
     return {'med': m, 'q1': lq, 'q3': uq, 'whislo': l, 'whishi': u}
 
-def make_legend(ax, colours, keys):
+def make_legend(ax, color_map, keys):
 
-    legend = [Line2D([0], [0], color=colours, label=k) 
+    legend = [Line2D([0], [0], color=color_map, label=k) 
          for k in keys]
     ax.legend(handles=legend, loc='upper left')
 
 
-def box_plot(quartiles, keys, colours):
+def box_plot(quartiles, keys, color_map=None):
     fig, ax = plt.subplots(figsize=(24, 12))
 
     for i, k in enumerate(keys):
-        boxprops = dict(color=colours[k])
+        boxprops = dict(color=color_map[k]) if color_map else None
 
         d = quartile_dict(k, quartiles[k])
         plot = ax.bxp([d], positions=[i], widths=[0.5], vert=False, showfliers=False, boxprops=boxprops)

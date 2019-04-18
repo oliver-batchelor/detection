@@ -100,7 +100,6 @@ def load(filename):
     return load_dataset(path.join(base_path, filename))
 
 
-figure_path = "/home/oliver/sync/figures/seals/"
 
 
 datasets = struct(
@@ -146,6 +145,9 @@ def export_counts(file, counts):
     export_csv(file, fields, list(map(f, counts)))
 
 def plot_counts(loaded):
+    figure_path = "/home/oliver/sync/figures/seals/"
+
+
     for k in ['scott_base', 'scott_base_100']:
         scott_base = get_counts(loaded[k])
 

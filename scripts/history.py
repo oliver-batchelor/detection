@@ -24,6 +24,7 @@ from matplotlib import rc
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
+import numpy as np
 import torch
 
 
@@ -181,12 +182,14 @@ def running_mAP(history, window=100, iou=0.5):
     return [mAP(w).mAP for w in windows]
 
 
-def image_summaries(history):
-    return [image_summary(image) for image in history]
 
-annotation_types = ['positive', 'weak positive', 'modified positive', 'false negative', 'false positive']
 
-def annotation_categories(image):
+correction_types = ['positive', 'modified positive', 'weak positive', 'false negative', 'false positive']
+action_types = ['transform', 'confirm', 'add', 'delete', 'submit']
+
+
+
+def annotation_corrections(image):
     mapping = {'add':'false negative', 'confirm':'weak positive', 'detect':'positive'}
     t = image.threshold
 
@@ -202,39 +205,43 @@ def annotation_categories(image):
                 return "false positive"
 
     created = filter_none([get_category(s) for s in image.ann_summaries])
-    return count_struct(created, annotation_types)
+    return count_struct(created, correction_types)
 
 def image_summary(image):
     action_durations = map(lambda action: action.duration, image.actions)
     
-    
-    # if len(image.actions) > 0:
-    #     print(image.duration, sum(action_durations))
-
     return struct (
         actions = image.actions,
         n_actions = len(image.actions), 
         duration = image.duration,
         real_duration = image.real_duration,
         instances = image.target._size,
-        annotation_types = annotation_categories(image)
+        actions_count = count_struct(pluck('action', image.actions), action_types),
+        correction_count = annotation_corrections(image)
     )
+
+
+def image_summaries(history):
+    summaries = [image_summary(image) for image in history]
+
+    durations = pluck('duration', summaries)
+    cumulative_time = np.cumsum(durations)
+
+    return [summary._extend(cumulative_time = t) for summary, t in zip(summaries, cumulative_time)]
+
 
 def count_struct(values, keys):
     d = count_dict(values)
-    zeroes = Struct({k:0 for k in keys})
-
-    return zeroes._extend(**d)
-
+    return Struct({k:d.get(k, 0) for k in keys})
 
 
 def history_summary(history):
     
-    summaries = [image_summary(image) for image in history]
+    summaries = image_summaries(history)
     totals = sum_list(summaries)
     n = len(history)
 
-    actions_count = count_dict(pluck('action', totals.actions))
+    actions_count = count_struct(pluck('action', totals.actions), action_types)
     durations = pluck('duration', summaries)
     real_durations = pluck('real_duration', summaries)
 
@@ -254,9 +261,8 @@ def history_summary(history):
         n_actions = quantiles(pluck('n_actions', summaries)),
         instances_image = quantiles(pluck('instances', summaries)),
 
-        annotation_types = totals.annotation_types,
-
-        actions_count = actions_count,
+        correction_count = totals.correction_count,
+        actions_count = totals.actions_count,
 
         total_minutes = total_duration / 60,
         total_actions = total_actions,
