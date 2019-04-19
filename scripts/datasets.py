@@ -1,9 +1,10 @@
 import numpy as np
 from dataset.imports import import_json
-from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct
+from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct, sum_list
 import tools
 
 from dataset.annotate import decode_obj
+from detection.evaluate import match_targets
 
 import operator
 from functools import reduce
@@ -83,6 +84,28 @@ def annotation_summary(dataset):
         n = quantiles(pluck('n', infos)), 
         box_length=quantiles(totals.box_lengths), 
         box_area = quantiles(totals.box_areas))
+
+
+def match_datasets(dataset1, dataset2, threshold=0.5, check_overlap=True):
+
+    images1 = {image.filename:image.target for image in dataset1.history}
+    images2 = {image.filename:image.target for image in dataset2.history}
+
+    results = {}
+    for k, image1 in images1.items():
+        image2 = images2.get(k)
+        assert (not check_overlap) or image2 is not None, "image without match: " + k
+
+        if image2 is not None:
+            matches = match_targets(image1, image2, threshold=threshold)
+        
+        results[k] = struct(count1=image1._size, count2=image2._size, matched = len(matches))
+
+    total = sum_list(list(results.values()))
+    iou = total.matched / (total.count1 + total.count2 - total.matched)
+    f1 = 2 * total.matched / (total.count1 + total.count2)
+
+    return struct(total = total._extend(iou = iou, f1 = f1), images = results)
 
 
 def decode_dataset(data):

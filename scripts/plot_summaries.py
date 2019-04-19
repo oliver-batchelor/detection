@@ -1,4 +1,4 @@
-from scripts.make_figures import *
+from scripts.load_figures import *
 from matplotlib.lines import Line2D
 
 import scripts.figures

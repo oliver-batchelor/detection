@@ -78,6 +78,11 @@ def decode_action(action):
         assert False, "unknown action type: " + action.tag
 
 
+empty_detections = table (
+        bbox = torch.FloatTensor(0, 4),
+        label = torch.LongTensor(0),
+        confidence = torch.FloatTensor(0))
+
 def extract_session(session, config):
 
     start = date.parse(session.time)
@@ -123,69 +128,10 @@ def image_summaries(history):
     return [image_summary(image) for image in history]
 
 
-def instance_windows(history, window=100):
-    windows = []
-
-    for i in range(len(history)):
-        images = []
-        n = 0 
-        
-        def add(k):
-            nonlocal n
-
-            if n < window and k >= 0 and k < len(history):
-                images.append(k)
-                n = n + history[k].target._size
-
-        j = 1
-        add(i)
-        while n < window:
-            add(i + j)
-            add(i - j)
-            
-            j = j + 1
-
-        windows.append(images)
-
-    return windows
-
-
-
-empty_detections = table (
-        bbox = torch.FloatTensor(0, 4),
-        label = torch.LongTensor(0),
-        confidence = torch.FloatTensor(0))
-
-def image_result(image):      
-    prediction = empty_detections if image.detections is None else image.detections
-    return struct(target = image.target, prediction = prediction )
-
-def running_AP(history, window=100):
-    windows = instance_windows(history, window)
-        
-    image_pairs =  filter_none([image_result(image) for image in history])
-    mAPs = [evaluate.mAP_subset(image_pairs, iou=t/100) for t in list(range(50, 100, 5))]
-
-    def compute_AP(w):
-        return sum([mAP(w).mAP for mAP in mAPs]) / 10
-
-    return [compute_AP(w) for w in windows]
-
-
-def running_mAP(history, window=100, iou=0.5):
-    windows = instance_windows(history, window)
-    #windows = [[i] for i in range(len(history))]
-    
-    image_pairs =  filter_none([image_result(image) for image in history])
-    mAP = evaluate.mAP_subset(image_pairs, iou=iou)
-
-    return [mAP(w).mAP for w in windows]
-
-
 
 
 correction_types = ['positive', 'modified positive', 'weak positive', 'false negative', 'false positive']
-action_types = ['transform', 'confirm', 'add', 'delete', 'submit']
+action_types = ['transform', 'confirm', 'add', 'delete', 'submit', 'set_class']
 
 
 
@@ -277,7 +223,7 @@ def history_summary(history):
 def extract_image(image, config):
     target = annotate.decode_image(image, config).target
 
-    if len(image.sessions) > 0:          
+    if image.category in ['validate', 'train'] and len(image.sessions) > 0:          
         session = extract_session(image.sessions[0], config)
     
         return struct (

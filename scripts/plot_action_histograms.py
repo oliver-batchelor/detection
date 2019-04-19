@@ -1,4 +1,4 @@
-from scripts.make_figures import *
+from scripts.load_figures import *
 from matplotlib.lines import Line2D
 
 from scripts.history import *
@@ -129,7 +129,7 @@ def plot_action_ratios(dataset, sigma=5):
 
     return fig, ax    
 
-def plot_instance_rates(datasets, sigma=5):
+def plot_instance_rates(datasets, color_map, sigma=5):
     fig, ax = plt.subplots(figsize=(24, 12))
 
     for k, dataset in datasets.items():
@@ -141,7 +141,7 @@ def plot_instance_rates(datasets, sigma=5):
         x, y = uneven_gaussian_filter(time, total / durations, 
              durations, sigma=sigma)
 
-        plt.plot(x / time[-1], y, color=dataset_colors[k], label=k)
+        plt.plot(x / time[-1], y, color=color_map[k], label=k)
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0) 
@@ -156,7 +156,7 @@ def plot_instance_rates(datasets, sigma=5):
 
     
 
-def plot_dataset_ratios(datasets, sigma=5):
+def plot_dataset_ratios(datasets, color_map, sigma=5):
     fig, ax = plt.subplots(figsize=(24, 12))
    
     for k, dataset in datasets.items():
@@ -165,7 +165,7 @@ def plot_dataset_ratios(datasets, sigma=5):
         time, _ = get_time(dataset)
         x, y = uneven_gaussian_filter(time, ratios.positive, total, sigma=sigma)
 
-        plt.plot(x / time[-1], y, color=dataset_colors[k], label=k)
+        plt.plot(x / time[-1], y, color=color_map[k], label=k)
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0) 
@@ -189,22 +189,45 @@ def cumulative_lines(dataset, get_values, keys):
     plt.show()    
 
 
+def cumulative_instances(datasets, color_map):
+
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    for k in sorted(datasets.keys()):
+        dataset = datasets[k]
+        
+        summaries = image_summaries(dataset.history)
+
+        instances = torch.Tensor(pluck('instances', summaries)).cumsum(0)
+        durations = torch.Tensor(pluck('duration', summaries)).cumsum(0)
+
+        plt.plot((durations / 60).numpy(), instances.numpy(), label = k)
+
+    ax.set_ylim(ymin=0)
+    ax.set_xlim(xmin=0)
+
+    ax.set_title("cumulative annotated instances vs. time")
+
+    ax.set_xlabel("annotation time (m)")
+    ax.set_ylabel("count")
+
+    ax.set_title("cumulative instances vs annotation time")
+
+    ax.legend()
+    
+    return fig, ax    
+
+
 def thresholds(image):
     changes = [action.value for action in image.actions if action.action=='threshold']
     return [image.threshold] + changes
 
-if __name__ == '__main__':
-    figure_path = "/home/oliver/sync/figures"
 
-    loaded = load_all(datasets, base_path)._without('aerial_penguins')
-
-    summaries = pluck_struct('summary', loaded)
-    pprint_struct(summaries)
-
-    fig, ax = plot_instance_rates(loaded, sigma=5)
+def plot_action_histograms(loaded, color_map, figure_path):
+    fig, ax = plot_instance_rates(loaded, color_map, sigma=5)
     fig.savefig(path.join(figure_path, "summaries/instance_rates.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_dataset_ratios(loaded, sigma=5)
+    fig, ax = plot_dataset_ratios(loaded, color_map, sigma=5)
     fig.savefig(path.join(figure_path, "summaries/positive_ratio.pdf"), bbox_inches='tight')
 
     for k, dataset in loaded.items():
@@ -215,4 +238,21 @@ if __name__ == '__main__':
         fig, ax = plot_action_ratios(loaded[k], sigma=5)
         plt.title(k + ' - action proportions vs. annotation time')
         fig.savefig(path.join(figure_path, "action_ratio", k + ".pdf"), bbox_inches='tight')
+
+    fig, ax = cumulative_instances(loaded, color_map)
+    fig.savefig(path.join(figure_path, "summaries/cumulative_instances.pdf"), bbox_inches='tight')
+
+
+
+if __name__ == '__main__':
+    figure_path = "/home/oliver/sync/figures"
+
+    loaded = load_all(datasets, base_path)._without('aerial_penguins')
+
+    summaries = pluck_struct('summary', loaded)
+    pprint_struct(summaries)
+
+    plot_action_histograms(loaded, color_map=dataset_colors, figure_path=figure_path)
+
+
 

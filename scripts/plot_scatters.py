@@ -1,8 +1,8 @@
-from scripts.history import history_summary, extract_histories, \
-     image_summaries, running_mAP, image_summary, correction_types, action_types
 
 from scripts.datasets import load_dataset, annotation_summary
 from scripts.figures import *
+from scripts.history import *
+
 
 from matplotlib.collections import PathCollection
 from matplotlib.legend_handler import HandlerPathCollection
@@ -13,11 +13,12 @@ import math
 from tools import struct, to_structs, filter_none, drop_while, concat_lists, \
         map_dict, pprint_struct, pluck_struct, count_dict, sum_list, Struct, sum_dicts
 
-from scripts.make_figures import *
+from scripts.load_figures import *
+from scipy import stats
 
 
 
-def actions_time_scatter(datasets):
+def actions_time_scatter(datasets, color_map):
 
     fig, ax = plt.subplots(figsize=(24, 12))
 
@@ -30,7 +31,7 @@ def actions_time_scatter(datasets):
         duration = np.array(pluck('duration', summaries))
         actions = np.array(pluck('n_actions', summaries))
 
-        plt.scatter(actions, duration, s=instances * 5, alpha=0.5, label = k)
+        plt.scatter(actions, duration, s=instances * 5, alpha=0.5, label = k, color=color_map[k])
 
 
     def update(handle, orig):
@@ -80,9 +81,6 @@ def instances_duration_scatter(datasets, keys):
     return fig, ax
 
 
-
-
-
 def area(box):
     lx, ly = box.lower
     ux, uy = box.upper
@@ -116,39 +114,81 @@ def iou_shape(shape1, shape2):
     else:
         assert False, "unknown shape: " + shape1.tag
 
-
-
-def confidence_iou_scatter(datasets):
-    fig, ax = plt.subplots(figsize=(24, 12))
-
+def get_annotation_ious(dataset):
+    
     def get_point(s):
         if s.status.tag == "active" and s.created_by.tag in ["detect", "confirm"]:
             detection = s.created_by.contents
             ann = s.status.contents
 
-            return (detection.confidence, iou_shape(detection.shape, ann.shape))
+            return (detection.confidence, iou_shape(detection.shape, ann.shape), s.created_by.tag)
 
-    for k, dataset in datasets.items():
-        points = filter_none([get_point(s) for image in dataset.history 
+    return filter_none([get_point(s) for image in dataset.history 
             for s in image.ann_summaries])
 
-        conf, iou = zip(*points)
 
-        plt.scatter(conf, iou, alpha=0.4, label = k)
+def iou_lines(datasets, keys, color_map):
+    fig, ax = plt.subplots(figsize=(24, 12))
 
-    plt.legend()
-    plt.show()
+    for k in keys:
+        dataset = datasets[k]
+
+        conf, iou, label = zip (*[point for point in get_annotation_ious(dataset) if point[1] < 1.0])
+
+        density = stats.kde.gaussian_kde(iou)
+    
+        x = np.arange(0., 1.001, .002)
+        plt.plot(x, density(x), label = k, color = color_map[k])
+
+    plt.xlabel('iou')
+    plt.ylabel('density')
+
+    plt.title('prediction iou with respect to final annotation (modified annotations only)')
+
+    plt.legend(loc = 'upper left')
+
+    return fig, ax
+
+
+
+def confidence_iou_scatter(datasets):
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    points = [p for dataset in datasets.values() 
+        for p in get_annotation_ious(dataset)]
+
+    conf, iou, label = zip(*points)
+
+    xrange = np.arange(0.2, 1.001, 0.05)
+    yrange = np.arange(0.4, 1.001, 0.05)
+    hist, xbins, ybins, im = ax.hist2d(np.array(conf) - 0.01, np.array(iou) - 0.01, bins=(xrange, yrange), vmax=200)
+
+    for i in range(len(ybins)-1):
+        for j in range(len(xbins)-1):
+            ax.text(xbins[j] + 0.025,ybins[i] + 0.025, int(hist[j,i]), 
+                    color="w", ha="center", va="center")
+
+    plt.xlabel('prediction confidence')
+    plt.ylabel('iou with final annotation')
+
+    plt.title('annotation iou vs prediction confidence')
+   
+    return fig, ax
 
      
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/scatters"
 
-
     loaded = load_all(datasets, base_path)
     pprint_struct(pluck_struct('summary', loaded))
 
 
-    #confidence_iou_scatter(loaded)
-    plt.show()
+    fig, ax = confidence_iou_scatter(loaded._subset('seals', 'apples1', 'apples2', 'penguins', 'fisheye', 'branches'))
+    fig.savefig(path.join(figure_path, "confidence_iou.pdf"), bbox_inches='tight')
 
+    fig, ax = iou_lines(loaded, keys=sorted(loaded.keys()), color_map=dataset_colors)
+    fig.savefig(path.join(figure_path, "iou_dataset.pdf"), bbox_inches='tight')
+    
+    fig, ax = actions_time_scatter(loaded._subset('apples1', 'apples2'), color_map=dataset_colors)
+    fig.savefig(path.join(figure_path, "apples_scatter.pdf"), bbox_inches='tight')
 
