@@ -234,17 +234,45 @@ default_match = struct(
     crop_boxes = False,
     match_thresholds=(0.4, 0.5), 
     match_nearest = 0,
-    class_weights = None
+    class_weights = None,
+    overlap_attenuation = False
 )
 
+
+
 def encode(target, anchor_boxes, match_params=default_match):
+    if match_params.overlap_attenuation:
+        return encode_overlaps(target, anchor_boxes, match_params)
+    else:
+        return encode_thresholds(target, anchor_boxes, match_params)
+
+
+def encode_overlaps(target, anchor_boxes, match_params=default_match):
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
-    if m == 0:
-        return struct (
-            location   = torch.FloatTensor(n, 4).fill_(0), 
-            classification  = torch.LongTensor(n).fill_(0)) # all negative label
+    if m == 0: return struct (
+        location        = torch.FloatTensor(n, 4).fill_(0), 
+        classification  = torch.LongTensor(n).fill_(0),
+        overlap = torch.FloatTensor(n).fill_(0))
+
+    ious = iou(point_form(anchor_boxes), target.bbox)
+    max_ious, max_ids = ious.max(1)
+
+    return struct (
+        location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
+        classification = target.label[max_ids],
+        overlap = max_ious        
+    )
+
+
+def encode_thresholds(target, anchor_boxes, match_params=default_match):
+    n = anchor_boxes.size(0)
+    m = target.bbox.size(0)
+
+    if m == 0: return struct (
+        location        = torch.FloatTensor(n, 4).fill_(0), 
+        classification  = torch.LongTensor(n).fill_(0))
 
     ious = iou(point_form(anchor_boxes), target.bbox)
 
@@ -260,7 +288,6 @@ def encode(target, anchor_boxes, match_params=default_match):
     return struct (
         location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
         classification = class_target
-        # weight = None
     )
 
 

@@ -102,7 +102,9 @@ detection_parameters = struct (
     select_instance = param(0.5, help = 'probability of cropping around an object instance as opposed to a random patch'),
     min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
-    top_anchors     = param(4,     help='select n top anchors for ground truth regardless of iou overlap')
+    
+    top_anchors     = param(4,     help='select n top anchors for ground truth regardless of iou overlap'),
+    overlap_attenuation = param(False, help='weight anchor box targets by the amount of overlap iou'),
 )
 
 

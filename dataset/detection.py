@@ -284,7 +284,8 @@ def get_match_params(args):
         crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), 
         match_nearest = args.top_anchors,
-        class_weights = None
+        class_weights = None,
+        overlap_attenuation = args.overlap_attenuation
     )
 
 def encode_with(args, encoder=None):
@@ -305,7 +306,9 @@ def transform_training(args, encoder=None):
     else:
         assert false, "unknown augmentation method " + args.augment
 
-    filter = filter_boxes(min_visible=args.min_visible, crop_boxes=args.crop_boxes)
+    min_visible = 0 if args.overlap_attenuation else args.min_visible
+
+    filter = filter_boxes(min_visible=min_visible, crop_boxes=args.crop_boxes)
     flip   = random_flips(horizontal=args.flips, vertical=args.vertical_flips, transposes=args.transposes)
     
     

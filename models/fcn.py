@@ -82,9 +82,11 @@ class Encoder:
 
        
     def loss(self, encoding, prediction, device):
- 
        target = encoding._map(Tensor.to, device)
-       return batch_focal_loss(target, prediction, averaging=False, class_weights=self.class_weights)
+       if 'overlap' in target:
+           return overlap_focal_loss(target, prediction, class_weights=self.class_weights)
+       else:
+           return batch_focal_loss(target, prediction,  class_weights=self.class_weights)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
