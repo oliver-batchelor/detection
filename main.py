@@ -600,8 +600,14 @@ def run_trainer(args, conn = None, env = None):
 
         log.scalars("dataset", Struct(env.dataset.count_categories()))
 
-        print("training {}:".format(env.epoch))
-        train_stats = trainer.train(env.dataset.sample_train(args, env.encoder),
+        train_images = env.dataset.train_images
+        if args.incremental:
+            t = min(env.epoch / args.train_epochs, 1)
+            n = int(t * len(train_images))
+            train_images = train_images[:n]
+
+        print("training {} on {} images:".format(env.epoch, len(train_images)))
+        train_stats = trainer.train(env.dataset.sample_train_on(train_images, args, env.encoder),
             evaluate.eval_train(model.train(), env.encoder, env.debug, 
             device=env.device), env.optimizer, hook=train_update)
 

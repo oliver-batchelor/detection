@@ -54,8 +54,7 @@ datasets = struct(
     fisheye = 'victor.json',
     buoys       = 'mum/buoys.json',
     aerial_penguins = 'oliver/combined.json',
-    aerial_penguins_b = 'oliver/combined.json',
-)
+ 
 
 
 penguins_a = struct(

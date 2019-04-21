@@ -143,9 +143,22 @@ def plot_scales(figure_path):
 
 
 def plot_lr(figure_path):
-    lr_logs = [(method, cycle, read_logs(path.join(log_path, 'lr', method, str(cycle)), log_files))
+
+    datasets = ["apples", "branches", "aerial_penguins"]
+    for dataset in datasets:
         for method in ['cosine', 'step', 'log']
-            for cycle in [1024, 2048, 4096]]    
+            cycles = [1024, 2048, 4096] if method is not 'step' else [1024]
+            for cycle in cycles:
+                log = read_log(path.join(log_path, 'lr', method, str(cycle)), log_files)
+
+                validate = get_entry(log, "train")
+                epoch, loss = extract_key(split, 'loss')
+
+                plt.plot(epoch, AP, label=k + " full", color=dataset_colors[k], linestyle='-')
+                
+
+
+        
 
 
 

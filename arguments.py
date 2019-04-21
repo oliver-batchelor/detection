@@ -40,6 +40,7 @@ train_parameters = struct (
     epoch_size          = param(1024, help='epoch size for training'),
     validation_pause    = param(16,    type='int', help='automatically pause training if validation does not improve after epochs'),
 
+    incremental       = param(False, help='simulate incremental adding to the dataset during training'),
     train_epochs      = param(64, type='int', help='automatically pause training after epochs'),
 
     eval_split      = param(False, help='evaluate images split into crops of image_size'),

@@ -428,8 +428,12 @@ class DetectionDataset:
         return load_training(args, images, collate_fn=flatten(collate))
 
     def sample_train(self, args, encoder, collate=collate_batch):
-        return sample_training(args, self.train_images, load_image,
+        return self.sample_train_on(self.train_images, args, encoder, collate=collate)
+
+    def sample_train_on(self, images, args, encoder, collate=collate_batch):
+        return sample_training(args, images, load_image,
             transform = transform_training(args, encoder=encoder), collate_fn=flatten(collate))
+
 
     def load_inference(self, id, file, args):
         transform = transform_testing(args)
