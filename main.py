@@ -333,7 +333,6 @@ def detect_request(env, file, nms_params, review=None):
     else:
         return evaluate_review(env, image, nms_params, review)
 
-
 def log_anneal(range, t):
     begin, end = range
     return math.exp(math.log(begin) * (1 - t) + math.log(end) * t)
@@ -341,6 +340,20 @@ def log_anneal(range, t):
 def cosine_anneal(range, t):
     begin, end = range
     return end + 0.5 * (begin - end) * (1 + math.cos(t * math.pi))
+
+def schedule_lr(t, epoch, args):
+    lr_min = args.lr * args.lr_min
+
+    if args.lr_decay == "log":
+        return log_anneal((args.lr, lr_min), t) 
+    elif args.lr_decay == "cosine":
+        return cosine_anneal((args.lr, lr_min), t) 
+    elif args.lr_decay == "step":
+        n = math.floor(epoch / args.lr_schedule)
+        return max(lr_min, args.lr * math.pow(args.lr_step, -n))
+    else:
+        assert False, "unknown lr decay method: " + args.lr_decay
+
 
 def adjust_learning_rate(lr, optimizer):
     for param_group in optimizer.param_groups:
@@ -470,6 +483,9 @@ def report_training(results):
     return images
 
 
+
+
+
 class UserCommand(Exception):
     def __init__(self, command):
         super(UserCommand, self).__init__("")
@@ -562,19 +578,7 @@ def run_trainer(args, conn = None, env = None):
 
     def train_update(n, total):
 
-        lr = 0
-        lr_min = args.lr * args.lr_min
-
-        if args.lr_decay == "log":
-            lr = log_anneal((args.lr, lr_min), n / total) 
-        elif args.lr_decay == "cosine":
-            lr = cosine_anneal((args.lr, lr_min), n / total) 
-        elif args.lr_decay == "step":
-            n = math.floor(env.epoch / args.lr_schedule)
-            lr = max(lr_min, args.lr * math.pow(args.lr_step, -n))
-        else:
-            assert False, "unknown lr decay method: " + args.lr_decay
-
+        lr = schedule_lr(n/total, env.epoch, args)
         adjust_learning_rate(lr, env.optimizer)        
 
         activity = struct(tag = 'train', epoch = env.epoch)

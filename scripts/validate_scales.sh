@@ -5,7 +5,7 @@ root="/local/storage"
 prefix="$root/export"
 
 
-for scale in 0.5 0.25 0.125;
+for scale in 1.0 0.5 0.25 0.125;
 do
   for image_size in 512 768 1024;
   do
