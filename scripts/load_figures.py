@@ -41,26 +41,20 @@ def load_all(datasets, base_path):
  
     
 
-
-    
 base_path = '/home/oliver/storage/export/'
-
 
 datasets = struct(
     penguins = 'penguins.json',
     branches = 'branches.json',
-
     seals = 'seals.json',
     scott_base = 'scott_base.json',
     apples1 = 'apples.json',
     apples2 = 'apples_lincoln.json',
-
-    scallops = 'scallops_niwa.json', 
-  
+    scallops = 'scallops_niwa.json',  
     fisheye = 'victor.json',
     buoys       = 'mum/buoys.json',
-
     aerial_penguins = 'oliver/combined.json',
+    aerial_penguins_b = 'oliver/combined.json',
 )
 
 

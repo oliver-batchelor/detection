@@ -96,8 +96,8 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
         result = mAP_matches(matches, target.label.size(0))
 
 
-        pred = transpose_structs(matches) 
-        bbox = torch.stack (pred.bbox)
+        # pred = transpose_structs(matches) 
+        # bbox = torch.stack (pred.bbox)
 
         # detected = box.match_predictions(bbox, raw_prediction, threshold = 0.5)
 

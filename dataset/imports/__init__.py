@@ -36,7 +36,7 @@ def lookup_classes(dataset, classes):
 
 
 def filter_annotations(image, class_ids):
-    anns = [ann for ann in image['annotations'] if ann['label'] in class_ids]
+    anns = {k:ann for k, ann in image['annotations'].items() if ann['label'] in class_ids}
     return {**image, 'annotations':anns}
 
 
@@ -63,7 +63,7 @@ def subset_dataset(dataset, subset, keep_classes=None):
 
 def contains_any_class(dataset, class_ids):
     def f(image):
-        for ann in image['annotations']:
+        for ann in image['annotations'].values():
 
             if ann['label'] in class_ids:
                 return True

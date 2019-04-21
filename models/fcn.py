@@ -353,7 +353,7 @@ def create_fcn(args, dataset_args):
     model = FCN(backbone, box_sizes, layer_names[args.first:], fine_tune=base_layers, 
                 num_classes=num_classes, features=args.features, shared=args.shared, square=args.square, separate=args.separate)
 
-    class_weights = [c.name.weighting for c in dataset_args.classes]
+    class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
 
     encoder = SeparateEncoder(args.first, box_sizes, num_classes=num_classes)  \
         if args.separate else Encoder(args.first, box_sizes, class_weights=class_weights)

@@ -100,7 +100,7 @@ def class_mapping(config):
 def decode_image(data, config):
     target = decode_object_map(data.annotations, config)
 
-    evaluated = data.detections.network_id if data.detections else None
+    evaluated = data.detections.network_id if data.get('detections', None) else None
 
     return struct(
         id = data.image_file,
@@ -108,7 +108,7 @@ def decode_image(data, config):
         target = target,
         category = data.category,
         evaluated = evaluated,
-        key = data.natural_key
+        key = data.get('natural_key', None)
     )
 
 def filterDict(d):
