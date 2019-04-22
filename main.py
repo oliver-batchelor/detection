@@ -605,7 +605,7 @@ def run_trainer(args, conn = None, env = None):
         log.scalars("dataset", Struct(env.dataset.count_categories()))
 
         train_images = env.dataset.train_images
-        if args.incremental:
+        if args.incremental is True:
             t = env.epoch / args.train_epochs
             n = max(1, min(int(t * len(train_images)), len(train_images)))
             train_images = train_images[:n]
