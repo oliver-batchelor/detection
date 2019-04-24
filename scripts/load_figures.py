@@ -53,14 +53,15 @@ datasets = struct(
     scallops = 'scallops_niwa.json',  
     fisheye = 'victor.json',
     buoys       = 'mum/buoys.json',
-    aerial_penguins = 'oliver/combined.json',
+    aerial_penguins = 'oliver/combined.json'
+)
  
 
 
 penguins_a = struct(
     hallett_a = 'oliver/penguins_hallett.json',
     cotter_a = 'oliver/penguins_cotter.json',
-    royds_a = 'oliver/penguins_royds.json',
+    royds_a = 'oliver/penguins_royds.json'
 )
 
 penguins_b = struct(

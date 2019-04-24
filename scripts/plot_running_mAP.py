@@ -102,7 +102,7 @@ if __name__ == '__main__':
     for k, r in results.items():
         fig, ax = fig, ax = plot_APs_dataset(r)
         plt.title(k + ' - accuracy predictions vs. corrected images')
-        fig.savefig(path.join(figure_path, "running_maps", k + ".pdf"), bbox_inches='tight')
+        fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
       
 
     fig, ax = plot_running_mAPs(results, ious=[75])

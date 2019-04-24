@@ -17,14 +17,15 @@ def read_log(file):
 
     steps = {}
     tags = {}
+
     for entry in entries:
         step = steps.get(entry.step) or {}
-        step[entry.tag] = entry.value
+        step[entry.tag] = struct(value=entry.value, time=entry.time)
 
         tags[entry.tag] = True
         steps[entry.step] = step
 
-    return struct (tags=tags.keys(), steps={i : Struct(entry) for i, entry in steps.items()})
+    return struct (tags=tags.keys(), steps={i : Struct(step) for i, step in steps.items()})
 
 
 
@@ -36,8 +37,11 @@ def sortdict(d, **opts):
         yield k, d[k]
 
 def get_entry(log, name):
-    return {i:entry[name] for i, entry in log.steps.items() if name in entry}
+    return [(i, entry[name].value) for i, entry in sortdict(log.steps) if name in entry]
 
+
+def get_entry_time(log, name):
+    return [(entry[name].time, entry[name].value) for i, entry in sortdict(log.steps) if name in entry]
 
 
 
@@ -66,18 +70,15 @@ def read_logs(base_path, log_files):
 
 
 def extract_key(entries, key):
-    return zip(*sorted(transpose_dicts(entries)[key].items()))
+    i, values = zip(*entries)
+    return i, [value[key] for value in values]
+
 
 
 def best_epoch(key):
     def f(log):
-        return max(get_entry(log, "validate").items(), key=lambda entry: entry[1][key])
-    return f
-
-
-
-
-    
+        return max(get_entry(log, "validate"), key=lambda entry: entry[1][key])
+    return f  
 
 
 def plot_training_lines(logs):
@@ -135,27 +136,90 @@ penguins_b = struct(
 log_path = '/home/oliver/storage/logs/'
 
 
-def plot_scales(figure_path):
-
-    scale_logs = [(scale, crop, read_logs(path.join(log_path, 'scales', str(scale), str(crop)), log_files))
-        for scale in [2,4,8,16]
-            for crop in [512, 768, 1024]]    
-
-
 def plot_lr(figure_path):
+    fig, ax = plt.subplots(figsize=(24, 12))
 
-    datasets = ["apples", "branches", "aerial_penguins"]
+    datasets = ["apples", "branches"]
     for dataset in datasets:
-        for method in ['cosine', 'step', 'log']
-            cycles = [1024, 2048, 4096] if method is not 'step' else [1024]
-            for cycle in cycles:
-                log = read_log(path.join(log_path, 'lr', method, str(cycle)), log_files)
+        for method in ['cosine', 'step', 'log']:
+            cycles_types = [1024,  4096] if method is not 'step' else [1024]
+            for cycles in cycles_types:
+                logfile = path.join(log_path, 'lr', method, str(cycles), dataset, 'log.json')
+                log = read_log(logfile)
 
-                validate = get_entry(log, "train")
-                epoch, loss = extract_key(split, 'loss')
+                epoch, loss = extract_key(get_entry(log, "train/loss"), 'total')
+                examples = np.array(epoch) * cycles
 
-                plt.plot(epoch, AP, label=k + " full", color=dataset_colors[k], linestyle='-')
+                label = method if method is 'step' else method + "-" + str(cycles)
+                plt.plot(np.array(epoch) * cycles, loss, label=label)
                 
+        plt.title("effect of learning rate scheduling on training - " + dataset)
+        plt.xlabel("training examples")
+        plt.ylabel("training loss")
+
+        fig.savefig(path.join(figure_path, "lr_schedule", dataset + ".pdf"), bbox_inches='tight')
+
+
+def plot_scales(figure_path):
+    datasets = ["apples", "penguins", "scallops", "seals"]
+
+    scales = [2,4,8]
+    crops = [512, 768, 1024]
+
+    colors = plt.get_cmap("rainbow")
+    styles = {512: ':', 1024:'-', 768:'--'}
+
+    for dataset in datasets:
+        fig, ax = plt.subplots(figsize=(24, 12))
+        for s, scale in enumerate(scales):
+            for crop in crops:
+
+                logfile = path.join(log_path, 'scales', str(scale), str(crop), dataset, 'log.json')
+                log = read_log(logfile)                
+
+                time, AP = extract_key(get_entry_time(log, "validate"), 'AP')
+                time = (np.array(time) - time[0]) / 60             
+
+                plt.plot(time, AP,  color=colors(s / len(scales)), linestyle=styles[crop])
+
+                plt.title("effect of image scale and crop size on training - " + dataset)
+                plt.xlabel("training time (minutes)")
+                plt.ylabel("average precision (AP)")
+
+                fig.savefig(path.join(figure_path, "crops_scales", dataset + ".pdf"), bbox_inches='tight')
+
+
+def log_anneal(e):
+    t = math.fmod(e, 1)
+    begin, end = 0.1, 0.01
+    return math.exp(math.log(begin) * (1 - t) + math.log(end) * t)
+
+def cosine_anneal(e):
+    t = math.fmod(e, 1)
+    begin, end = 0.1, 0.01
+    return end + 0.5 * (begin - end) * (1 + math.cos(t * math.pi))
+
+def step_func(e):
+    return 0.01 if e > 2 else 0.1
+
+def plot_schedules():
+    fig, ax = plt.subplots(figsize=(24, 12))
+
+    times = np.linspace(0, 3.999, num=800)
+
+    plt.plot(times, list(map(log_anneal, times)),  label="log annealing")
+    plt.plot(times, list(map(cosine_anneal, times)),  label="cosine annealing (SGDR)")
+    plt.plot(times, list(map(step_func, times)),  label="step function")
+
+    plt.xlabel("training time (epochs)")
+    plt.ylabel("learning rate")
+
+    plt.title("learning rate schedules")
+
+    plt.legend()
+    return fig, ax
+
+
 
 
         
@@ -167,18 +231,18 @@ if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/training"
 
 
-    # logs = read_logs(path.join(log_path, 'validate'), log_files)
-    # penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
+    logs = read_logs(path.join(log_path, 'validate'), log_files)
+    penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    # pprint_struct(penguin_logs._map(best_epoch('mAP50')))
-    # pprint_struct(logs._map(best_epoch('AP')))
+    pprint_struct(penguin_logs._map(best_epoch('mAP50')))
+    pprint_struct(logs._map(best_epoch('AP')))
 
-    # fig, ax = plot_training_lines(logs)
-    # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
+    fig, ax = plot_training_lines(logs)
+    fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-    # plot_scales(figure_path)
-    plot_lr(figure_path)
+    plot_scales(figure_path)
+    # plot_lr(figure_path)
 
+    fig, ax = plot_schedules()
+    fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
 
-    # for method in 
-    #   for cycle in [1, 2, 4]]
