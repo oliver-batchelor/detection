@@ -5,15 +5,16 @@ root="/local/storage"
 prefix="$root/export"
 
 train_on() {
-  method=$1
-  cycle=$2
-  incremental=$3
+  run=$1
+  method=$2
+  cycle=$3
+  incremental=$4
 
   len=$((80/cycle))
   epoch=$((1024*cycle))
   lr_step=$((40/cycle))
 
-  common="--no_load --scale 0.5 --log_dir $root/logs/lr/$incremental/$method/$epoch/ --lr_step $lr_step --lr_decay $method --epoch_size $epoch --train_epochs $len"
+  common="--no_load --scale 0.5 --log_dir $root/logs/lr/$run/$incremental/$method/$epoch/ --seed $run --lr_step $lr_step --lr_decay $method --epoch_size $epoch --train_epochs $len"
   if [ $incremental = "incremental" ]; then common="$common --incremental"; fi
 
   $cmd "json --path $prefix/apples.json" --model "fcn --square" --image_size 1024 $common --run_name apples
@@ -22,14 +23,18 @@ train_on() {
 
 }
 
-for incremental in incremental full;
-  do
-    for method in cosine log;
+
+for run in {1..8}
+do
+  for incremental in incremental full;
     do
-      for cycle in 1 4 16;
+      for method in cosine log;
       do
-        train_on $method $cycle $incremental
+        for cycle in 1 4;
+        do
+          train_on $run $method $cycle $incremental
+        done
       done
-    done
-  train_on step 1 $incremental
+    train_on $run step 1 $incremental
+  done
 done
