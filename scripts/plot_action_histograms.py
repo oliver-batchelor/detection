@@ -44,7 +44,7 @@ def uneven_histograms(widths, values, keys):
 
 
 def uneven_gaussian_filter(x, y, w=1, dx=0.1, sigma=1):
-    x_eval = np.arange(np.amin(x), np.amax(x), dx)
+    x_eval = np.arange(0, np.amax(x), dx)
 
     delta_x = x_eval[:, None] - x
 

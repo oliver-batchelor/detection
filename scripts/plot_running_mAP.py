@@ -24,7 +24,7 @@ def running_mAP(dataset, iou=[50], dx=0.1, sigma=5):
 
     duration = torch.Tensor(pluck('duration', dataset.history))
     times = (duration / 60).cumsum(0)
-    eval_times = torch.arange(torch.min(times), torch.max(times), dx)
+    eval_times = torch.arange(0, torch.max(times), dx)
    
     image_pairs =  filter_none([image_result(image) for image in dataset.history])
     mAP = evaluate.mAP_smoothed(image_pairs, times) 
@@ -56,7 +56,7 @@ def plot_running_mAPs(results, ious = [50, 75, 90], color_map=dataset_colors):
         styles = ['-', '--', '-.', ':']
         for iou, style in zip(ious, styles):
             plt.plot(r.times / r.times[-1], r.mAPs[iou], linestyle=style, 
-                 color=color_map[k], label=k + " mAP@." + str(iou))
+                 color=color_map[k], label=k + " AP_{" + str(iou) + "}")
             
 
     ax.set_ylim(ymin=0)
@@ -65,7 +65,7 @@ def plot_running_mAPs(results, ious = [50, 75, 90], color_map=dataset_colors):
     plt.xlabel('annotation time (percent)')
     plt.ylabel('average precision')
 
-    plt.title('running mAP of predictions vs. corrected images')
+    plt.title('running AP of predictions vs. corrected images')
 
     plt.legend()
     return fig, ax
@@ -76,9 +76,9 @@ def plot_APs_dataset(r):
     colors = plt.get_cmap("rainbow")
 
     for (i, iou) in enumerate(r.mAPs):
-        plt.plot(r.times, r.mAPs[iou], color=colors(float(i)/len(r.mAPs)), label="mAP@." + str(iou))
+        plt.plot(r.times, r.mAPs[iou], color=colors(float(i)/len(r.mAPs)), label="$AP_{" + str(iou) + "}")
 
-    plt.plot(r.times, r.AP, color='k', linewidth=2, label="AP")        
+    plt.plot(r.times, r.AP, color='k', linewidth=2, label="AP_{COCO}")        
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0) 

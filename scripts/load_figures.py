@@ -71,11 +71,13 @@ penguins_b = struct(
 )
 
 
-tab10 = plt.get_cmap("tab10")
+tab20 = plt.get_cmap("tab20")
 paired = plt.get_cmap("Paired")
 set1 = plt.get_cmap("Set1")
 
-dataset_colors = {k : tab10(i) for i, k in enumerate (datasets.keys()) }
+dataset_keys = list(datasets.keys()) + ["pascal_voc", "coco"]
+
+dataset_colors = {k : tab20(i) for i, k in enumerate (dataset_keys) }
 correction_colors = {k : paired(i) for i, k in enumerate (correction_types) }
 action_colors = {k : set1(i) for i, k in enumerate (action_types) }
 

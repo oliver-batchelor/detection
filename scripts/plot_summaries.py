@@ -1,7 +1,14 @@
 from scripts.load_figures import *
 from matplotlib.lines import Line2D
 
+from scripts.datasets import *
+from tools import to_structs
+
 import scripts.figures
+
+from dataset.imports.voc import import_voc
+from scipy import stats
+
 
 
 
@@ -100,11 +107,10 @@ def plot_category_bars(stacks, keys, color_map, categories):
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/summaries"
 
-
-
+ 
     loaded = load_all(datasets, base_path)
     keys = sorted(loaded.keys())
-
+   
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
   
@@ -128,16 +134,3 @@ if __name__ == '__main__':
 
     fig, ax = plot_sizes(loaded, keys=keys)
     fig.savefig(path.join(figure_path, "sizes_boxplot.pdf"), bbox_inches='tight')
-
-
-    # plt.show()    
-
-    
-
-    # fig, ax = instances_duration_scatter(loaded, ['apples1', 'apples2'])
-    # ax.set_ylim(ymin=0)
-    # ax.set_xlim(xmin=0)      
-    # fig.savefig(path.join(figure_path, "instances_duration_scatter_apples.pdf"), bbox_inches='tight')
-
-
-
