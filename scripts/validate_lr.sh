@@ -12,9 +12,9 @@ train_on() {
 
   len=$((80/cycle))
   epoch=$((1024*cycle))
-  lr_step=$((40/cycle))
+  lr_schedule=$((40/cycle))
 
-  common="--no_load --scale 0.5 --log_dir $root/logs/lr/$run/$incremental/$method/$epoch/ --seed $run --lr_step $lr_step --lr_decay $method --epoch_size $epoch --train_epochs $len"
+  common="--no_load --scale 0.5 --log_dir $root/logs/lr/$run/$incremental/$method/$epoch/ --seed $run --lr_schedule $lr_schedule --lr_decay $method --epoch_size $epoch --train_epochs $len"
   if [ $incremental = "incremental" ]; then common="$common --incremental"; fi
 
   $cmd "json --path $prefix/apples.json" --model "fcn --square" --image_size 1024 $common --run_name apples
