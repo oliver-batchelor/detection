@@ -1,7 +1,7 @@
 from os import path
 from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct, transpose_structs, Struct, append_dict, transpose_dicts
 
-from scripts.load_figures import dataset_colors
+from scripts.load_figures import *
 
 import math
 import json
@@ -84,9 +84,39 @@ def best_epoch(key):
         return max(get_entry(log, "validate"), key=lambda entry: entry[1][key])
     return f  
 
+def plot_training_scatters(logs):
+    fig, ax = make_chart()
+
+    for k, log in logs.items():      
+        train = get_entry(log, "train")
+
+        validate = get_entry(log, "validate")
+        split = get_entry(log, "validate_split")
+
+        if len(split):
+            _, AP_split = extract_key(split, 'AP')
+            _, AP = extract_key(validate, 'AP')
+
+            plt.scatter(AP_split, AP, label=k, color=dataset_colors[k], marker='.')
+
+    plt.xlabel("tiling, average precision ($AP_{COCO}$)")
+    plt.ylabel("full, average precision ($AP_{COCO}$)")
+
+    plt.xlim(xmin=30)
+    plt.ylim(ymin=30)
+
+    plt.title("comparison of evaluation methods tiling vs. using the full image")
+
+    plt.grid(True)
+    unique_legend()
+
+    return fig, ax
+
+
+
 
 def plot_training_lines(logs):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k, log in logs.items():      
         train = get_entry(log, "train")
@@ -98,15 +128,15 @@ def plot_training_lines(logs):
             epoch, AP_split = extract_key(split, 'AP')
             _, AP = extract_key(validate, 'AP')
 
-            plt.plot(epoch, AP, label=k + " full", color=dataset_colors[k], linestyle='-')
-            plt.plot(epoch, AP_split, label=k + " split", color=dataset_colors[k], linestyle='--')
+            plt.plot(epoch, AP, label=k, color=dataset_colors[k], linestyle='-')
+            plt.plot(epoch, AP_split, label=k, color=dataset_colors[k], linestyle='--')
 
     plt.xlabel("training epoch")
-    plt.ylabel("average precision (AP)")
+    plt.ylabel("average precision ($AP_{COCO}$)")
 
-    plt.title("comparison of evaluation by splitting and using the full image")
+    plt.title("comparison of evaluation methods tiling vs. using the full image")
 
-    plt.legend()
+    unique_legend()
 
     return fig, ax
 
@@ -155,7 +185,7 @@ def plot_lr(figure_path):
     scatters = {dataset:[] for dataset in datasets}
 
     for dataset in datasets:
-        fig, ax = plt.subplots(figsize=(24, 12))
+        fig, ax = make_chart()
         ax2 = ax.twinx()  
 
         for incremental in ["incremental", "full"]:
@@ -195,7 +225,7 @@ def plot_lr(figure_path):
         fig.savefig(path.join(figure_path, incremental + "_" + dataset + ".pdf"), bbox_inches='tight')
 
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
     for dataset, points in scatters.items():
         ap, loss = zip(*points)
         plt.scatter(np.array(loss) / min(loss), ap, label=dataset, marker='x')
@@ -212,7 +242,7 @@ def plot_lr(figure_path):
 
 
 def plot_multiclass(figure_path):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     subsets = struct(
         subset1=["cat",  "cow",  "dog",    "sheep"],
@@ -253,6 +283,7 @@ def training_time(log):
     durations = np.array(train_times) - np.array(start_times)
     return np.cumsum(durations) / 60
 
+
 def plot_scales(figure_path):
     datasets = ["apples", "penguins", "scallops", "seals"]
 
@@ -264,7 +295,7 @@ def plot_scales(figure_path):
 
     rows = []
     for dataset in datasets:
-        fig, ax = plt.subplots(figsize=(24, 12))
+        fig, ax = make_chart()
         for s, scale in enumerate(scales):
             for crop in crops:
 
@@ -305,8 +336,6 @@ def plot_scales(figure_path):
         
     print(sum(aps) / len(aps))
     print(sum(times) / len(times))
-
-
             
 
 
@@ -324,7 +353,7 @@ def step_func(e):
     return 0.01 if e > 2 else 0.1
 
 def plot_schedules():
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     times = np.linspace(0, 3.999, num=800)
 
@@ -341,8 +370,6 @@ def plot_schedules():
     return fig, ax
 
 
-
-
         
 
 
@@ -352,23 +379,24 @@ if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/training"
 
 
-    # logs = read_logs(path.join(log_path, 'validate'), log_files)
-    # penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
+    logs = read_logs(path.join(log_path, 'validate'), log_files)
+    penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    # pprint_struct(penguin_logs._map(best_epoch('mAP50')))
-    # pprint_struct(logs._map(best_epoch('AP')))
+    pprint_struct(penguin_logs._map(best_epoch('mAP50')))
+    pprint_struct(logs._map(best_epoch('AP')))
 
-    # fig, ax = plot_training_lines(logs)
-    # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
+    fig, ax = plot_training_lines(logs)
+    fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-    # plot_scales(figure_path)
-    # plot_lr(figure_path)
+    fig, ax = plot_training_scatters(logs)
+    fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
 
-    # fig, ax = plot_schedules()
-    # fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
+    plot_scales(figure_path)
+    plot_lr(figure_path)
+
+    fig, ax = plot_schedules()
+    fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
 
 
     fig, ax = plot_multiclass(figure_path)
     fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
-
-    plt.show()

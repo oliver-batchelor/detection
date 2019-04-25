@@ -9,7 +9,7 @@ import scripts.figures
 from dataset.imports.voc import import_voc
 from scipy import stats
 
-
+from scripts.figures import *
 
 
 def plot_sizes(loaded, keys):
@@ -64,7 +64,7 @@ def plot_instances(loaded, keys, color_map=dataset_colors):
     return fig, ax
 
 def plot_category_stacks(stacks, keys, color_map, categories):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     total = np.array([0] * len(categories))
 
@@ -85,7 +85,7 @@ def plot_category_stacks(stacks, keys, color_map, categories):
 
 
 def plot_category_bars(stacks, keys, color_map, categories):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     n = len(stacks)
     width = 0.8 / len(keys)

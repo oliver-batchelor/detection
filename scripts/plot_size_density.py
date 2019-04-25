@@ -13,7 +13,7 @@ from scipy import stats
 
 
 def plot_sizes_density(loaded, keys):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k in keys:
         sizes = np.array(dataset_sizes(loaded[k])) * 100.0

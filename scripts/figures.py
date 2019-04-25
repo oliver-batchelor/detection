@@ -16,9 +16,26 @@ import matplotlib.pyplot as plt
 
 import torch
 
-
 import numpy as np
 import matplotlib.pyplot as plt
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+mpl.rcParams['font.size'] = 14
+
+mpl.rcParams['grid.color'] = 'k'
+mpl.rcParams['grid.linestyle'] = ':'
+mpl.rcParams['grid.linewidth'] = 0.5
+
+
+def make_chart(grid=True):
+
+    fig, ax = plt.subplots(figsize=(16, 12))  
+    plt.grid(grid)
+
+    return fig, ax
+
 
 
 def plot_stacks(x, stacks, keys, width):
@@ -64,7 +81,7 @@ def make_legend(ax, color_map, keys):
 
 
 def box_plot(quartiles, keys, color_map=None):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for i, k in enumerate(keys):
         boxprops = dict(color=color_map[k]) if color_map else None

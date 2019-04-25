@@ -20,7 +20,7 @@ from scipy import stats
 
 def actions_time_scatter(datasets, color_map):
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k in sorted(datasets.keys()):
         dataset = datasets[k]
@@ -51,7 +51,7 @@ def actions_time_scatter(datasets, color_map):
 
 def instances_duration_scatter(datasets, keys):
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k in keys:
         dataset = datasets[k]
@@ -128,7 +128,7 @@ def get_annotation_ious(dataset):
 
 
 def iou_lines(datasets, keys, color_map):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k in keys:
         dataset = datasets[k]
@@ -152,7 +152,7 @@ def iou_lines(datasets, keys, color_map):
 
 
 def confidence_iou_scatter(datasets):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     points = [p for dataset in datasets.values() 
         for p in get_annotation_ious(dataset)]

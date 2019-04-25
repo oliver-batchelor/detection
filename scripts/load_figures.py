@@ -2,7 +2,6 @@ from scripts.history import history_summary, extract_histories, \
      image_summaries, image_summary, correction_types, action_types
 
 from scripts.datasets import load_dataset, annotation_summary
-from scripts.figures import *
 
 from matplotlib.collections import PathCollection
 from matplotlib.legend_handler import HandlerPathCollection
@@ -17,7 +16,11 @@ import math
 from tools import struct, to_structs, filter_none, drop_while, concat_lists, \
         map_dict, pprint_struct, pluck_struct, count_dict, sum_list, Struct, sum_dicts
 
+from scripts.figures import make_chart
+import matplotlib.pyplot as plt
 
+
+make_chart = make_chart
 
 def load_all(datasets, base_path):
 

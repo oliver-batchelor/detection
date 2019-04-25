@@ -18,6 +18,8 @@ import torch
 
 import csv
 
+from scripts.load_figures import make_chart
+
 base_path = '/home/oliver/storage/export/'
 
 
@@ -75,7 +77,7 @@ def plot_runs(*runs, loc='upper left'):
         Line2D([0], [0], marker='X', color='r', markeredgecolor='y', linestyle='None', label='discard')
     ]
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
 
 

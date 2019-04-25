@@ -26,7 +26,7 @@ def get_actions(image):
 def basic_histograms(values, keys):
     n = len(actions)
     
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
     plot_stacks(np.array(range(n)) + 0.5, actions, keys, width= 0.5)
     return fig, ax
 
@@ -34,7 +34,7 @@ def basic_histograms(values, keys):
 def uneven_histograms(widths, values, keys):
     times = (np.cumsum([0] + widths[:-1])) + np.array(widths) * 0.5
    
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
     plot_stacks(times, values, keys, width=widths)
 
     ax.set_ylim(ymin=0)
@@ -83,7 +83,7 @@ def get_normalised_time(dataset):
 
 
 def plot_annotation_ratios(dataset, sigma=5):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart(grid=False)
 
     ratios, total = get_ratios(get_annotation_counts(dataset))
     
@@ -93,9 +93,9 @@ def plot_annotation_ratios(dataset, sigma=5):
         for k in annotation_types])
     
     colors = [correction_colors[k] for k in annotation_types]
-    plt.stackplot(x[0], *y, colors=colors, labels=annotation_types)
+    plt.stackplot(x[0], *y, colors=colors, labels=annotation_types, alpha=0.8)
 
-    ax.set_ylim(ymin=0)
+    ax.set_ylim(ymin=0, ymax=1)
     ax.set_xlim(xmin=0) 
 
     plt.xlabel('annotation time (minutes)')
@@ -107,7 +107,7 @@ def plot_annotation_ratios(dataset, sigma=5):
     return fig, ax
 
 def plot_action_ratios(dataset, sigma=5):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart(grid=False)
 
     ratios, total = get_ratios(get_action_counts(dataset))
     
@@ -116,9 +116,9 @@ def plot_action_ratios(dataset, sigma=5):
         for k in action_types])
     
     colors = [action_colors[k] for k in action_types]
-    plt.stackplot(x[0], *y, colors=colors, labels=action_types)
+    plt.stackplot(x[0], *y, colors=colors, labels=action_types, alpha=0.8)
 
-    ax.set_ylim(ymin=0)
+    ax.set_ylim(ymin=0, ymax=1)
     ax.set_xlim(xmin=0) 
 
     plt.xlabel('annotation time (minutes)')
@@ -130,7 +130,7 @@ def plot_action_ratios(dataset, sigma=5):
     return fig, ax    
 
 def plot_instance_rates(datasets, color_map, sigma=5):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k, dataset in datasets.items():
         annotation_counts = get_annotation_counts(dataset)
@@ -141,10 +141,10 @@ def plot_instance_rates(datasets, color_map, sigma=5):
         x, y = uneven_gaussian_filter(time, total / durations, 
              durations, sigma=sigma)
 
-        plt.plot(x / time[-1], y, color=color_map[k], label=k)
+        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=k)
 
     ax.set_ylim(ymin=0)
-    ax.set_xlim(xmin=0) 
+    ax.set_xlim(xmin=0, xmax=100) 
 
     plt.xlabel('annotation time (percent)')
     plt.ylabel('annotation rate (counts/minute)')
@@ -157,7 +157,7 @@ def plot_instance_rates(datasets, color_map, sigma=5):
     
 
 def plot_dataset_ratios(datasets, color_map, sigma=5):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
    
     for k, dataset in datasets.items():
         ratios, total = get_ratios(get_annotation_counts(dataset))
@@ -165,10 +165,10 @@ def plot_dataset_ratios(datasets, color_map, sigma=5):
         time, _ = get_time(dataset)
         x, y = uneven_gaussian_filter(time, ratios.positive, total, sigma=sigma)
 
-        plt.plot(x / time[-1], y, color=color_map[k], label=k)
+        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=k)
 
     ax.set_ylim(ymin=0)
-    ax.set_xlim(xmin=0) 
+    ax.set_xlim(xmin=0, xmax=100) 
 
     plt.xlabel('annotation time (percent)')
     plt.ylabel('proportion of annotations')
@@ -184,22 +184,22 @@ def cumulative_lines(dataset, get_values, keys):
     actions = [get_values(image) for image in dataset.history]        
     durations = torch.Tensor(pluck('duration', dataset.history)).cumsum(0)
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
     plot_cumulative_line_stacks(durations, actions, keys)
     plt.show()    
 
 
 def cumulative_instances(datasets, color_map):
 
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k in sorted(datasets.keys()):
         dataset = datasets[k]
         
         summaries = image_summaries(dataset.history)
 
-        instances = torch.Tensor(pluck('instances', summaries)).cumsum(0)
-        durations = torch.Tensor(pluck('duration', summaries)).cumsum(0)
+        instances = torch.Tensor([0] + pluck('instances', summaries)).cumsum(0)
+        durations = torch.Tensor([0] + pluck('duration', summaries)).cumsum(0)
 
         plt.plot((durations / 60).numpy(), instances.numpy(), label = k)
 
@@ -241,6 +241,10 @@ def plot_action_histograms(loaded, color_map, figure_path):
 
     fig, ax = cumulative_instances(loaded, color_map)
     fig.savefig(path.join(figure_path, "summaries/cumulative_instances.pdf"), bbox_inches='tight')
+
+    ax.set_ylim(ymin=0, ymax=8000)
+    ax.set_xlim(xmin=0, xmax=150)
+    fig.savefig(path.join(figure_path, "summaries/cumulative_instances_crop.pdf"), bbox_inches='tight')
 
 
 

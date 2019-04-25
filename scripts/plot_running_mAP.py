@@ -49,7 +49,7 @@ def compute_APs(datasets, sigma=5):
     return datasets._map(f)
 
 def plot_running_mAPs(results, ious = [50, 75, 90], color_map=dataset_colors):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
 
     for k, r in results.items():
         
@@ -72,13 +72,13 @@ def plot_running_mAPs(results, ious = [50, 75, 90], color_map=dataset_colors):
 
 
 def plot_APs_dataset(r):
-    fig, ax = plt.subplots(figsize=(24, 12))
+    fig, ax = make_chart()
     colors = plt.get_cmap("rainbow")
 
     for (i, iou) in enumerate(r.mAPs):
-        plt.plot(r.times, r.mAPs[iou], color=colors(float(i)/len(r.mAPs)), label="$AP_{" + str(iou) + "}")
+        plt.plot(r.times, r.mAPs[iou], color=colors(float(i)/len(r.mAPs)), label="$AP_{" + str(iou) + "}$")
 
-    plt.plot(r.times, r.AP, color='k', linewidth=2, label="AP_{COCO}")        
+    plt.plot(r.times, r.AP, color='k', linewidth=2, label="$AP_{COCO}$")        
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0) 
