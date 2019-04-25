@@ -101,7 +101,7 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
 
         return {
             'image_file':input_image,
-            'imageSize':[info['width'], info['height']],
+            'image_size':[info['width'], info['height']],
             'category':target_category,
             'annotations':annotations
         }
@@ -118,13 +118,14 @@ def import_subset(input, subset, target_category='Train', class_inputs=None):
 
 
 
-def import_coco(input_path, classes):   
-    subsets = [('train2017', 'train'), ('val2017', 'test')]
+def import_coco(input_path="/home/oliver/storage/coco", classes=None, 
+        subsets = [('train2017', 'train'), ('val2017', 'test')]):   
+    
     imports = {subset : import_subset(input_path,  subset = subset, target_category= category, class_inputs = classes) for subset, category in subsets}
-
+    first = next(iter(imports.values()))
 
     return {
-        'config' : imports['train2017']['config'],
+        'config' : first['config'],
         'images' : sum([subset['images'] for subset in imports.values()], [])
     }
 

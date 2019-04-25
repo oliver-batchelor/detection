@@ -46,6 +46,22 @@ def image_annotations(image):
     annotations = [decode_obj(ann) for ann in image.annotations.values()]
     return [obj for obj in annotations if obj is not None]
 
+
+def dataset_sizes(dataset):
+    def annotation_sizes(image):
+        annotations = image_annotations(image)
+        w, h = image.image_size
+        
+        def percent_size(ann):
+            x1, y1, x2, y2 = ann.box
+            size = (x2 - x1) / w + (y2 - y1) / h
+            return size / 2
+                         
+        return list(map(percent_size, annotations))
+
+    sizes = list(map(annotation_sizes, filter_categories(dataset)))
+    return reduce(operator.add, sizes)    
+
 def annotation_summary(dataset):
     def count(image):
 
@@ -62,13 +78,14 @@ def annotation_summary(dataset):
 
         def box_area(ann):
             x1, y1, x2, y2 = ann.box
-            area = (x2 - x1) * (y2 - y1)
-            return math.sqrt(area)
+            return (x2 - x1) * (y2 - y1)
+     
 
 
         def box_length(ann):
             x1, y1, x2, y2 = ann.box
             return max(x2 - x1, y2 - y1)
+
 
         box_areas = list(map(box_area, annotations))
         box_lengths = list(map(box_length, annotations))
@@ -110,7 +127,6 @@ def match_datasets(dataset1, dataset2, threshold=0.5, check_overlap=True):
 
 def decode_dataset(data):
     data = to_structs(data)
-
     config = data.config
     classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
 

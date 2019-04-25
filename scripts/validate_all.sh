@@ -2,7 +2,7 @@
 base="/home/oliver/export/"
 cmd="python -m main --input"
 
-common="--run_name validate_strict --pos_match 0.7 --neg_match 0.3 --top_anchors 1 --nms_threshold 0.7 --no_load --train_epochs 80 --epoch_size 1024 --log_dir /local/storage/logs/validate/" 
+common="--pos_match 0.7 --neg_match 0.3 --top_anchors 1 --nms_threshold 0.7 --no_load --train_epochs 80 --epoch_size 1024 --log_dir /local/storage/logs/validate_strict/" 
 prefix="/local/storage/export"
 
 $cmd "json --path $prefix/oliver/combined.json" --model "fcn --square --first 2" --image_size 400 $common --run_name aerial_penguins

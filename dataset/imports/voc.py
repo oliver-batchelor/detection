@@ -93,7 +93,7 @@ def import_subset(input_path, year, subset, target_category, class_map):
         size = root['size']
         return {
             'image_file':file_name,
-            'imageSize':[size['width'], size['height']],
+            'image_size':[int(size['width']), int(size['height'])],
             'category':target_category,
             'annotations':annotations
         }
@@ -146,7 +146,7 @@ def import_images(input_path, preset):
         for image in import_subset(input_path, year, subset, category, class_map) 
     ]
 
-def import_voc(input_path, preset):
+def import_voc(input_path='/home/oliver/storage/voc', preset='test2007'):
     images = import_images(input_path, preset)
     return make_dataset(input_path, images, voc_classes)    
 

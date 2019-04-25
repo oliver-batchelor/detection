@@ -209,7 +209,7 @@ if __name__ == '__main__':
       
     loaded = datasets._map(load)
 
-
+    plot_counts(loaded)
     show_errors(loaded)
 
 
