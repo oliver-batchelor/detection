@@ -8,7 +8,7 @@ prefix="/local/storage/export"
 subset1="cow,sheep,cat,dog"
 subset2="zebra,giraffe,elephant,bear"
 subset3="hotdog,pizza,donut,cake"
-subset3="cup,fork,knife,spoon"
+subset4="cup,fork,knife,spoon"
 
 
 for subset in $subset1 $subset2 $subset3 $subset4; 

@@ -175,42 +175,76 @@ def unique_legend():
     by_label = OrderedDict(zip(labels, handles))
     plt.legend(by_label.values(), by_label.keys())    
 
+
+def read_run(dataset, incremental, method, cycles, run):
+    logfile = path.join(log_path, 'lr', run, incremental,  method, str(cycles), dataset, 'log.json')
+    log = read_log(logfile)
+
+    epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
+    _, loss = extract_key(get_entry(log, "train/loss"), 'total')
+    examples = np.array(epoch) * cycles
+
+    return struct(examples=examples, AP=np.array(AP), loss=np.array(loss))
+
+    # if incremental == "full":
+    #     scatters[dataset] += list(zip(AP, loss))
+
 def plot_lr(figure_path):
 
     datasets = ["apples", "branches", "scallops"]
+    methods = ['cosine', 'step', 'log']
+    steps = [1024, 4096]
 
     colors = {}
     tab10 = plt.get_cmap("tab10")
 
     scatters = {dataset:[] for dataset in datasets}
 
+    runs = ['0', '1', '2', '3', '4', '5']
+
     for dataset in datasets:
         fig, ax = make_chart()
         ax2 = ax.twinx()  
 
+        aps = { (method, step) : [] for method in methods for step in steps}
+        losses = { (method, step) : [] for method in methods for step in steps }        
+
         for incremental in ["incremental", "full"]:
-            for method in ['cosine', 'step', 'log']:
+            for method in methods:
                 cycles_types = [1024] if method is 'step' else [1024, 4096]
                 for cycles in cycles_types:
-                    logfile = path.join(log_path, 'lr', incremental,  method, str(cycles), dataset, 'log.json')
-                    log = read_log(logfile)
+                    
+                    results = [read_run(dataset, incremental, method, cycles, run) for run in runs]
+                    if incremental == "full":
+                        for r in results:
+                            scatters[dataset] += list(zip(list(r.AP), list(r.loss)))
 
-                    epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
-                    epoch, loss = extract_key(get_entry(log, "train/loss"), 'total')
-                    examples = np.array(epoch) * cycles
+                            aps[(method, cycles)] += list(r.AP[len(r.AP)//2:])
+                            losses[(method, cycles)] += list(r.loss[len(r.loss)//2:])
+
+                    examples = results[0].examples
+                    AP = sum([r.AP for r in results]) / len(results)
+                    loss = sum([r.loss for r in results]) / len(results)
 
                     label = method if method is 'step' else method + "-" + str(cycles)
                     color = colors[label] if label in colors else tab10(len(colors))
                     colors[label] = color
-
-                    if incremental == "full":
-                        scatters[dataset] += list(zip(AP, loss))
 
                     style = '--' if incremental == "incremental" else '-'
 
                     ax.plot(examples, AP, label=label, linestyle=style, color=color)
                     ax2.plot(examples, loss, label=label, linestyle=style, color=color)
 
+        print(dataset)
+        for method in methods:
+            cycles_types = [1024] if method is 'step' else [1024, 4096]
+
+            for step in cycles_types:
+                l = np.array(losses[(method, step)])
+                ap = np.array(aps[(method, step)])
+
+                print("loss", method, step, l.mean())
+                print("AP", method, step, ap.mean(), ap.std())
                     
         plt.title("effect of learning rate scheduling on training " + dataset)
         ax.set_xlabel("training examples")
@@ -222,7 +256,9 @@ def plot_lr(figure_path):
 
         unique_legend()
 
-        fig.savefig(path.join(figure_path, incremental + "_" + dataset + ".pdf"), bbox_inches='tight')
+        fig.savefig(path.join(figure_path, "lr_" + dataset + ".pdf"), bbox_inches='tight')
+
+
 
 
     fig, ax = make_chart()
@@ -241,24 +277,32 @@ def plot_lr(figure_path):
     fig.savefig(path.join(figure_path, "scatter_loss_ap.pdf"), bbox_inches='tight')
 
 
-def plot_multiclass(figure_path):
-    fig, ax = make_chart()
+subsets_voc = struct(
+    subset1=["cat",  "cow",  "dog",    "sheep"],
+    subset2=["bicycle", "bus",  "car", "motorbike"],  
+)
 
-    subsets = struct(
-        subset1=["cat",  "cow",  "dog",    "sheep"],
-        subset2=["bicycle", "bus",  "car", "motorbike"],  
-    )
+subsets_coco = struct(
+    subset1=["cat",  "cow",  "dog",    "sheep"],
+    subset2=["zebra", "giraffe",  "elephant", "bear"],  
+    subset3=["hotdog", "pizza",  "donut", "cake"],  
+    subset4=["cup", "fork",  "knife", "spoon"],      
+)
+
+
+def plot_multiclass(figure_path, directory, subsets):
+    fig, ax = make_chart()
                  
     tab10 = plt.get_cmap("tab10")
     all_classes = sum(subsets.values(), [])
     colors = {c : tab10(i) for i, c in enumerate(all_classes)}
 
     for subset, classes in subsets.items():
-        logfile = path.join(log_path, 'multiclass', subset, 'log.json')
+        logfile = path.join(log_path, directory, subset, 'log.json')
         log = read_log(logfile)             
 
         for c in classes:
-            class_file = path.join(log_path, 'multiclass', c, 'log.json')
+            class_file = path.join(log_path, directory, c, 'log.json')
             class_log = read_log(class_file)             
 
             epoch, ap_subset = extract_key(get_entry(log, "test/AP"), c)
@@ -302,20 +346,25 @@ def plot_scales(figure_path):
                 logfile = path.join(log_path, 'scales', str(scale), str(crop), dataset, 'log.json')
                 log = read_log(logfile)               
 
-                _, AP = extract_key(get_entry_time(log, "validate"), 'AP')
+                epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
                 time = training_time(log)
+
+                epoch = epoch[:40]
+                AP = AP[:40]
                 
                 rows.append(struct(dataset=dataset, scale=1/scale, crop=crop, 
                     AP=np.array(AP[8:]).mean(), time=time[-1] / len(time)))
 
-                plt.plot(time, AP,  color=colors(s), linestyle=styles[crop], label=dataset + " " )
+                plt.plot(epoch, AP,  color=colors(s), linestyle=styles[crop], label= str(1/scale * 100) + ":" + str(crop) )
 
         plt.title("effect of image scale and crop size on training - " + dataset)
-        plt.xlabel("training time (minutes)")
+        plt.xlabel("training epoch")
         plt.ylabel("average precision ($AP_{COCO}$)")
 
         plt.xlim(xmin=0)
         plt.ylim(ymin=0)
+
+        plt.legend()
 
         fig.savefig(path.join(figure_path, "crops_scales", dataset + ".pdf"), bbox_inches='tight')
 
@@ -370,33 +419,34 @@ def plot_schedules():
     return fig, ax
 
 
-        
-
-
 
 if __name__ == '__main__':
 
     figure_path = "/home/oliver/sync/figures/training"
 
 
-    logs = read_logs(path.join(log_path, 'validate'), log_files)
-    penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
+    # logs = read_logs(path.join(log_path, 'validate'), log_files)
+    # penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    pprint_struct(penguin_logs._map(best_epoch('mAP50')))
-    pprint_struct(logs._map(best_epoch('AP')))
+    # pprint_struct(penguin_logs._map(best_epoch('mAP50')))
+    # pprint_struct(logs._map(best_epoch('AP')))
 
-    fig, ax = plot_training_lines(logs)
-    fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
+    # fig, ax = plot_training_lines(logs)
+    # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_training_scatters(logs)
-    fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
+    # fig, ax = plot_training_scatters(logs)
+    # fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
 
-    plot_scales(figure_path)
-    plot_lr(figure_path)
+    # plot_scales(figure_path)
+    # plot_lr(figure_path)
 
-    fig, ax = plot_schedules()
-    fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
+    # fig, ax = plot_schedules()
+    # fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
 
 
-    fig, ax = plot_multiclass(figure_path)
-    fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
+    # fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
+    # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
+
+
+    fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
+    plt.show()
