@@ -216,7 +216,7 @@ def history_summary(history):
         real_minutes = sum(real_durations, 0),
 
         actions_minute      = 60 * total_actions / total_duration,
-        instances_minute    = 60 * instances / total_duration
+        instances_minute    = 60 * instances / total_duration,
     )
         
 

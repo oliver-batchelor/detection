@@ -22,7 +22,7 @@ def plot_sizes_density(loaded, keys):
         x = np.arange(0.0, 100, .4)
         plt.plot(x, density(x), label = k, color = dataset_colors[k])
 
-    plt.xlabel('object size percent of image size')
+    plt.xlabel('object size as percent of image size')
     plt.ylabel('density')
 
     plt.title('distribution of object sizes in images')

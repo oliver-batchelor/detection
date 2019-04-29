@@ -182,9 +182,11 @@ if __name__ == '__main__':
     loaded = load_all(datasets, base_path)
     pprint_struct(pluck_struct('summary', loaded))
 
-
-    fig, ax = confidence_iou_scatter(loaded._subset('seals', 'apples1', 'apples2', 'penguins', 'fisheye', 'branches'))
+    fig, ax = confidence_iou_scatter(loaded._subset('seals1', 'seals2', 'apples1', 'apples2', 'penguins', 'fisheye', 'branches', 'scallops'))
     fig.savefig(path.join(figure_path, "confidence_iou.pdf"), bbox_inches='tight')
+
+    fig, ax = confidence_iou_scatter(loaded._subset('aerial_penguins', 'scott_base'))
+    fig.savefig(path.join(figure_path, "confidence_iou_small.pdf"), bbox_inches='tight')    
 
     fig, ax = iou_lines(loaded, keys=sorted(loaded.keys()), color_map=dataset_colors)
     fig.savefig(path.join(figure_path, "iou_dataset.pdf"), bbox_inches='tight')
@@ -192,3 +194,5 @@ if __name__ == '__main__':
     fig, ax = actions_time_scatter(loaded._subset('apples1', 'apples2'), color_map=dataset_colors)
     fig.savefig(path.join(figure_path, "apples_scatter.pdf"), bbox_inches='tight')
 
+    fig, ax = actions_time_scatter(loaded._subset('seals1', 'seals2'), color_map=dataset_colors)
+    fig.savefig(path.join(figure_path, "seals_scatter.pdf"), bbox_inches='tight')

@@ -126,11 +126,11 @@ if __name__ == '__main__':
     ax.set_title('total correction types performed for each dataset')
     fig.savefig(path.join(figure_path, "correction_counts.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_instances(loaded, keys=keys)
+    fig, ax = plot_instances(loaded._without('seals2'), keys=keys)
     fig.savefig(path.join(figure_path, "instances_boxplot.pdf"), bbox_inches='tight')
 
     fig, ax = plot_durations(loaded, keys=keys)
     fig.savefig(path.join(figure_path, "duration_boxplot.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_sizes(loaded, keys=keys)
+    fig, ax = plot_sizes(loaded._without('seals2'), keys=keys)
     fig.savefig(path.join(figure_path, "sizes_boxplot.pdf"), bbox_inches='tight')

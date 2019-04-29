@@ -82,18 +82,75 @@ def get_normalised_time(dataset):
     return time/time[-1], durations
 
 
-def plot_annotation_ratios(dataset, sigma=5):
-    fig, ax = make_chart(grid=False)
-
+def plot_annotation_stack(ax, dataset, sigma=5):
     ratios, total = get_ratios(get_annotation_counts(dataset))
-    
     time, _ = get_time(dataset)
 
     x, y = zip(*[uneven_gaussian_filter(time, ratios[k], total, sigma=sigma) 
         for k in annotation_types])
     
     colors = [correction_colors[k] for k in annotation_types]
-    plt.stackplot(x[0], *y, colors=colors, labels=annotation_types, alpha=0.8)
+    ax.stackplot(x[0], *y, colors=colors, labels=annotation_types, alpha=0.8)
+
+def plot_action_stack(ax, dataset, sigma=5):
+    ratios, total = get_ratios(get_action_counts(dataset))
+    
+    time, _ = get_time(dataset)
+    x, y = zip(*[uneven_gaussian_filter(time, ratios[k], total, sigma=sigma) 
+        for k in action_types])
+    
+    colors = [action_colors[k] for k in action_types]
+    ax.stackplot(x[0], *y, colors=colors, labels=action_types, alpha=0.8)
+
+
+def plot_instance_lines(ax, dataset, sigma=5):
+    annotation_counts = get_annotation_counts(dataset)
+    total = sum(annotation_counts.values())
+
+    time, durations = get_time(dataset)
+
+    x, y = uneven_gaussian_filter(time, total / durations, 
+        durations, sigma=sigma)
+
+    ax.plot(x, y, label='total')
+    ax.grid(True)
+    
+
+def plot_combined_ratios(dataset, sigma=5):
+    fig, ax = plt.subplots(3, 1, sharex=True, figsize=(16, 12))  
+    fig.subplots_adjust(hspace=0)
+
+    time, _ = get_time(dataset)
+
+    plot_annotation_stack(ax[0], dataset, sigma=sigma)
+    plot_action_stack(ax[1], dataset, sigma=sigma)
+    plot_instance_lines(ax[2], dataset, sigma=sigma)
+
+    ax[0].set_xlim(xmin=0, xmax=time[-1]) 
+    ax[0].set_ylim(ymin=0, ymax=1)
+    ax[1].set_ylim(ymin=0, ymax=1)
+
+    ax[1].set_yticks([0.0, 0.2, 0.4, 0.6, 0.8])
+    ax[2].set_yticks([0, 20, 40, 60, 80, 100])
+
+    ax[0].set_ylabel('proportion')
+    ax[1].set_ylabel('proportion')
+    ax[2].set_ylabel('annotation rate')
+
+    ax[0].legend()
+    ax[1].legend()
+    ax[2].legend()
+
+    return fig, ax
+
+
+
+def plot_annotation_ratios(dataset, sigma=5):
+    fig, ax = make_chart(grid=False)
+
+    plot_annotation_stack(ax, dataset, sigma=sigma)
+    plot_action_stack(ax, dataset, sigma=sigma)
+
 
     ax.set_ylim(ymin=0, ymax=1)
     ax.set_xlim(xmin=0) 
@@ -109,14 +166,7 @@ def plot_annotation_ratios(dataset, sigma=5):
 def plot_action_ratios(dataset, sigma=5):
     fig, ax = make_chart(grid=False)
 
-    ratios, total = get_ratios(get_action_counts(dataset))
-    
-    time, _ = get_time(dataset)
-    x, y = zip(*[uneven_gaussian_filter(time, ratios[k], total, sigma=sigma) 
-        for k in action_types])
-    
-    colors = [action_colors[k] for k in action_types]
-    plt.stackplot(x[0], *y, colors=colors, labels=action_types, alpha=0.8)
+    plot_action_stack(ax, dataset, sigma=sigma)
 
     ax.set_ylim(ymin=0, ymax=1)
     ax.set_xlim(xmin=0) 
@@ -147,7 +197,7 @@ def plot_instance_rates(datasets, color_map, sigma=5):
     ax.set_xlim(xmin=0, xmax=100) 
 
     plt.xlabel('annotation time (percent)')
-    plt.ylabel('annotation rate (counts/minute)')
+    plt.ylabel('annotation rate')
 
     plt.title('annotation rate across annotation period')
 
@@ -172,6 +222,8 @@ def plot_dataset_ratios(datasets, color_map, sigma=5):
 
     plt.xlabel('annotation time (percent)')
     plt.ylabel('proportion of annotations')
+
+    plt.title('proportions of model predictions unmodified')
 
     plt.legend()
 
@@ -231,13 +283,9 @@ def plot_action_histograms(loaded, color_map, figure_path):
     fig.savefig(path.join(figure_path, "summaries/positive_ratio.pdf"), bbox_inches='tight')
 
     for k, dataset in loaded.items():
-        fig, ax = plot_annotation_ratios(loaded[k], sigma=5)
-        plt.title(k + ' - annotation proportions vs. annotation time')
-        fig.savefig(path.join(figure_path, "annotation_ratio", k + ".pdf"), bbox_inches='tight')
-
-        fig, ax = plot_action_ratios(loaded[k], sigma=5)
-        plt.title(k + ' - action proportions vs. annotation time')
-        fig.savefig(path.join(figure_path, "action_ratio", k + ".pdf"), bbox_inches='tight')
+        fig, ax = plot_combined_ratios(loaded[k], sigma=5)
+        ax[0].set_title(k + ' - action/annotations vs. annotation time')
+        fig.savefig(path.join(figure_path, "action_annotations", k + ".pdf"), bbox_inches='tight')        
 
     fig, ax = cumulative_instances(loaded, color_map)
     fig.savefig(path.join(figure_path, "summaries/cumulative_instances.pdf"), bbox_inches='tight')
@@ -251,7 +299,7 @@ def plot_action_histograms(loaded, color_map, figure_path):
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures"
 
-    loaded = load_all(datasets, base_path)._without('aerial_penguins')
+    loaded = load_all(datasets._without('aerial_penguins'), base_path)
 
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)

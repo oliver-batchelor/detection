@@ -145,7 +145,7 @@ def plot_training_lines(logs):
 log_files = struct(
     penguins = 'penguins',
     branches = 'branches',
-    seals = 'seals',
+    seals1 = 'seals',
     scott_base = 'scott_base',
     apples1 = 'apples',
     apples2 = 'apples_lincoln',
@@ -248,16 +248,15 @@ def plot_lr(figure_path):
                     
         plt.title("effect of learning rate scheduling on training " + dataset)
         ax.set_xlabel("training examples")
-        ax.set_ylabel("average precision ($AP_{COCO}$)")
-        ax2.set_ylabel("training loss")
+        ax.set_ylabel("average precision ($AP_{COCO}$), mean of " + str(len(runs)) + " runs")
+        ax2.set_ylabel("training loss, mean of " + str(len(runs)) + " runs")
 
         plt.xlim(xmin=0)
         plt.ylim(ymin=0)
 
         unique_legend()
 
-        fig.savefig(path.join(figure_path, "lr_" + dataset + ".pdf"), bbox_inches='tight')
-
+        fig.savefig(path.join(figure_path, "lr_schedule", dataset + ".pdf"), bbox_inches='tight')
 
 
 
@@ -274,7 +273,7 @@ def plot_lr(figure_path):
 
     plt.legend()
 
-    fig.savefig(path.join(figure_path, "scatter_loss_ap.pdf"), bbox_inches='tight')
+    fig.savefig(path.join(figure_path, "lr_schedule", "scatter_loss_ap.pdf"), bbox_inches='tight')
 
 
 subsets_voc = struct(
@@ -285,7 +284,7 @@ subsets_voc = struct(
 subsets_coco = struct(
     subset1=["cat",  "cow",  "dog",    "sheep"],
     subset2=["zebra", "giraffe",  "elephant", "bear"],  
-    subset3=["hotdog", "pizza",  "donut", "cake"],  
+    # subset3=["hotdog", "pizza",  "donut", "cake"],  
     subset4=["cup", "fork",  "knife", "spoon"],      
 )
 
@@ -420,16 +419,49 @@ def plot_schedules():
 
 
 
+
+def plot_pr_curves(ax, pr):
+
+    ax2 = ax.twinx()
+
+    ax.plot(pr.recall, pr.precision, label="precision")
+    ax2.plot(pr.recall, pr.false_positives, label="false positives")
+    ax2.plot(pr.recall, pr.true_positives, label="true positives")
+    ax2.plot(pr.recall, pr.false_negatives, label="false negatives")
+
+
+
+def plot_best_pr(log):
+
+    APs = np.array(list(map(lambda entry: entry[1].AP, get_entry(log, "validate"))))
+    i = np.argmax(APs)
+
+    _, pr = get_entry(log, "validate/pr/total")[i]
+   
+    print(pr.keys())
+
+    fig, ax = make_chart()
+
+    plot_pr_curves(ax, pr)
+
+    return fig, ax
+
+
+
 if __name__ == '__main__':
 
     figure_path = "/home/oliver/sync/figures/training"
 
 
-    # logs = read_logs(path.join(log_path, 'validate'), log_files)
-    # penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
+    logs = read_logs(path.join(log_path, 'validate'), log_files)
+    penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    # pprint_struct(penguin_logs._map(best_epoch('mAP50')))
-    # pprint_struct(logs._map(best_epoch('AP')))
+    pprint_struct(penguin_logs._map(best_epoch('mAP50')))
+    pprint_struct(logs._map(best_epoch('AP')))
+
+    # fig, ax = plot_best_pr(logs.seals1)
+    # plt.show()
+
 
     # fig, ax = plot_training_lines(logs)
     # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
@@ -448,5 +480,5 @@ if __name__ == '__main__':
     # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
 
 
-    fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
-    plt.show()
+    # fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
+    # fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')

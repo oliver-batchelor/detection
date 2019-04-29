@@ -22,16 +22,16 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-mpl.rcParams['font.size'] = 14
+mpl.rcParams['font.size'] = 18
 
 mpl.rcParams['grid.color'] = 'k'
 mpl.rcParams['grid.linestyle'] = ':'
 mpl.rcParams['grid.linewidth'] = 0.5
 
 
-def make_chart(grid=True):
+def make_chart(grid=True, **kwargs):
 
-    fig, ax = plt.subplots(figsize=(16, 12))  
+    fig, ax = plt.subplots(figsize=(16, 9), **kwargs)  
     plt.grid(grid)
 
     return fig, ax

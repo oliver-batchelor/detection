@@ -350,6 +350,7 @@ def condense_pr(pr, n=100):
     t = torch.LongTensor(positions)
 
     return struct (
+        recall = pr.recall[t],
         precision = pr.precision[t],
         confidence = pr.confidence[t],
 
