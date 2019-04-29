@@ -418,17 +418,31 @@ def plot_schedules():
     return fig, ax
 
 
+tab10 = plt.get_cmap("tab10")
+pr_colors = {k : tab10(i) for i, k in enumerate (["precision", "false positives", "false negatives", "true positives", "confidence"]) }
 
 
 def plot_pr_curves(ax, pr):
 
     ax2 = ax.twinx()
 
-    ax.plot(pr.recall, pr.precision, label="precision")
-    ax2.plot(pr.recall, pr.false_positives, label="false positives")
-    ax2.plot(pr.recall, pr.true_positives, label="true positives")
-    ax2.plot(pr.recall, pr.false_negatives, label="false negatives")
+    recall = np.arange(1, 99)
 
+    l1 = ax.plot(recall, pr.precision, label="precision", color=pr_colors["precision"])
+    l2 = ax2.plot(recall, pr.false_positives, label="false positives", color=pr_colors["false positives"])
+    l3 = ax2.plot(recall, pr.true_positives, label="true positives", color=pr_colors["true positives"])
+    l4 = ax2.plot(recall, pr.false_negatives, label="false negatives", color=pr_colors["false negatives"])
+    l5 = ax.plot(recall, pr.confidence, label="confidence", color=pr_colors["confidence"])
+
+    ax.set_xlim(xmin=0)
+    ax.set_ylim(ymin=0)    
+    ax2.set_ylim(ymin=0)    
+
+    lines = sum([l1, l2, l3, l4, l5], [])
+
+    labels = [l.get_label() for l in lines]
+    ax.legend(lines, labels)
+    
 
 
 def plot_best_pr(log):
@@ -443,6 +457,9 @@ def plot_best_pr(log):
     fig, ax = make_chart()
 
     plot_pr_curves(ax, pr)
+
+
+
 
     return fig, ax
 
@@ -460,6 +477,8 @@ if __name__ == '__main__':
     pprint_struct(logs._map(best_epoch('AP')))
 
     # fig, ax = plot_best_pr(logs.seals1)
+    # fig, ax = plot_best_pr(logs.scott_base)
+
     # plt.show()
 
 

@@ -335,13 +335,13 @@ def mean(xs):
     return sum(xs) / len(xs)
 
 
-def condense_pr(pr, n=100): 
+def condense_pr(pr, n=400): 
     positions = [0]
     size = pr.false_positives.size(0)
     i = 0
 
     for t in range(0, n):
-        while pr.recall[i] < (t / n) and i < size:
+        while pr.recall[i] <= (t / n) and i < size:
             i = i + 1
 
         if i < size:
@@ -422,6 +422,7 @@ def compute_AP(results, classes, conf_thresholds=None):
 
             thresholds = compute_thresholds(prs[50]),
             pr50 = condense_pr(prs[50]),
+            pr75 = condense_pr(prs[75]),
 
             class_counts = class_counts
         )
@@ -462,7 +463,8 @@ def summarize_test(name, results, classes, epoch, log, thresholds=None):
     aps['total'] = total
 
     for k, ap in aps.items():
-        log.pr_curve(name + "/pr/" + k, ap.pr50)
+        log.pr_curve(name + "/pr50/" + k, ap.pr50)
+        log.pr_curve(name + "/pr75/" + k, ap.pr75)
 
     if len(classes) > 1:
         log.scalars(name + "/mAP50", {k : ap.mAP[50] * 100.0 for k, ap in aps.items()})
