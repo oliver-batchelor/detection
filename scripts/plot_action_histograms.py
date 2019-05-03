@@ -131,7 +131,7 @@ def plot_combined_ratios(dataset, sigma=5):
     ax[1].set_ylim(ymin=0, ymax=1)
 
     ax[1].set_yticks([0.0, 0.2, 0.4, 0.6, 0.8])
-    ax[2].set_yticks([0, 20, 40, 60, 80, 100])
+    ax[2].set_yticks([0, 20, 40, 60, 80])
 
     ax[0].set_ylabel('proportion')
     ax[1].set_ylabel('proportion')

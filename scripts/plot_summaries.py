@@ -2,7 +2,7 @@ from scripts.load_figures import *
 from matplotlib.lines import Line2D
 
 from scripts.datasets import *
-from tools import to_structs
+from tools import to_structs, transpose_structs, pprint_dict, transpose_dicts
 
 import scripts.figures
 
@@ -10,6 +10,7 @@ from dataset.imports.voc import import_voc
 from scipy import stats
 
 from scripts.figures import *
+import csv
 
 
 def plot_sizes(loaded, keys):
@@ -24,6 +25,7 @@ def plot_sizes(loaded, keys):
     return fig, ax
 
 def plot_durations(loaded, keys, color_map=dataset_colors):
+    
     durations_quartiles = {k : loaded[k].summary.image_durations  for k in keys}
 
     fig, ax = box_plot(durations_quartiles, keys)
@@ -103,17 +105,58 @@ def plot_category_bars(stacks, keys, color_map, categories):
 
 
 
+def plot_times_density(loaded, keys):
+    fig, ax = make_chart()
+
+    for k in keys:
+        summaries = image_summaries(loaded[k].history)
+        times = [action.real_duration for action in sum_list(summaries).actions]
+
+        density = stats.kde.gaussian_kde(times,  bw_method=0.1)
+   
+        x = np.arange(0.0, 80, .1)
+        plt.plot(x, density(x), label = k, color = dataset_colors[k])
+
+    plt.xlabel('time taken(s)')
+    plt.ylabel('density')
+
+    plt.title('distribution of action times')
+    plt.legend()
+
+    ax.set_xlim(xmin=0.0, xmax=80.0)
+    ax.set_ylim(ymin=0.0)
+
+
+    return fig, ax
+
+
+
+
 
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/summaries"
 
  
     loaded = load_all(datasets, base_path)
-    keys = sorted(loaded.keys())
-   
+    keys=sorted(loaded.keys())
+    
+       
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
-  
+
+    
+
+    with open(path.join(figure_path, 'summary.csv','wb') as file:
+        w = csv.DictWriter(f,my_dict.keys())
+        w.writerows(transpose_dicts(summaries), ['n_images', 'total_actions', 'annotation_breaks', 'instances_minute'])
+    
+    
+    summaries = pluck_struct('summary', loaded)._without('seals2')
+
+    fig, ax = plot_times_density(loaded, keys)
+    fig.savefig(path.join(figure_path, "time_density.pdf"), bbox_inches='tight')
+ 
+
     fig, ax = plot_category_bars( pluck_struct('actions_count', summaries), action_types, color_map=action_colors, categories=keys)
     ax.set_title('total action counts for each dataset')
     ax.set_xlabel('action count')
@@ -126,11 +169,11 @@ if __name__ == '__main__':
     ax.set_title('total correction types performed for each dataset')
     fig.savefig(path.join(figure_path, "correction_counts.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_instances(loaded._without('seals2'), keys=keys)
+    fig, ax = plot_instances(loaded, keys=keys)
     fig.savefig(path.join(figure_path, "instances_boxplot.pdf"), bbox_inches='tight')
 
     fig, ax = plot_durations(loaded, keys=keys)
     fig.savefig(path.join(figure_path, "duration_boxplot.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_sizes(loaded._without('seals2'), keys=keys)
+    fig, ax = plot_sizes(loaded, keys=keys)
     fig.savefig(path.join(figure_path, "sizes_boxplot.pdf"), bbox_inches='tight')

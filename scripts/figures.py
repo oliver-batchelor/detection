@@ -31,7 +31,7 @@ mpl.rcParams['grid.linewidth'] = 0.5
 
 def make_chart(grid=True, **kwargs):
 
-    fig, ax = plt.subplots(figsize=(16, 9), **kwargs)  
+    fig, ax = plt.subplots(figsize=(16, 6), **kwargs)  
     plt.grid(grid)
 
     return fig, ax

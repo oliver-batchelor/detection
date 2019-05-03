@@ -14,7 +14,7 @@ import torch
 
 import pandas as pd
 import xarray as xr
-
+from scipy.signal import gaussian
 
 def read_log(file):
     entries = [to_structs(json.loads(line)) for line in open(file, mode="r")]
@@ -39,6 +39,18 @@ def sortdict(d, **opts):
     # **opts so any currently supported sorted() options can be passed
     for k in sorted(d, **opts):
         yield k, d[k]
+
+
+def get_entries(log):
+    entries = {}
+
+    for i, entry in sortdict(log.steps):
+        for k, v in entry.items():
+            e = entries.get(k, []) 
+            e.append((i, v))
+            entries[k] = e
+
+    return entries
 
 def get_entry(log, name):
     return [(i, entry[name].value) for i, entry in sortdict(log.steps) if name in entry]
@@ -77,6 +89,8 @@ def extract_key(entries, key):
     i, values = zip(*entries)
     return i, [value[key] for value in values]
 
+def unzip(entries):
+    return zip(*entries)
 
 
 def best_epoch(key):
@@ -145,12 +159,13 @@ def plot_training_lines(logs):
 log_files = struct(
     penguins = 'penguins',
     branches = 'branches',
-    seals1 = 'seals',
+    # seals1 = 'seals',
+    # seals2 = 'seals_shanelle',
     scott_base = 'scott_base',
-    apples1 = 'apples',
-    apples2 = 'apples_lincoln',
-    scallops = 'scallops',  
-    fisheye = 'victor',
+    # apples1 = 'apples',
+    # apples2 = 'apples_lincoln',
+    # scallops = 'scallops',  
+    # fisheye = 'victor',
     buoys       = 'buoys',
     aerial_penguins = 'aerial_penguins'
 )
@@ -170,10 +185,10 @@ penguins_b = struct(
 log_path = '/home/oliver/storage/logs/'
 
 
-def unique_legend():
+def unique_legend(**kwargs):
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = OrderedDict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys())    
+    plt.legend(by_label.values(), by_label.keys(), **kwargs)    
 
 
 def read_run(dataset, incremental, method, cycles, run):
@@ -282,9 +297,9 @@ subsets_voc = struct(
 )
 
 subsets_coco = struct(
-    subset1=["cat",  "cow",  "dog",    "sheep"],
+    subset1=["cow",  "sheep", "cat",  "dog"],
     subset2=["zebra", "giraffe",  "elephant", "bear"],  
-    # subset3=["hotdog", "pizza",  "donut", "cake"],  
+    subset3=["sandwich", "pizza",  "donut", "cake"],  
     subset4=["cup", "fork",  "knife", "spoon"],      
 )
 
@@ -292,12 +307,14 @@ subsets_coco = struct(
 def plot_multiclass(figure_path, directory, subsets):
     fig, ax = make_chart()
                  
-    tab10 = plt.get_cmap("tab10")
+    tab10 = plt.get_cmap("tab20")
     all_classes = sum(subsets.values(), [])
     colors = {c : tab10(i) for i, c in enumerate(all_classes)}
 
     for subset, classes in subsets.items():
-        logfile = path.join(log_path, directory, subset, 'log.json')
+
+        combined_name = ','.join(classes)
+        logfile = path.join(log_path, directory, combined_name, 'log.json')
         log = read_log(logfile)             
 
         for c in classes:
@@ -316,7 +333,7 @@ def plot_multiclass(figure_path, directory, subsets):
 
     plt.title("training rate in single class and multi-class scenario")
 
-    unique_legend()
+    unique_legend(loc="upper right")
     return fig, ax
 
 def training_time(log):
@@ -422,45 +439,51 @@ tab10 = plt.get_cmap("tab10")
 pr_colors = {k : tab10(i) for i, k in enumerate (["precision", "false positives", "false negatives", "true positives", "confidence"]) }
 
 
-def plot_pr_curves(ax, pr):
+def plot_pr_curves(ax, prs):
 
     ax2 = ax.twinx()
 
-    recall = np.arange(1, 99)
+    for i, pr in prs.items():
+        recall = pr.recall
+        print(i)
 
-    l1 = ax.plot(recall, pr.precision, label="precision", color=pr_colors["precision"])
-    l2 = ax2.plot(recall, pr.false_positives, label="false positives", color=pr_colors["false positives"])
-    l3 = ax2.plot(recall, pr.true_positives, label="true positives", color=pr_colors["true positives"])
-    l4 = ax2.plot(recall, pr.false_negatives, label="false negatives", color=pr_colors["false negatives"])
-    l5 = ax.plot(recall, pr.confidence, label="confidence", color=pr_colors["confidence"])
+        suffix = lambda s: "$" + s + "_{" + str(i) + "}$"
+        style="--" if i == 50 else "-"
 
-    ax.set_xlim(xmin=0)
-    ax.set_ylim(ymin=0)    
-    ax2.set_ylim(ymin=0)    
+        fpr = np.array(pr.false_positives)[1:] - np.array(pr.false_positives)[:-1]
+        print(fpr)
 
-    lines = sum([l1, l2, l3, l4, l5], [])
+        l1 = ax.plot(recall, pr.precision, label="precision", color=pr_colors["precision"], linestyle=style)
+        l2 = ax2.plot(recall[1:], fpr, label="false positive ratio", color=pr_colors["false positives"], linestyle=style)
+        # l3 = ax2.plot(recall, pr.true_positives, label="true positives", color=pr_colors["true positives"])
+        # l4 = ax2.plot(recall, pr.false_negatives, label="false negatives", color=pr_colors["false negatives"])
+        l5 = ax.plot(recall, pr.confidence, label="confidence", color=pr_colors["confidence"], linestyle=style)
+
+    ax.set_xlim(xmin=0, xmax=1.0)
+    ax.set_ylim(ymin=0, ymax=1.0)    
+    ax2.set_ylim(ymin=0, ymax=10)    
+
+    lines = sum([l1, l2,  l5], [])
 
     labels = [l.get_label() for l in lines]
-    ax.legend(lines, labels)
+    ax.legend(lines, labels, loc="center left")
     
 
 
 def plot_best_pr(log):
 
     APs = np.array(list(map(lambda entry: entry[1].AP, get_entry(log, "validate"))))
-    i = np.argmax(APs)
 
-    _, pr = get_entry(log, "validate/pr/total")[i]
-   
-    print(pr.keys())
+    _, pr50s = unzip(get_entry(log, "validate/pr50/total"))
+    _, pr75s = unzip(get_entry(log, "validate/pr75/total"))
+
+
+    i = np.argmax(APs)
+    pr = {50 : pr50s[i], 75: pr75s[i]}
+    
 
     fig, ax = make_chart()
-
     plot_pr_curves(ax, pr)
-
-
-
-
     return fig, ax
 
 
@@ -499,5 +522,5 @@ if __name__ == '__main__':
     # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
 
 
-    # fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
-    # fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')
+    fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
+    fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')

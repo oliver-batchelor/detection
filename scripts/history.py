@@ -110,8 +110,7 @@ def extract_session(session, config):
 
         time = (t - start).total_seconds()    
         duration = time - previous_time()
-            
-        actions.append(action._extend(time = time, duration = min(60, duration)))        
+        actions.append(action._extend(time = time, duration = min(30, duration), real_duration = duration))        
 
     duration = sum (pluck('duration', actions))
     end = actions[-1].time
@@ -154,12 +153,12 @@ def annotation_corrections(image):
     return count_struct(created, correction_types)
 
 def image_summary(image):
-    action_durations = map(lambda action: action.duration, image.actions)
-    
+   
     return struct (
         actions = image.actions,
         n_actions = len(image.actions), 
         duration = image.duration,
+         
         real_duration = image.real_duration,
         instances = image.target._size,
         actions_count = count_struct(pluck('action', image.actions), action_types),
@@ -200,8 +199,11 @@ def history_summary(history):
     # durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
 
     return summaries, struct (
-        
         action_durations = quantiles(pluck('duration', totals.actions)),
+        action_real_durations = quantiles(pluck('real_duration', totals.actions)),
+
+        annotation_breaks = len([action.real_duration for action in totals.actions if action.real_duration > 60]),
+
         image_durations = quantiles(durations),
 
         n_actions = quantiles(pluck('n_actions', summaries)),
