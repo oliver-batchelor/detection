@@ -13,10 +13,10 @@ from scripts.figures import *
 import csv
 
 
-def plot_sizes(loaded, keys):
+def plot_sizes(loaded, keys, labels=dataset_labels):
 
     length_quartiles = {k : loaded[k].summary.box_length for k in keys}
-    fig, ax = box_plot(length_quartiles, keys)
+    fig, ax = box_plot(length_quartiles, keys, labels=dataset_labels)
 
     ax.set_xscale('log')
     ax.set_xlim(xmin=10, xmax=1e3)
@@ -24,11 +24,9 @@ def plot_sizes(loaded, keys):
     ax.set_xlabel('largest side length (pixels)')  
     return fig, ax
 
-def plot_durations(loaded, keys, color_map=dataset_colors):
-    
+def plot_durations(loaded, keys, color_map=dataset_colors, labels=dataset_labels):   
     durations_quartiles = {k : loaded[k].summary.image_durations  for k in keys}
-
-    fig, ax = box_plot(durations_quartiles, keys)
+    fig, ax = box_plot(durations_quartiles, keys, labels=labels)
 
     for i, k in enumerate(keys):
         counts = np.array(pluck('instances', loaded[k].image_summaries))
@@ -45,10 +43,10 @@ def plot_durations(loaded, keys, color_map=dataset_colors):
 
 
 
-def plot_instances(loaded, keys, color_map=dataset_colors):
+def plot_instances(loaded, keys, color_map=dataset_colors, labels=dataset_labels):
     instances_quartiles = {k : loaded[k].summary.instances_image + 1 for k in keys}
 
-    fig, ax = box_plot(instances_quartiles, keys)
+    fig, ax = box_plot(instances_quartiles, keys, labels=labels)
 
     for i, k in enumerate(keys):
         counts = np.bincount(pluck('instances', loaded[k].image_summaries))
@@ -86,8 +84,8 @@ def plot_category_stacks(stacks, keys, color_map, categories):
     return fig, ax
 
 
-def plot_category_bars(stacks, keys, color_map, categories):
-    fig, ax = make_chart()
+def plot_category_bars(stacks, keys, color_map, categories, cat_labels):
+    fig, ax = make_chart(size=(8, 6))
 
     n = len(stacks)
     width = 0.8 / len(keys)
@@ -96,16 +94,18 @@ def plot_category_bars(stacks, keys, color_map, categories):
     for i, k in enumerate(keys):
         values = np.array([stacks[c][k] for c in categories])
 
-        p = ax.barh(np.arange(n) - 0.4 + (i + 0.5) * width, values, width, color=color_map[k])
+        p = ax.bar(np.arange(n) - 0.4 + (i + 0.5) * width, values, width, color=color_map[k])
         bars.append(p[0])
     
-    plt.yticks(np.arange(n), categories)
+    plt.xticks(np.arange(n), [cat_labels[c] for c in categories], rotation='vertical')
     plt.legend(bars, keys)
     return fig, ax
 
 
 
-def plot_times_density(loaded, keys):
+
+
+def plot_times_density(loaded, keys, color_map, labels):
     fig, ax = make_chart()
 
     for k in keys:
@@ -115,12 +115,11 @@ def plot_times_density(loaded, keys):
         density = stats.kde.gaussian_kde(times,  bw_method=0.1)
    
         x = np.arange(0.0, 80, .1)
-        plt.plot(x, density(x), label = k, color = dataset_colors[k])
+        plt.plot(x, density(x), label = labels[k], color = color_map[k])
 
     plt.xlabel('time taken(s)')
     plt.ylabel('density')
 
-    plt.title('distribution of action times')
     plt.legend()
 
     ax.set_xlim(xmin=0.0, xmax=80.0)
@@ -137,43 +136,43 @@ if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/summaries"
 
  
-    loaded = load_all(datasets, base_path)
+    loaded = load_all(datasets._without('seals2'), base_path)
     keys=sorted(loaded.keys())
-    
-       
+         
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
+   
 
+    # with open(path.join(figure_path, 'summary.csv'), 'w') as file:
+    #     w = csv.DictWriter(file, ['n_images', 'total_actions', 'annotation_breaks', 'instances_minute'])
+    #     w.writerows(transpose_dicts(summaries))
     
 
-    with open(path.join(figure_path, 'summary.csv','wb') as file:
-        w = csv.DictWriter(f,my_dict.keys())
-        w.writerows(transpose_dicts(summaries), ['n_images', 'total_actions', 'annotation_breaks', 'instances_minute'])
-    
-    
-    summaries = pluck_struct('summary', loaded)._without('seals2')
-
-    fig, ax = plot_times_density(loaded, keys)
+    fig, ax = plot_times_density(loaded, keys, color_map=dataset_colors, labels=dataset_labels)
     fig.savefig(path.join(figure_path, "time_density.pdf"), bbox_inches='tight')
  
 
-    fig, ax = plot_category_bars( pluck_struct('actions_count', summaries), action_types, color_map=action_colors, categories=keys)
-    ax.set_title('total action counts for each dataset')
-    ax.set_xlabel('action count')
-    ax.set_xlim(xmax=4000)
+    fig, ax = plot_category_bars( pluck_struct('actions_count', summaries), action_types, color_map=action_colors, categories=keys, cat_labels=dataset_labels)
+    ax.set_ylabel('action count')
+    ax.set_ylim(ymax=4000)
+    fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "action_counts.pdf"), bbox_inches='tight')
 
     correction_types = ['weak positive', 'modified positive', 'false negative', 'false positive']
-    fig, ax = plot_category_bars( pluck_struct('correction_count', summaries), correction_types, color_map=correction_colors, categories=keys)
-    ax.set_xlabel('correction count')
-    ax.set_title('total correction types performed for each dataset')
+    fig, ax = plot_category_bars( pluck_struct('correction_count', summaries), correction_types, color_map=correction_colors, categories=keys, cat_labels=dataset_labels)
+    ax.set_ylabel('correction count')
+
+    fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "correction_counts.pdf"), bbox_inches='tight')
 
     fig, ax = plot_instances(loaded, keys=keys)
+    fig.set_size_inches(16, 9)
     fig.savefig(path.join(figure_path, "instances_boxplot.pdf"), bbox_inches='tight')
 
     fig, ax = plot_durations(loaded, keys=keys)
+    fig.set_size_inches(16, 9)
     fig.savefig(path.join(figure_path, "duration_boxplot.pdf"), bbox_inches='tight')
 
     fig, ax = plot_sizes(loaded, keys=keys)
+    fig.set_size_inches(16, 9)
     fig.savefig(path.join(figure_path, "sizes_boxplot.pdf"), bbox_inches='tight')

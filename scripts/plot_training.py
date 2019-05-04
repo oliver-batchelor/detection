@@ -111,7 +111,7 @@ def plot_training_scatters(logs):
             _, AP_split = extract_key(split, 'AP')
             _, AP = extract_key(validate, 'AP')
 
-            plt.scatter(AP_split, AP, label=k, color=dataset_colors[k], marker='.')
+            plt.scatter(AP_split, AP, label=dataset_labels[k], color=dataset_colors[k], marker='.')
 
     plt.xlabel("tiling, average precision ($AP_{COCO}$)")
     plt.ylabel("full, average precision ($AP_{COCO}$)")
@@ -119,7 +119,6 @@ def plot_training_scatters(logs):
     plt.xlim(xmin=30)
     plt.ylim(ymin=30)
 
-    plt.title("comparison of evaluation methods tiling vs. using the full image")
 
     plt.grid(True)
     unique_legend()
@@ -142,13 +141,12 @@ def plot_training_lines(logs):
             epoch, AP_split = extract_key(split, 'AP')
             _, AP = extract_key(validate, 'AP')
 
-            plt.plot(epoch, AP, label=k, color=dataset_colors[k], linestyle='-')
-            plt.plot(epoch, AP_split, label=k, color=dataset_colors[k], linestyle='--')
+            plt.plot(epoch, AP, label=dataset_labels[k], color=dataset_colors[k], linestyle='-')
+            plt.plot(epoch, AP_split, label=dataset_labels[k], color=dataset_colors[k], linestyle='--')
 
     plt.xlabel("training epoch")
     plt.ylabel("average precision ($AP_{COCO}$)")
 
-    plt.title("comparison of evaluation methods tiling vs. using the full image")
 
     unique_legend()
 
@@ -261,7 +259,6 @@ def plot_lr(figure_path):
                 print("loss", method, step, l.mean())
                 print("AP", method, step, ap.mean(), ap.std())
                     
-        plt.title("effect of learning rate scheduling on training " + dataset)
         ax.set_xlabel("training examples")
         ax.set_ylabel("average precision ($AP_{COCO}$), mean of " + str(len(runs)) + " runs")
         ax2.set_ylabel("training loss, mean of " + str(len(runs)) + " runs")
@@ -331,7 +328,6 @@ def plot_multiclass(figure_path, directory, subsets):
     plt.xlabel("epoch")
     plt.ylabel("class average precision ($AP_{COCO}$)")
 
-    plt.title("training rate in single class and multi-class scenario")
 
     unique_legend(loc="upper right")
     return fig, ax
@@ -373,7 +369,6 @@ def plot_scales(figure_path):
 
                 plt.plot(epoch, AP,  color=colors(s), linestyle=styles[crop], label= str(1/scale * 100) + ":" + str(crop) )
 
-        plt.title("effect of image scale and crop size on training - " + dataset)
         plt.xlabel("training epoch")
         plt.ylabel("average precision ($AP_{COCO}$)")
 
@@ -429,7 +424,6 @@ def plot_schedules():
     plt.xlabel("training time (epochs)")
     plt.ylabel("learning rate")
 
-    plt.title("learning rate schedules")
 
     plt.legend()
     return fig, ax

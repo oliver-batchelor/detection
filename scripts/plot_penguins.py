@@ -29,24 +29,24 @@ if __name__ == '__main__':
     [ print(k, m.total) for k, m in matches.items() ]
     
 
-    fig, ax = actions_time_scatter(loaded_b, color_map=penguin_colors)
+    fig, ax = actions_time_scatter(loaded_b, color_map=penguin_colors, labels=penguin_labels)
     ax.set_ylim(ymin=0, ymax=150)
     ax.set_xlim(xmin=0, xmax=50)
     fig.savefig(path.join(figure_path, "actions_time_b.pdf"), bbox_inches='tight')
 
-    fig, ax = actions_time_scatter(loaded_a, color_map=penguin_colors)
+    fig, ax = actions_time_scatter(loaded_a, color_map=penguin_colors, labels=penguin_labels)
     ax.set_ylim(ymin=0, ymax=150)
     ax.set_xlim(xmin=0, xmax=50)
     fig.savefig(path.join(figure_path, "actions_time_a.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_durations(combined, keys=penguin_keys, color_map=penguin_colors)
+    fig, ax = plot_durations(combined, keys=penguin_keys, color_map=penguin_colors, labels=penguin_labels)
     fig.savefig(path.join(figure_path, "duration_boxplot.pdf"), bbox_inches='tight')
 
 
     ious=[50]
     results = compute_mAPs(combined, iou=ious, sigma=5)   
 
-    fig, ax = plot_running_mAPs(results, ious=ious, color_map=penguin_colors)
+    fig, ax = plot_running_mAPs(results, ious=ious, color_map=penguin_colors, labels=penguin_labels)
     fig.savefig(path.join(figure_path, "running_mAP.pdf"), bbox_inches='tight')
 
-    plot_action_histograms(combined, color_map=penguin_colors, figure_path=figure_path)
+    plot_action_histograms(combined, color_map=penguin_colors, labels=penguin_labels, figure_path=figure_path)

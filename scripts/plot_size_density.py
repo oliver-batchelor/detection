@@ -12,7 +12,7 @@ from dataset.imports.coco import import_coco
 from scipy import stats
 
 
-def plot_sizes_density(loaded, keys):
+def plot_sizes_density(loaded, keys, labels):
     fig, ax = make_chart()
 
     for k in keys:
@@ -20,12 +20,11 @@ def plot_sizes_density(loaded, keys):
         density = stats.kde.gaussian_kde(sizes,  bw_method=0.5)
    
         x = np.arange(0.0, 100, .4)
-        plt.plot(x, density(x), label = k, color = dataset_colors[k])
+        plt.plot(x, density(x), label = labels[k], color = dataset_colors[k])
 
     plt.xlabel('object size as percent of image size')
     plt.ylabel('density')
 
-    plt.title('distribution of object sizes in images')
     plt.legend()
 
     return fig, ax
@@ -41,9 +40,8 @@ if __name__ == '__main__':
     coco = to_structs(import_coco(subsets = [('val2017', 'validate')]))    
 
     loaded = loaded._extend(pascal_voc=voc, coco=coco)
-    keys = list(sorted(loaded.keys())) + ["coco", "pascal_voc"] 
+    keys = list(sorted(loaded.keys()))
   
-
-    fig, ax = plot_sizes_density(loaded, keys)
+    fig, ax = plot_sizes_density(loaded, keys, labels=dataset_labels._extend(pascal_voc = "pascal vOC", coco="coco" ))
     fig.savefig(path.join(figure_path, "sizes_density.pdf"), bbox_inches='tight')
 

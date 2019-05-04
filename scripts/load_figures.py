@@ -1,3 +1,6 @@
+
+
+from scripts.figures import make_chart
 from scripts.history import history_summary, extract_histories, \
      image_summaries, image_summary, correction_types, action_types
 
@@ -16,9 +19,8 @@ import math
 from tools import struct, to_structs, filter_none, drop_while, concat_lists, \
         map_dict, pprint_struct, pluck_struct, count_dict, sum_list, Struct, sum_dicts
 
-from scripts.figures import make_chart
 import matplotlib.pyplot as plt
-
+import csv
 
 make_chart = make_chart
 
@@ -42,6 +44,12 @@ def load_all(datasets, base_path):
 
     return datasets._map(load)
  
+def export_csv(file, fields, rows):
+    with open(file, mode='w') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(dict(row))
     
 
 base_path = '/home/oliver/storage/export/'
@@ -60,6 +68,31 @@ datasets = struct(
     aerial_penguins = 'oliver/combined.json'
 )
  
+dataset_labels = struct(
+    penguins = "penguins",
+    branches = "branches",
+    seals1 = "seals",
+    seals2 = "$seals_b$",
+
+    scott_base = "scott base",
+    apples1 = "$apples^1$",
+    apples2 = "$apples^2$",
+
+    scallops = "$scallops_e$",
+    fisheye = "fisheye",
+    buoys = "$buoys_d$",
+
+    aerial_penguins = "penguin survey"
+)
+
+penguin_labels = struct(
+    hallett_a = "hallett",
+    cotter_a = 'cotter',
+    royds_a = 'royds',
+    hallett_b = "$hallett_c$",
+    cotter_b = '$cotter_c$',
+    royds_b = '$royds_c$',
+)
 
 
 penguins_a = struct(

@@ -1,3 +1,5 @@
+
+from scripts.load_figures import make_chart
 from scripts.datasets import load_dataset, get_counts
 from os import path
 
@@ -18,7 +20,6 @@ import torch
 
 import csv
 
-from scripts.load_figures import make_chart
 
 base_path = '/home/oliver/storage/export/'
 

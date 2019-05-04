@@ -131,12 +131,15 @@ def plot_combined_ratios(dataset, sigma=5):
     ax[1].set_ylim(ymin=0, ymax=1)
 
     ax[1].set_yticks([0.0, 0.2, 0.4, 0.6, 0.8])
-    ax[2].set_yticks([0, 20, 40, 60, 80])
+    ticks = ax[2].get_yticks()
+    ax[2].set_yticks(ticks[:-1])
 
     ax[0].set_ylabel('proportion')
     ax[1].set_ylabel('proportion')
     ax[2].set_ylabel('annotation rate')
 
+    plt.xlabel('annotation time (minutes)')
+	
     ax[0].legend()
     ax[1].legend()
     ax[2].legend()
@@ -158,7 +161,6 @@ def plot_annotation_ratios(dataset, sigma=5):
     plt.xlabel('annotation time (minutes)')
     plt.ylabel('proportion of annotations')
 
-    plt.title('proportions of corrections (and type)')
     plt.legend()
 
     return fig, ax
@@ -174,12 +176,11 @@ def plot_action_ratios(dataset, sigma=5):
     plt.xlabel('annotation time (minutes)')
     plt.ylabel('proportion of actions')
 
-    plt.title('user actions over time')
     plt.legend()
 
     return fig, ax    
 
-def plot_instance_rates(datasets, color_map, sigma=5):
+def plot_instance_rates(datasets, color_map, labels, sigma=5):
     fig, ax = make_chart()
 
     for k, dataset in datasets.items():
@@ -191,7 +192,7 @@ def plot_instance_rates(datasets, color_map, sigma=5):
         x, y = uneven_gaussian_filter(time, total / durations, 
              durations, sigma=sigma)
 
-        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=k)
+        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=labels[k])
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0, xmax=100) 
@@ -199,14 +200,13 @@ def plot_instance_rates(datasets, color_map, sigma=5):
     plt.xlabel('annotation time (percent)')
     plt.ylabel('annotation rate')
 
-    plt.title('annotation rate across annotation period')
 
     plt.legend()
     return fig, ax
 
     
 
-def plot_dataset_ratios(datasets, color_map, sigma=5):
+def plot_dataset_ratios(datasets, color_map, labels, sigma=5):
     fig, ax = make_chart()
    
     for k, dataset in datasets.items():
@@ -215,7 +215,7 @@ def plot_dataset_ratios(datasets, color_map, sigma=5):
         time, _ = get_time(dataset)
         x, y = uneven_gaussian_filter(time, ratios.positive, total, sigma=sigma)
 
-        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=k)
+        plt.plot(100 * (x / time[-1]), y, color=color_map[k], label=labels[k])
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0, xmax=100) 
@@ -223,7 +223,6 @@ def plot_dataset_ratios(datasets, color_map, sigma=5):
     plt.xlabel('annotation time (percent)')
     plt.ylabel('proportion of annotations')
 
-    plt.title('proportions of model predictions unmodified')
 
     plt.legend()
 
@@ -241,7 +240,7 @@ def cumulative_lines(dataset, get_values, keys):
     plt.show()    
 
 
-def cumulative_instances(datasets, color_map):
+def cumulative_instances(datasets, color_map, labels):
 
     fig, ax = make_chart()
 
@@ -253,17 +252,15 @@ def cumulative_instances(datasets, color_map):
         instances = torch.Tensor([0] + pluck('instances', summaries)).cumsum(0)
         durations = torch.Tensor([0] + pluck('duration', summaries)).cumsum(0)
 
-        plt.plot((durations / 60).numpy(), instances.numpy(), label = k)
+        plt.plot((durations / 60).numpy(), instances.numpy(), label = labels[k])
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0)
 
-    ax.set_title("cumulative annotated instances vs. time")
 
     ax.set_xlabel("annotation time (m)")
     ax.set_ylabel("count")
 
-    ax.set_title("cumulative instances vs annotation time")
 
     ax.legend()
     
@@ -275,19 +272,18 @@ def thresholds(image):
     return [image.threshold] + changes
 
 
-def plot_action_histograms(loaded, color_map, figure_path):
-    fig, ax = plot_instance_rates(loaded, color_map, sigma=5)
+def plot_action_histograms(loaded, color_map, labels, figure_path):
+    fig, ax = plot_instance_rates(loaded, color_map, labels=labels, sigma=5)
     fig.savefig(path.join(figure_path, "summaries/instance_rates.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_dataset_ratios(loaded, color_map, sigma=5)
+    fig, ax = plot_dataset_ratios(loaded, color_map, labels=labels, sigma=5)
     fig.savefig(path.join(figure_path, "summaries/positive_ratio.pdf"), bbox_inches='tight')
 
     for k, dataset in loaded.items():
         fig, ax = plot_combined_ratios(loaded[k], sigma=5)
-        ax[0].set_title(k + ' - action/annotations vs. annotation time')
         fig.savefig(path.join(figure_path, "action_annotations", k + ".pdf"), bbox_inches='tight')        
 
-    fig, ax = cumulative_instances(loaded, color_map)
+    fig, ax = cumulative_instances(loaded, color_map, labels=labels)
     fig.savefig(path.join(figure_path, "summaries/cumulative_instances.pdf"), bbox_inches='tight')
 
     ax.set_ylim(ymin=0, ymax=8000)
@@ -304,7 +300,7 @@ if __name__ == '__main__':
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
 
-    plot_action_histograms(loaded, color_map=dataset_colors, figure_path=figure_path)
+    plot_action_histograms(loaded, color_map=dataset_colors, labels=dataset_labels, figure_path=figure_path)
 
 
 
