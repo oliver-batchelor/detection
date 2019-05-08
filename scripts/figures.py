@@ -32,6 +32,8 @@ mpl.rcParams['grid.color'] = 'k'
 mpl.rcParams['grid.linestyle'] = ':'
 mpl.rcParams['grid.linewidth'] = 0.5
 
+plt.rcParams.update({'mathtext.default':  'regular' })
+
 
 def make_chart(grid=True, size=(16, 8), **kwargs):
 

@@ -95,7 +95,9 @@ def unzip(entries):
 
 def best_epoch(key):
     def f(log):
-        return max(get_entry(log, "validate"), key=lambda entry: entry[1][key])
+        val = get_entry(log, "validate")
+        return max(val, key=lambda entries: entries[1][key])[1]
+        
     return f  
 
 def plot_training_scatters(logs):
@@ -119,12 +121,10 @@ def plot_training_scatters(logs):
     plt.xlim(xmin=30)
     plt.ylim(ymin=30)
 
-
     plt.grid(True)
     unique_legend()
 
     return fig, ax
-
 
 
 
@@ -153,17 +153,16 @@ def plot_training_lines(logs):
     return fig, ax
 
 
-
 log_files = struct(
     penguins = 'penguins',
     branches = 'branches',
-    # seals1 = 'seals',
-    # seals2 = 'seals_shanelle',
+    seals1 = 'seals',
+    seals2 = 'seals_shanelle',
     scott_base = 'scott_base',
-    # apples1 = 'apples',
-    # apples2 = 'apples_lincoln',
-    # scallops = 'scallops',  
-    # fisheye = 'victor',
+    apples1 = 'apples',
+    apples2 = 'apples_lincoln',
+    scallops = 'scallops',  
+    fisheye = 'victor',
     buoys       = 'buoys',
     aerial_penguins = 'aerial_penguins'
 )
@@ -201,6 +200,38 @@ def read_run(dataset, incremental, method, cycles, run):
 
     # if incremental == "full":
     #     scatters[dataset] += list(zip(AP, loss))
+
+def plot_validation():
+    fig, ax = make_chart()
+    ax2 = ax.twinx()  
+
+
+    for run in ['validate', 'validate_inc']:
+        logs = read_logs(path.join(log_path, run), log_files)
+        for k, log in logs.items():
+
+            epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
+            _, loss = extract_key(get_entry(log, "train/loss"), 'total')
+
+            style = '--' if run == "validate_inc" else '-'
+
+            ax.plot(epoch, AP, label=dataset_labels[k], linestyle=style, color=dataset_colors[k])
+            ax2.plot(epoch, loss, label=dataset_labels[k], linestyle=style, color=dataset_colors[k])
+
+
+    plt.xlim(xmin=0)
+    plt.ylim(ymin=0)
+
+    plt.xlabel("training epoch")
+    plt.ylabel("average precision ($AP_{COCO}$)")
+
+    unique_legend()
+
+    return fig, ax
+
+    
+
+
 
 def plot_lr(figure_path):
 
@@ -271,7 +302,6 @@ def plot_lr(figure_path):
         fig.savefig(path.join(figure_path, "lr_schedule", dataset + ".pdf"), bbox_inches='tight')
 
 
-
     fig, ax = make_chart()
     for dataset, points in scatters.items():
         ap, loss = zip(*points)
@@ -289,8 +319,8 @@ def plot_lr(figure_path):
 
 
 subsets_voc = struct(
-    subset1=["cat",  "cow",  "dog",    "sheep"],
-    subset2=["bicycle", "bus",  "car", "motorbike"],  
+    subset1=["cow",  "sheep", "cat",  "dog"],
+    subset2=["motorbike", "bicycle", "car", "bus"],  
 )
 
 subsets_coco = struct(
@@ -298,6 +328,10 @@ subsets_coco = struct(
     subset2=["zebra", "giraffe",  "elephant", "bear"],  
     subset3=["sandwich", "pizza",  "donut", "cake"],  
     subset4=["cup", "fork",  "knife", "spoon"],      
+    subset5=["handbag","tie","suitcase","person"],
+    subset6=["chair,tv,keyboard,mouse"],
+    subset7=["apple,orange,carrot,banana"],
+    subset8=["skis,snowboard,kite,skateboard"]
 )
 
 
@@ -480,7 +514,8 @@ def plot_best_pr(log):
     plot_pr_curves(ax, pr)
     return fig, ax
 
-
+def with_name(row_dict):
+    return [row._extend(name = k) for k, row in row_dict.items()]
 
 if __name__ == '__main__':
 
@@ -490,8 +525,17 @@ if __name__ == '__main__':
     logs = read_logs(path.join(log_path, 'validate'), log_files)
     penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    pprint_struct(penguin_logs._map(best_epoch('mAP50')))
-    pprint_struct(logs._map(best_epoch('AP')))
+    ap_keys = ['name','AP', 'mAP30', 'mAP50', 'mAP75']
+
+    best_validate = logs._map(best_epoch('AP'))
+    best_penguin = penguin_logs._map(best_epoch('mAP50'))
+
+
+    export_csv(path.join(figure_path, "validate.csv"), ap_keys, with_name(best_validate)) 
+    export_csv(path.join(figure_path, "validate_penguins.csv"), ap_keys, with_name(best_penguin)) 
+
+    pprint_struct(best_validate)
+    pprint_struct(best_penguin)
 
     # fig, ax = plot_best_pr(logs.seals1)
     # fig, ax = plot_best_pr(logs.scott_base)
@@ -515,6 +559,13 @@ if __name__ == '__main__':
     # fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
     # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
 
+    fig, ax = plot_validation()
+    fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
-    fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')
+    # fig, ax = plot_multiclass(figure_path, 'multiclass_128', subsets_voc)
+    # fig.savefig(path.join(figure_path, "multiclass_128.pdf"), bbox_inches='tight')
+
+
+    # fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
+    # fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')
+

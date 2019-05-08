@@ -46,7 +46,7 @@ if __name__ == '__main__':
     ious=[50]
     results = compute_mAPs(combined, iou=ious, sigma=5)   
 
-    fig, ax = plot_running_mAPs(results, ious=ious, color_map=penguin_colors, labels=penguin_labels)
+    fig, ax = plot_running_mAPs(results, iou=50, color_map=penguin_colors, labels=penguin_labels)
     fig.savefig(path.join(figure_path, "running_mAP.pdf"), bbox_inches='tight')
 
     plot_action_histograms(combined, color_map=penguin_colors, labels=penguin_labels, figure_path=figure_path)

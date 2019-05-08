@@ -39,8 +39,12 @@ def set_category_all(images, category):
     return list(map(set_category(category), images))
 
 
-def quantiles(xs):
+def quartiles(xs):
     return np.percentile(np.array(xs), [0, 25, 50, 75, 100])
+
+
+def stats(xs):
+   return struct(quartiles=quartiles(xs), mean=np.mean(xs), std=np.std(xs))
 
 def image_annotations(image):
     annotations = [decode_obj(ann) for ann in image.annotations.values()]
@@ -90,17 +94,25 @@ def annotation_summary(dataset):
         box_areas = list(map(box_area, annotations))
         box_lengths = list(map(box_length, annotations))
 
-        return struct(n = n, categories=categories, box_areas=box_areas, box_lengths=box_lengths)
+        return struct(n = n, categories=categories, box_areas=box_areas, box_lengths=box_lengths, image_size=image.image_size)
     
     infos = list(map(count, filter_categories(dataset)))
+    sizes = pluck('image_size', infos)
+    
+    def image_area(size):
+        return size[0] * size[1]
 
+    
     totals = reduce(operator.add, infos)
     return struct(n_images = len(infos), 
         categories = totals.categories, 
         n_annotations = totals.n, 
-        n = quantiles(pluck('n', infos)), 
-        box_length=quantiles(totals.box_lengths), 
-        box_area = quantiles(totals.box_areas))
+        n = stats(pluck('n', infos)), 
+        box_length=stats(totals.box_lengths), 
+        box_area = stats(totals.box_areas),
+        size_ranges = (min(sizes, key=image_area), max(sizes, key=image_area))
+
+        )
 
 
 def match_datasets(dataset1, dataset2, threshold=0.5, check_overlap=True):

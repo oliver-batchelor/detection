@@ -1,6 +1,5 @@
-
-
 from scripts.figures import make_chart
+
 from scripts.history import history_summary, extract_histories, \
      image_summaries, image_summary, correction_types, action_types
 
@@ -49,7 +48,7 @@ def export_csv(file, fields, rows):
         writer = csv.DictWriter(csv_file, fieldnames=fields)
         writer.writeheader()
         for row in rows:
-            writer.writerow(dict(row))
+            writer.writerow(row._to_dicts())
     
 
 base_path = '/home/oliver/storage/export/'

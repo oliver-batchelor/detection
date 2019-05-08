@@ -6,7 +6,7 @@ from os import path
 import argparse
 
 from tools import table, struct, to_structs, filter_none, drop_while, \
-     concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes, Struct
+     concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes, Struct, transpose_structs
 
 from detection import evaluate
 
@@ -14,7 +14,7 @@ from collections import deque
 
 import tools
 
-from scripts.datasets import quantiles
+from scripts.datasets import quartiles, stats
 
 from evaluate import compute_AP
 
@@ -186,39 +186,33 @@ def history_summary(history):
     totals = sum_list(summaries)
     n = len(history)
 
-    actions_count = count_struct(pluck('action', totals.actions), action_types)
-    durations = pluck('duration', summaries)
-    real_durations = pluck('real_duration', summaries)
+    summaries = transpose_structs(summaries)
+    actions = transpose_structs(totals.actions, ['action', 'duration', 'real_duration'])
 
+    actions_count = count_struct(actions.action, action_types)
     total_actions = sum(actions_count.values(), 0)
-    total_duration = sum(durations, 0)
-
-    instances = sum(pluck('instances', summaries), 0)
-
-
-    # durations = partition_by(totals.actions, lambda action: (action.action, action.duration))
 
     return summaries, struct (
-        action_durations = quantiles(pluck('duration', totals.actions)),
-        action_real_durations = quantiles(pluck('real_duration', totals.actions)),
+        action_durations = stats(actions.duration),
+        action_real_durations = stats(actions.real_duration),
 
         annotation_breaks = len([action.real_duration for action in totals.actions if action.real_duration > 60]),
 
-        image_durations = quantiles(durations),
+        image_durations = stats(summaries.duration),
 
-        n_actions = quantiles(pluck('n_actions', summaries)),
-        instances_image = quantiles(pluck('instances', summaries)),
+        n_actions =  stats(summaries.n_actions),
+        instances_image = stats(summaries.instances),
 
         correction_count = totals.correction_count,
         actions_count = totals.actions_count,
 
-        total_minutes = total_duration / 60,
+        total_minutes = totals.duration / 60,
         total_actions = total_actions,
 
-        real_minutes = sum(real_durations, 0),
+        actions_minute      = 60 * total_actions / totals.duration,
+        instances_minute    = 60 * totals.instances / totals.duration,
 
-        actions_minute      = 60 * total_actions / total_duration,
-        instances_minute    = 60 * instances / total_duration,
+        actions_annotation = total_actions / totals.instances
     )
         
 

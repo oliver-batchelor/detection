@@ -131,6 +131,8 @@ def plot_combined_ratios(dataset, sigma=5):
     ax[1].set_ylim(ymin=0, ymax=1)
 
     ax[1].set_yticks([0.0, 0.2, 0.4, 0.6, 0.8])
+
+    ax[2].set_ylim(ymin=0)
     ticks = ax[2].get_yticks()
     ax[2].set_yticks(ticks[:-1])
 

@@ -15,7 +15,7 @@ import csv
 
 def plot_sizes(loaded, keys, labels=dataset_labels):
 
-    length_quartiles = {k : loaded[k].summary.box_length for k in keys}
+    length_quartiles = {k : loaded[k].summary.box_length.quartiles for k in keys}
     fig, ax = box_plot(length_quartiles, keys, labels=dataset_labels)
 
     ax.set_xscale('log')
@@ -25,13 +25,13 @@ def plot_sizes(loaded, keys, labels=dataset_labels):
     return fig, ax
 
 def plot_durations(loaded, keys, color_map=dataset_colors, labels=dataset_labels):   
-    durations_quartiles = {k : loaded[k].summary.image_durations  for k in keys}
+    durations_quartiles = {k : loaded[k].summary.image_durations.quartiles  for k in keys}
     fig, ax = box_plot(durations_quartiles, keys, labels=labels)
 
     for i, k in enumerate(keys):
-        counts = np.array(pluck('instances', loaded[k].image_summaries))
+        counts = np.array(loaded[k].image_summaries.instances)
+        durations = np.array(loaded[k].image_summaries.duration)
 
-        durations = np.array(pluck('duration', loaded[k].image_summaries))
         plt.scatter(durations, np.repeat(i, durations.shape), marker = '|', \
              s=np.clip(counts, a_min=1, a_max=None) * 20, color=color_map[k])    
 
@@ -44,12 +44,12 @@ def plot_durations(loaded, keys, color_map=dataset_colors, labels=dataset_labels
 
 
 def plot_instances(loaded, keys, color_map=dataset_colors, labels=dataset_labels):
-    instances_quartiles = {k : loaded[k].summary.instances_image + 1 for k in keys}
+    instances_quartiles = {k : loaded[k].summary.instances_image.quartiles + 1 for k in keys}
 
     fig, ax = box_plot(instances_quartiles, keys, labels=labels)
 
     for i, k in enumerate(keys):
-        counts = np.bincount(pluck('instances', loaded[k].image_summaries))
+        counts = np.array(loaded[k].image_summaries.instances)
 
         instances = np.nonzero(counts)[0]
         counts = counts[instances]
@@ -124,29 +124,45 @@ def plot_times_density(loaded, keys, color_map, labels):
 
     ax.set_xlim(xmin=0.0, xmax=80.0)
     ax.set_ylim(ymin=0.0)
-
-
     return fig, ax
 
 
+def export_summary_table(filename, keys, summaries, labels):
 
+    def get_entry(e):
+        if type(e) is Struct and 'mean' in e:
+          return "${:.3g} \pm {:.3g}$".format(e.mean, e.std)
+        elif type(e) is float:
+          return "{:.3g}".format(e)
+        else:
+          return str(e)
+
+    def entries(k, summary):
+      return summary._subset(*keys)._map(get_entry)._extend(name = labels[k])
+
+    rows = list(summaries._mapWithKey(entries).values())
+    export_csv(filename,  ['name'] + keys, rows)
 
 
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/summaries"
 
  
-    loaded = load_all(datasets._without('seals2'), base_path)
-    keys=sorted(loaded.keys())
-         
+    loaded = load_all(datasets, base_path)
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
-   
 
-    # with open(path.join(figure_path, 'summary.csv'), 'w') as file:
-    #     w = csv.DictWriter(file, ['n_images', 'total_actions', 'annotation_breaks', 'instances_minute'])
-    #     w.writerows(transpose_dicts(summaries))
-    
+    data_keys = ['n_annotations', 'n_images', 'box_length', 'size_ranges'] 
+    export_summary_table(path.join(figure_path, "data_summary.csv"), data_keys,  summaries, dataset_labels)
+
+
+    annotation_keys = ['n_actions', 'n_annotations', 'total_minutes', 'instances_minute', 'actions_minute', 'actions_annotation']
+    export_summary_table(path.join(figure_path, "time_summary.csv"), annotation_keys,  summaries, dataset_labels)
+
+
+    loaded = loaded._without('seals2')
+    keys=sorted(loaded.keys())
+    summaries = pluck_struct('summary', loaded)
 
     fig, ax = plot_times_density(loaded, keys, color_map=dataset_colors, labels=dataset_labels)
     fig.savefig(path.join(figure_path, "time_density.pdf"), bbox_inches='tight')

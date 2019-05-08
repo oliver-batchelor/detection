@@ -48,23 +48,37 @@ def compute_APs(datasets, sigma=5):
 
     return datasets._map(f)
 
-def plot_running_mAPs(results, ious, color_map, labels):
+
+
+def plot_running_mAPs(results, iou, color_map, labels):
     fig, ax = make_chart()
 
     for k, r in results.items():
-        
-        styles = ['-', '--', '-.', ':']
-        for iou, style in zip(ious, styles):
-            plt.plot(r.times / r.times[-1], r.mAPs[iou], linestyle=style, 
-                 color=color_map[k], label=labels[k] + " AP_{" + str(iou) + "}")
-            
+      plt.plot(r.times / r.times[-1], r.mAPs[iou], 
+        color=color_map[k], label=labels[k])
 
     ax.set_ylim(ymin=0)
     ax.set_xlim(xmin=0) 
 
     plt.xlabel('annotation time (percent)')
-    plt.ylabel('average precision')
+    plt.ylabel('$AP_' + str(iou) + '$')
 
+    plt.legend()
+    return fig, ax
+
+
+def plot_running_AP(results, color_map, labels):
+    fig, ax = make_chart()
+
+    for k, r in results.items():
+      plt.plot(r.times / r.times[-1], r.AP, 
+        color=color_map[k], label=labels[k])
+
+    ax.set_ylim(ymin=0)
+    ax.set_xlim(xmin=0) 
+
+    plt.xlabel('annotation time (percent)')
+    plt.ylabel('$AP_{COCO}$')
 
     plt.legend()
     return fig, ax
@@ -103,6 +117,8 @@ if __name__ == '__main__':
         fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
       
 
-    fig, ax = plot_running_mAPs(results, ious=[75])
+    fig, ax = plot_running_AP(results, color_map=dataset_colors, labels=dataset_labels)
     fig.savefig(path.join(figure_path, "overall.pdf"), bbox_inches='tight')
+
+    
 
