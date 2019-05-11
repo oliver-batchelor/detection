@@ -201,35 +201,46 @@ def read_run(dataset, incremental, method, cycles, run):
     # if incremental == "full":
     #     scatters[dataset] += list(zip(AP, loss))
 
+   
+
+
 def plot_validation():
-    fig, ax = make_chart()
-    ax2 = ax.twinx()  
 
+    fig, ax2d = plt.subplots(5, 2, sharex=True, sharey=True, figsize=(16, 30))  
+    runs = struct(validate = struct(marker = "x", style="-"), validate_inc=struct(marker = ".", style="--"))
+    axs = [a for row in ax2d for a in row ]
 
-    for run in ['validate', 'validate_inc']:
-        logs = read_logs(path.join(log_path, run), log_files)
-        for k, log in logs.items():
+    all_logs = transpose_dicts({run:read_logs(path.join(log_path, run), log_files._without('seals2')) 
+        for run in runs.keys()})
+
+    assert len(axs) == len(all_logs)
+
+    for (ax, (k, logs)) in zip(axs, all_logs.items()):
+
+        ax2 = ax.twinx()
+        for run, style in runs.items():
+            log = logs[run]
 
             epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
             _, loss = extract_key(get_entry(log, "train/loss"), 'total')
 
-            style = '--' if run == "validate_inc" else '-'
+            ax.plot(epoch, AP, linestyle=style.style, color=dataset_colors[k])
+            ax2.plot(epoch, loss, linestyle=style.style, color='grey')
 
-            ax.plot(epoch, AP, label=dataset_labels[k], linestyle=style, color=dataset_colors[k])
-            ax2.plot(epoch, loss, label=dataset_labels[k], linestyle=style, color=dataset_colors[k])
+        ax.set_xlim(xmin=0)
+        ax.set_ylim(ymin=0, ymax=100)
+
+        ax2.set_ylim(ymin=0)
+
+        ax.set_title(dataset_labels[k])
+        ax.grid(True)
+
+    [ax.set_xlabel("training epoch") for ax in ax2d[-1]]
+    [axs[0].set_ylabel("average precision ($AP_{COCO}$)") for axs in ax2d]
 
 
-    plt.xlim(xmin=0)
-    plt.ylim(ymin=0)
 
-    plt.xlabel("training epoch")
-    plt.ylabel("average precision ($AP_{COCO}$)")
-
-    unique_legend()
-
-    return fig, ax
-
-    
+    return fig, ax2d
 
 
 
@@ -478,18 +489,18 @@ def plot_pr_curves(ax, prs):
         suffix = lambda s: "$" + s + "_{" + str(i) + "}$"
         style="--" if i == 50 else "-"
 
-        fpr = np.array(pr.false_positives)[1:] - np.array(pr.false_positives)[:-1]
-        print(fpr)
+        # fpr = np.array(pr.false_positives)[1:] - np.array(pr.false_positives)[:-1]
+        # print(fpr)
 
         l1 = ax.plot(recall, pr.precision, label="precision", color=pr_colors["precision"], linestyle=style)
-        l2 = ax2.plot(recall[1:], fpr, label="false positive ratio", color=pr_colors["false positives"], linestyle=style)
+        l2 = ax2.plot(recall, pr.false_positives, label="false positives", color=pr_colors["false positives"], linestyle=style)
         # l3 = ax2.plot(recall, pr.true_positives, label="true positives", color=pr_colors["true positives"])
         # l4 = ax2.plot(recall, pr.false_negatives, label="false negatives", color=pr_colors["false negatives"])
         l5 = ax.plot(recall, pr.confidence, label="confidence", color=pr_colors["confidence"], linestyle=style)
 
     ax.set_xlim(xmin=0, xmax=1.0)
     ax.set_ylim(ymin=0, ymax=1.0)    
-    ax2.set_ylim(ymin=0, ymax=10)    
+    ax2.set_ylim(ymin=0)    
 
     lines = sum([l1, l2,  l5], [])
 
@@ -497,6 +508,28 @@ def plot_pr_curves(ax, prs):
     ax.legend(lines, labels, loc="center left")
     
 
+def plot_pr_grid(logs, keys, labels=dataset_labels):
+    assert len(keys) % 2 == 0
+    rows = len(keys) / 2 
+    fig, axs = plt.subplots(1, 2, sharex=True, sharey=True, figsize=(16, rows*9))  
+
+    # axs = [a for row in ax2d for a in row]
+
+    for k, ax in zip(keys, axs):
+        log = logs[k]
+
+        APs = np.array(list(map(lambda entry: entry[1].AP, get_entry(log, "validate"))))
+        
+        _, pr50s = unzip(get_entry(log, "validate/pr50/total"))
+        _, pr75s = unzip(get_entry(log, "validate/pr75/total"))
+
+        i = np.argmax(APs)
+        pr = {50 : pr50s[i], 75: pr75s[i]}
+
+        plot_pr_curves(ax, pr)
+        ax.set_title(labels[k])
+
+    return fig, axs
 
 def plot_best_pr(log):
 
@@ -514,31 +547,35 @@ def plot_best_pr(log):
     plot_pr_curves(ax, pr)
     return fig, ax
 
-def with_name(row_dict):
-    return [row._extend(name = k) for k, row in row_dict.items()]
+def with_name(row_dict, labels):
+    return [row._extend(dataset = labels[k]) for k, row in row_dict.items()]
 
 if __name__ == '__main__':
 
     figure_path = "/home/oliver/sync/figures/training"
-
+    ap_keys = ['dataset','AP', 'mAP30', 'mAP50', 'mAP75']
 
     logs = read_logs(path.join(log_path, 'validate'), log_files)
     penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    ap_keys = ['name','AP', 'mAP30', 'mAP50', 'mAP75']
+    
 
     best_validate = logs._map(best_epoch('AP'))
     best_penguin = penguin_logs._map(best_epoch('mAP50'))
 
 
-    export_csv(path.join(figure_path, "validate.csv"), ap_keys, with_name(best_validate)) 
-    export_csv(path.join(figure_path, "validate_penguins.csv"), ap_keys, with_name(best_penguin)) 
+    export_csv(path.join(figure_path, "validate.csv"), ap_keys, with_name(best_validate, dataset_labels)) 
+    export_csv(path.join(figure_path, "validate_penguins.csv"), ap_keys, with_name(best_penguin, penguin_labels)) 
 
     pprint_struct(best_validate)
     pprint_struct(best_penguin)
 
     # fig, ax = plot_best_pr(logs.seals1)
     # fig, ax = plot_best_pr(logs.scott_base)
+
+
+    fig, ax = plot_pr_grid(logs, keys=['apples1', 'apples2'],  labels=dataset_labels)
+    fig.savefig(path.join(figure_path, "apples_pr.pdf"), bbox_inches='tight')
 
     # plt.show()
 
@@ -559,8 +596,8 @@ if __name__ == '__main__':
     # fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
     # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_validation()
-    fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
+    # fig, ax = plot_validation()
+    # fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
 
     # fig, ax = plot_multiclass(figure_path, 'multiclass_128', subsets_voc)
     # fig.savefig(path.join(figure_path, "multiclass_128.pdf"), bbox_inches='tight')

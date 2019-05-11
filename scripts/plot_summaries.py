@@ -144,6 +144,18 @@ def export_summary_table(filename, keys, summaries, labels):
     export_csv(filename,  ['name'] + keys, rows)
 
 
+def export_summary_csvs(figure_path, summaries, labels):
+
+    data_keys = ['n_annotations', 'n_images', 'box_length', 'size_ranges'] 
+    export_summary_table(path.join(figure_path, "data_summary.csv"), data_keys,  summaries, labels)
+
+    annotation_keys = ['n_actions', 'n_annotations', 'total_minutes', 'instances_minute', 'actions_minute', 'actions_annotation']
+    
+    export_summary_table(path.join(figure_path, "time_summary.csv"), annotation_keys,  summaries, labels)
+
+    export_summary_table(path.join(figure_path, "correction_summary.csv"), correction_types, summaries._map(lambda s: s.correction_count), labels) 
+
+
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/summaries"
 
@@ -152,13 +164,7 @@ if __name__ == '__main__':
     summaries = pluck_struct('summary', loaded)
     pprint_struct(summaries)
 
-    data_keys = ['n_annotations', 'n_images', 'box_length', 'size_ranges'] 
-    export_summary_table(path.join(figure_path, "data_summary.csv"), data_keys,  summaries, dataset_labels)
-
-
-    annotation_keys = ['n_actions', 'n_annotations', 'total_minutes', 'instances_minute', 'actions_minute', 'actions_annotation']
-    export_summary_table(path.join(figure_path, "time_summary.csv"), annotation_keys,  summaries, dataset_labels)
-
+    export_summary_csvs(figure_path, summaries, dataset_labels)
 
     loaded = loaded._without('seals2')
     keys=sorted(loaded.keys())
@@ -168,15 +174,18 @@ if __name__ == '__main__':
     fig.savefig(path.join(figure_path, "time_density.pdf"), bbox_inches='tight')
  
 
-    fig, ax = plot_category_bars( pluck_struct('actions_count', summaries), action_types, color_map=action_colors, categories=keys, cat_labels=dataset_labels)
-    ax.set_ylabel('action count')
-    ax.set_ylim(ymax=4000)
+    actions_proportions = summaries._map(lambda s: s.actions_count / s.total_actions)
+    fig, ax = plot_category_bars( actions_proportions, action_types, color_map=action_colors, categories=keys, cat_labels=dataset_labels)
+    ax.set_ylabel('proportion of actions')
+
     fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "action_counts.pdf"), bbox_inches='tight')
 
     correction_types = ['weak positive', 'modified positive', 'false negative', 'false positive']
-    fig, ax = plot_category_bars( pluck_struct('correction_count', summaries), correction_types, color_map=correction_colors, categories=keys, cat_labels=dataset_labels)
-    ax.set_ylabel('correction count')
+    
+    correction_proportions = summaries._map(lambda s: s.correction_count / s.n_annotations)
+    fig, ax = plot_category_bars(correction_proportions,  correction_types, color_map=correction_colors, categories=keys, cat_labels=dataset_labels)
+    ax.set_ylabel('proportion of annotation count')
 
     fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "correction_counts.pdf"), bbox_inches='tight')

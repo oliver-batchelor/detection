@@ -27,6 +27,12 @@ if __name__ == '__main__':
     )
 
     [ print(k, m.total) for k, m in matches.items() ]
+
+    
+    
+    summaries = pluck_struct('summary', combined)
+    export_summary_csvs(figure_path, summaries, penguin_labels)
+
     
 
     fig, ax = actions_time_scatter(loaded_b, color_map=penguin_colors, labels=penguin_labels)

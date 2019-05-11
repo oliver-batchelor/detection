@@ -138,7 +138,7 @@ def plot_combined_ratios(dataset, sigma=5):
 
     ax[0].set_ylabel('proportion')
     ax[1].set_ylabel('proportion')
-    ax[2].set_ylabel('annotation rate')
+    ax[2].set_ylabel('annotation rate (instances/minute)')
 
     plt.xlabel('annotation time (minutes)')
 	
@@ -200,7 +200,7 @@ def plot_instance_rates(datasets, color_map, labels, sigma=5):
     ax.set_xlim(xmin=0, xmax=100) 
 
     plt.xlabel('annotation time (percent)')
-    plt.ylabel('annotation rate')
+    plt.ylabel('annotation rate (instances/minute)')
 
 
     plt.legend()

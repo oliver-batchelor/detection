@@ -68,26 +68,26 @@ datasets = struct(
 )
  
 dataset_labels = struct(
-    penguins = "penguins",
-    branches = "branches",
-    seals1 = "seals",
+    penguins = "$penguins$",
+    branches = "$branches$",
+    seals1 = "$seals$",
     seals2 = "$seals_b$",
 
-    scott_base = "scott base",
+    scott_base = "$scott\:base$",
     apples1 = "$apples^1$",
     apples2 = "$apples^2$",
 
     scallops = "$scallops_e$",
-    fisheye = "fisheye",
+    fisheye = "$fisheye$",
     buoys = "$buoys_d$",
 
-    aerial_penguins = "penguin survey"
+    aerial_penguins = "$penguin\:survey$"
 )
 
 penguin_labels = struct(
-    hallett_a = "hallett",
-    cotter_a = 'cotter',
-    royds_a = 'royds',
+    hallett_a = "$hallett$",
+    cotter_a = '$cotter$',
+    royds_a = '$royds$',
     hallett_b = "$hallett_c$",
     cotter_b = '$cotter_c$',
     royds_b = '$royds_c$',

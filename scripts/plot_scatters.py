@@ -142,7 +142,7 @@ def iou_lines(datasets, keys, color_map, labels):
         x = np.arange(0., 1.001, .002)
         plt.plot(x, density(x), label = labels[k], color = color_map[k])
 
-    plt.xlabel('iou')
+    plt.xlabel('IoU with final annotation')
     plt.ylabel('density')
 
 
@@ -194,7 +194,7 @@ def confidence_iou_scatter(datasets):
 
 
     plt.xlabel('prediction confidence')
-    plt.ylabel('iou with final annotation')
+    plt.ylabel('IoU with final annotation')
 
    
     return fig, ax
