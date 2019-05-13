@@ -101,6 +101,14 @@ def intersect(box_a, box_b):
     inter = torch.clamp((max_xy - min_xy), min=0)
     return inter[:, :, 0] * inter[:, :, 1]
 
+def intersect_matched(box_a, box_b):
+    assert(box_a.size(0) == box_b.size(0))
+
+    max_xy = torch.min(box_a[:, 2:], box_b[:, 2:])
+    min_xy = torch.max(box_a[:, :2], box_b[:, :2])
+
+    inter = torch.clamp((max_xy - min_xy), min=0)
+    return inter[:, 0] * inter[:, 1]
 
 def iou(box_a, box_b):
     """Compute the IOU of two sets of boxes in point form.
@@ -116,6 +124,18 @@ def iou(box_a, box_b):
               (box_b[:, 3]-box_b[:, 1])).unsqueeze(0).expand_as(inter)  # [n,m]
     union = area_a + area_b - inter
     return inter / union  # [n,m]
+
+def iou_matched(box_a, box_b):  
+    inter = intersect_matched(box_a, box_b)
+
+    area_a = ((box_a[:, 2]-box_a[:, 0]) *
+              (box_a[:, 3]-box_a[:, 1]))
+    area_b = ((box_b[:, 2]-box_b[:, 0]) *
+              (box_b[:, 3]-box_b[:, 1]))
+    union = area_a + area_b - inter
+    return inter / union 
+
+
 
 
 nms_defaults = struct(

@@ -105,6 +105,7 @@ def import_dataset(input_args, subset=None):
     else:
         assert False, "unknown dataset type: " + choice
 
+
 def load_dataset(args):
 
     subset = args.subset.split(",") if args.subset else None
@@ -114,6 +115,7 @@ def load_dataset(args):
 
     if subset:
         dataset = subset_dataset(dataset, subset, keep_classes)
+
 
     summarise(dataset['images'], dataset['config']['classes'])
   

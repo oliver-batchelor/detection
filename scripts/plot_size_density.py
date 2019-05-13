@@ -25,6 +25,8 @@ def plot_sizes_density(loaded, keys, labels):
     plt.xlabel('object size as percent of image size')
     plt.ylabel('density')
 
+    plt.xlim(xmin = 0.0, xmax=100.0)
+
     plt.legend()
 
     return fig, ax

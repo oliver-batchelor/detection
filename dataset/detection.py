@@ -372,7 +372,8 @@ class DetectionDataset:
         self.images = images
         self.classes = classes
 
-
+  
+  
 
     def update_image(self, image):
         self.images[image.id] = image
@@ -450,3 +451,31 @@ class DetectionDataset:
 
     def validate(self, args, encoder, collate=collate_batch):
         return self.test_on(self.validate_images, args, encoder, collate=collate)
+
+
+    def add_noise(self, noise = 0, offset = 0):
+      totals = struct(iou = 0, n = 0)
+            
+
+      def add_image_noise(image):
+        nonlocal totals
+        n = image.target._size
+        centre, size = box.split(box.extents_form(image.target.bbox))
+        centre.add_(offset * size)
+        
+        if image.category == 'train':
+          centre.add_(torch.randn(n, 2) * noise * size)   
+          size.mul_(torch.randn(n, 2) * noise + 1)
+        
+        noisy = box.point_form(torch.cat([centre, size], 1))
+        
+        if image.category == 'train':
+            totals += struct(iou = box.iou_matched(noisy, image.target.bbox).sum(), n = n)
+
+        return image
+
+
+      self.images = {k:add_image_noise(image) for k, image in self.images.items()}
+        
+      print("added noise, mean iou = ", totals.iou / totals.n)
+      return self

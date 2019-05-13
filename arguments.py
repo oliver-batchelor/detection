@@ -46,6 +46,9 @@ train_parameters = struct (
     eval_split      = param(False, help='evaluate images split into crops of image_size'),
     overlap         = param(200, type='int', help='margin of overlap when splitting images for evaluation'),
     
+    box_noise       = param(0.0, help='add gaussian noise to bounding boxes'),
+    box_offset      = param(0, help='add systematic offset to bounding boxes'),
+
     paused          = param(False, help='start trainer paused'),
     num_workers     = param(4,      help='number of workers used to process dataset'),
     model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),

@@ -484,7 +484,6 @@ def plot_pr_curves(ax, prs):
 
     for i, pr in prs.items():
         recall = pr.recall
-        print(i)
 
         suffix = lambda s: "$" + s + "_{" + str(i) + "}$"
         style="--" if i == 50 else "-"
@@ -558,8 +557,6 @@ if __name__ == '__main__':
     logs = read_logs(path.join(log_path, 'validate'), log_files)
     penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
-    
-
     best_validate = logs._map(best_epoch('AP'))
     best_penguin = penguin_logs._map(best_epoch('mAP50'))
 
@@ -569,6 +566,8 @@ if __name__ == '__main__':
 
     pprint_struct(best_validate)
     pprint_struct(best_penguin)
+
+    #pprint_struct(logs._map(training_time))
 
     # fig, ax = plot_best_pr(logs.seals1)
     # fig, ax = plot_best_pr(logs.scott_base)
@@ -580,29 +579,29 @@ if __name__ == '__main__':
     # plt.show()
 
 
-    # fig, ax = plot_training_lines(logs)
-    # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
+    fig, ax = plot_training_lines(logs)
+    fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-    # fig, ax = plot_training_scatters(logs)
-    # fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
+    fig, ax = plot_training_scatters(logs)
+    fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
 
-    # plot_scales(figure_path)
-    # plot_lr(figure_path)
+    plot_scales(figure_path)
+    plot_lr(figure_path)
 
-    # fig, ax = plot_schedules()
-    # fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
-
-
-    # fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
-    # fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
-
-    # fig, ax = plot_validation()
-    # fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
-
-    # fig, ax = plot_multiclass(figure_path, 'multiclass_128', subsets_voc)
-    # fig.savefig(path.join(figure_path, "multiclass_128.pdf"), bbox_inches='tight')
+    fig, ax = plot_schedules()
+    fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
 
 
-    # fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
-    # fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')
+    #fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
+    #fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
+
+    fig, ax = plot_validation()
+    fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
+
+    #fig, ax = plot_multiclass(figure_path, 'multiclass_129', subsets_voc)
+    #fig.savefig(path.join(figure_path, "multiclass_129.pdf"), bbox_inches='tight')
+
+
+    #fig, ax = plot_multiclass(figure_path, 'multiclass_coco', subsets_coco)
+    #fig.savefig(path.join(figure_path, "multiclass_coco.pdf"), bbox_inches='tight')
 

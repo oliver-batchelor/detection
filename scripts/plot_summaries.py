@@ -32,6 +32,8 @@ def plot_durations(loaded, keys, color_map=dataset_colors, labels=dataset_labels
         counts = np.array(loaded[k].image_summaries.instances)
         durations = np.array(loaded[k].image_summaries.duration)
 
+
+
         plt.scatter(durations, np.repeat(i, durations.shape), marker = '|', \
              s=np.clip(counts, a_min=1, a_max=None) * 20, color=color_map[k])    
 
@@ -43,6 +45,29 @@ def plot_durations(loaded, keys, color_map=dataset_colors, labels=dataset_labels
 
 
 
+
+def plot_instances_density(loaded, keys, color_map=dataset_colors, labels=dataset_labels):
+    instances_quartiles = {k : loaded[k].summary.instances_image.quartiles + 1 for k in keys}
+
+    fig, ax = box_plot(instances_quartiles, keys, labels=labels)
+
+    for i, k in enumerate(keys):
+        counts = np.array(loaded[k].image_summaries.instances)
+
+        density = stats.kde.gaussian_kde(counts,  bw_method=0.2)
+
+        x = np.logspace(counts.min(), counts.max(), 400)
+        d = density(x)
+
+        ax.fill_between(x, i + d, i - d, color=color_map[k])
+    
+    ax.set_xscale('log')
+    ax.set_xlim(xmin=0.95, xmax=1e3)
+
+    ax.set_xlabel('annotations per image (+1)')  
+    return fig, ax
+
+
 def plot_instances(loaded, keys, color_map=dataset_colors, labels=dataset_labels):
     instances_quartiles = {k : loaded[k].summary.instances_image.quartiles + 1 for k in keys}
 
@@ -51,11 +76,12 @@ def plot_instances(loaded, keys, color_map=dataset_colors, labels=dataset_labels
     for i, k in enumerate(keys):
         counts = np.array(loaded[k].image_summaries.instances)
 
+        counts = np.bincount(counts)
+
         instances = np.nonzero(counts)[0]
         counts = counts[instances]
 
-        plt.scatter(instances + 1, np.repeat(i, instances.shape), s = 50, linewidths=counts, \
-             marker = '|', color=color_map[k])
+        plt.scatter(instances + 1, np.repeat(i, instances.shape), s = 100, marker='|', color=color_map[k])
     
     ax.set_xscale('log')
     ax.set_xlim(xmin=0.95, xmax=1e3)
@@ -177,7 +203,6 @@ if __name__ == '__main__':
     actions_proportions = summaries._map(lambda s: s.actions_count / s.total_actions)
     fig, ax = plot_category_bars( actions_proportions, action_types, color_map=action_colors, categories=keys, cat_labels=dataset_labels)
     ax.set_ylabel('proportion of actions')
-
     fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "action_counts.pdf"), bbox_inches='tight')
 
@@ -187,6 +212,7 @@ if __name__ == '__main__':
     fig, ax = plot_category_bars(correction_proportions,  correction_types, color_map=correction_colors, categories=keys, cat_labels=dataset_labels)
     ax.set_ylabel('proportion of annotation count')
 
+    ax.set_ylim(ymax=0.15)
     fig.set_size_inches(8, 7)
     fig.savefig(path.join(figure_path, "correction_counts.pdf"), bbox_inches='tight')
 

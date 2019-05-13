@@ -1,4 +1,3 @@
-
 import time
 import os
 import json
@@ -407,14 +406,14 @@ def test_images(images, model, env, split=False, hook=None):
 
 
 def run_testing(name, images, model, env, split=False, hook=None, thresholds=None):
-    if len(images) > 0:
-        print("{} {}:".format(name, env.epoch))
-        results = test_images(images, model, env, split=split, hook=hook)
+  if len(images) > 0:
+      print("{} {}:".format(name, env.epoch))
+      results = test_images(images, model, env, split=split, hook=hook)
 
-        return evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, 
-            log=EpochLogger(env.log, env.epoch), thresholds=thresholds)
+      return evaluate.summarize_test(name, results, env.dataset.classes, env.epoch, 
+        log=EpochLogger(env.log, env.epoch), thresholds=thresholds)
 
-    return 0, None
+  return 0, None
 
 
 def log_counts(env, image, stats):
@@ -483,8 +482,11 @@ def report_training(results):
     return images
 
 
+def add_noise(dataset, args):
+    if args.box_noise > 0 or args.box_offset > 0:
+      return dataset.add_noise(noise = args.box_noise / 100, offset = args.box_offset / 100) 
 
-
+    return dataset
 
 class UserCommand(Exception):
     def __init__(self, command):
@@ -755,6 +757,7 @@ def run_main():
         p, conn = connection.connect('ws://' + input_args.host)
     else:
         config, dataset = load_dataset(args)
+        dataset = add_noise(dataset, args)
         env = initialise(config, dataset, args)
 
 
