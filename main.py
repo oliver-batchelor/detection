@@ -601,7 +601,7 @@ def run_trainer(args, conn = None, env = None):
         if env == None or len(env.dataset.train_images) == 0:
             return None
 
-        if env.max_epochs is not None and env.epoch > env.max_epochs:
+        if args.max_epochs is not None and env.epoch > args.max_epochs:
             raise UserCommand('pause')
 
 
