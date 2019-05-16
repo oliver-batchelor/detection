@@ -115,8 +115,8 @@ def plot_training_scatters(logs):
 
             plt.scatter(AP_split, AP, label=dataset_labels[k], color=dataset_colors[k], marker='.')
 
-    plt.xlabel("tiling, average precision ($AP_{COCO}$)")
-    plt.ylabel("full, average precision ($AP_{COCO}$)")
+    plt.xlabel("tiling $AP_{COCO}$")
+    plt.ylabel("full $AP_{COCO}$")
 
     plt.xlim(xmin=30)
     plt.ylim(ymin=30)
@@ -206,7 +206,7 @@ def read_run(dataset, incremental, method, cycles, run):
 
 def plot_validation():
 
-    fig, ax2d = plt.subplots(5, 2, sharex=True, sharey=True, figsize=(16, 30))  
+    fig, ax2d = plt.subplots(5, 2, sharex=True, sharey=True, figsize=(16, 26), gridspec_kw = {'wspace':0.1, 'hspace':0.1})  
     runs = struct(validate = struct(marker = "x", style="-"), validate_inc=struct(marker = ".", style="--"))
     axs = [a for row in ax2d for a in row ]
 
@@ -214,10 +214,10 @@ def plot_validation():
         for run in runs.keys()})
 
     assert len(axs) == len(all_logs)
-
-    for (ax, (k, logs)) in zip(axs, all_logs.items()):
+    for (i, ax, (k, logs)) in zip(range(len(axs)), axs, all_logs.items()):
 
         ax2 = ax.twinx()
+        
         for run, style in runs.items():
             log = logs[run]
 
@@ -227,18 +227,20 @@ def plot_validation():
             ax.plot(epoch, AP, linestyle=style.style, color=dataset_colors[k])
             ax2.plot(epoch, loss, linestyle=style.style, color='grey')
 
-        ax.set_xlim(xmin=0)
+        ax.set_xlim(xmin=0, xmax=80)
         ax.set_ylim(ymin=0, ymax=100)
 
         ax2.set_ylim(ymin=0)
+
+        if i % 2 == 1:       
+            ax2.set_ylabel("training loss")
+        else:
+            ax.set_ylabel("$AP_{COCO}$")
 
         ax.set_title(dataset_labels[k])
         ax.grid(True)
 
     [ax.set_xlabel("training epoch") for ax in ax2d[-1]]
-    [axs[0].set_ylabel("average precision ($AP_{COCO}$)") for axs in ax2d]
-
-
 
     return fig, ax2d
 
@@ -573,23 +575,20 @@ if __name__ == '__main__':
     # fig, ax = plot_best_pr(logs.scott_base)
 
 
-    fig, ax = plot_pr_grid(logs, keys=['apples1', 'apples2'],  labels=dataset_labels)
-    fig.savefig(path.join(figure_path, "apples_pr.pdf"), bbox_inches='tight')
+    # fig, ax = plot_pr_grid(logs, keys=['apples1', 'apples2'],  labels=dataset_labels)
+    # fig.savefig(path.join(figure_path, "apples_pr.pdf"), bbox_inches='tight')
 
-    # plt.show()
+    # fig, ax = plot_training_lines(logs)
+    # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-
-    fig, ax = plot_training_lines(logs)
-    fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
-
-    fig, ax = plot_training_scatters(logs)
+    fig, ax = plot_training_scatters(read_logs(path.join(log_path, 'validate_splits'), log_files))
     fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
 
-    plot_scales(figure_path)
-    plot_lr(figure_path)
+    # plot_scales(figure_path)
+    # plot_lr(figure_path)
 
-    fig, ax = plot_schedules()
-    fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
+    # fig, ax = plot_schedules()
+    # fig.savefig(path.join(figure_path, "lr_schedules.pdf"), bbox_inches='tight')
 
 
     #fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)

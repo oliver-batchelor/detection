@@ -472,7 +472,7 @@ class DetectionDataset:
         if image.category == 'train':
             totals += struct(iou = box.iou_matched(noisy, image.target.bbox).sum(), n = n)
 
-        return image
+        return image._extend(target = target._extend(bbox = noisy))
 
 
       self.images = {k:add_image_noise(image) for k, image in self.images.items()}
