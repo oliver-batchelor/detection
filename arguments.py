@@ -41,7 +41,9 @@ train_parameters = struct (
     validation_pause    = param(16,    type='int', help='automatically pause training if validation does not improve after epochs'),
 
     incremental       = param(False, help='simulate incremental adding to the dataset during training'),
-    train_epochs      = param(64, type='int', help='automatically pause training after epochs'),
+    max_epochs      = param(None, type='int', help='maximum number of epochs to train'),
+      
+    pause_epochs      = param(128, type='int', help='number of epochs to train before pausing'),
 
     eval_split      = param(False, help='evaluate images split into crops of image_size'),
     overlap         = param(200, type='int', help='margin of overlap when splitting images for evaluation'),

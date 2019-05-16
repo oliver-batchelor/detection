@@ -179,7 +179,7 @@ def initialise(config, dataset, args):
     best, current, resumed = load_checkpoint(model_path, model, model_args, args)
     model, epoch = current.model, current.epoch + 1
 
-    pause_time = args.train_epochs
+    pause_time = args.pause_epochs
     running_average = [] if epoch >= args.average_start else []
 
     parameters = model.parameter_groups(args.lr, args.fine_tuning)
@@ -546,10 +546,10 @@ def run_trainer(args, conn = None, env = None):
                     env.best.score = 0
 
                 if env.pause_time == 0:
-                    env.pause_time = env.args.train_epochs
+                    env.pause_time = env.args.pause_epochs
                     raise UserCommand('resume')
                 else:
-                    env.pause_time = env.args.train_epochs
+                    env.pause_time = env.args.pause_epochs
 
             elif tag == 'detect':
                 reqId, file, annotations, nms_params = data
@@ -601,6 +601,10 @@ def run_trainer(args, conn = None, env = None):
         if env == None or len(env.dataset.train_images) == 0:
             return None
 
+        if env.max_epochs is not None and env.epoch > env.max_epochs:
+            raise UserCommand('pause')
+
+
         log = EpochLogger(env.log, env.epoch)
         model = env.model.to(env.device)
 
@@ -608,7 +612,7 @@ def run_trainer(args, conn = None, env = None):
 
         train_images = env.dataset.train_images
         if args.incremental is True:
-            t = env.epoch / args.train_epochs
+            t = env.epoch / args.pause_epochs
             n = max(1, min(int(t * len(train_images)), len(train_images)))
             train_images = train_images[:n]
 
