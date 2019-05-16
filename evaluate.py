@@ -234,7 +234,7 @@ def split_image(image, eval_size, overlap=0):
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
-        prediction, _ = evaluate_decode(model, image, encoder, device, crop_boxes=nms_params.crop_boxes)
+        prediction, _ = evaluate_decode(model, image, encoder, device)
         return  encoder.nms(prediction, nms_params=nms_params)
 
 

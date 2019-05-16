@@ -264,7 +264,7 @@ def make_detections(env, predictions):
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
-        nms_params=nms_params, device=env.device, crop_boxes=env.args.crop_boxes)
+        nms_params=nms_params, device=env.device)
     return make_detections(env, list(detections._sequence()))
 
 
@@ -294,7 +294,7 @@ def evaluate_review(env, image, nms_params, review):
     model.eval()
     with torch.no_grad():
         prediction, _ = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
-            device=env.device, crop_boxes=env.args.crop_boxes)
+            device=env.device)
         review = review._map(torch.Tensor.to, env.device)
 
         ious = box.iou(prediction.bbox, review.bbox)
