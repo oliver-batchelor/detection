@@ -222,13 +222,15 @@ def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
     class_map = {c.id: c.name for c in classes}
+    
+    scale = env.args.scale
 
     def detection(p):
         object_class = classes[p.label]
         config = object_class.name
 
         return struct (
-            shape      =  encode_shape(p.bbox.cpu(), config),
+            shape      =  encode_shape(p.bbox.cpu() / scale, config),
             label      =  object_class.id,
             confidence = p.confidence.item(),
             match = p.match.item() if 'match' in p else None
@@ -264,7 +266,7 @@ def make_detections(env, predictions):
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
-        nms_params=nms_params, device=env.device)
+        nms_params=nms_params, crop_boxes=env.args.crop_boxes, device=env.device)
     return make_detections(env, list(detections._sequence()))
 
 
@@ -290,6 +292,7 @@ def table_list(t):
 
 def evaluate_review(env, image, nms_params, review):
     model = env.best.model
+    scale = env.args.scale
 
     model.eval()
     with torch.no_grad():
@@ -297,7 +300,7 @@ def evaluate_review(env, image, nms_params, review):
             device=env.device)
         review = review._map(torch.Tensor.to, env.device)
 
-        ious = box.iou(prediction.bbox, review.bbox)
+        ious = box.iou(prediction.bbox, review.bbox * scale)
 
 
         review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)

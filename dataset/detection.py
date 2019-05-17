@@ -299,7 +299,9 @@ def transform_training(args, encoder=None):
     crop = identity
 
     if args.augment == "crop":
-        crop = random_crop_padded(dest_size, scale_range = (s * 1/args.max_scale, s * args.max_scale), 
+        min_scale = args.min_scale or (1/args.max_scale)
+
+        crop = random_crop_padded(dest_size, scale_range = (s * min_scale, s * args.max_scale), 
             aspect_range=(1/args.max_aspect, args.max_aspect), border_bias = args.border_bias, select_instance = args.select_instance)
     elif args.augment == "resize":
         crop = resize_to(dest_size)

@@ -311,7 +311,7 @@ def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
     if square:
         aspects = [1]
     elif tall:
-        aspects = [1/8, 1/4, 1/2, 1]
+        aspects = [1/8, 1/4, 1/2]
 
     scales = [1, pow(2, 1/3), pow(2, 2/3)]
 

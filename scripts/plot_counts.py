@@ -1,5 +1,5 @@
 
-from scripts.load_figures import make_chart
+from scripts.load_figures import make_chart, paired
 from scripts.datasets import load_dataset, get_counts
 from os import path
 
@@ -27,7 +27,7 @@ base_path = '/home/oliver/storage/export/'
 def subset(text, image_counts):
     return [count for count in image_counts if text in count.image_file]
 
-def plot_estimate(images, colour):
+def plot_estimate(images, colour, estimates=True):
     estimates = transpose_structs(pluck('estimate', images))
     times = pluck('time', images)
 
@@ -38,9 +38,11 @@ def plot_estimate(images, colour):
 
     # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
     estimates = estimates._map(f)
-    
     plt.plot(times, estimates.middle, colour)
-    plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
+
+    if estimates:
+        plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
+
 
 def plot_points(images, colour, marker, key=lambda i: i.truth):
     truth = list(map(key, images))
@@ -53,9 +55,9 @@ def pick(images, classes):
     return [i for i in images if i.category in classes]
 
 
-def plot_subset(images, colour):
+def plot_subset(images, colour, estimates=True):
 
-    plot_estimate(images, colour)
+    plot_estimate(images, colour, estimates=estimates)
 
     plot_points(pick(images, ['train']), colour,   '+')
     plot_points(pick(images, ['validate']), colour, 'x')
@@ -64,7 +66,7 @@ def plot_subset(images, colour):
     plot_points(pick(images, ['test']), colour,    'gP')
 
 
-def plot_runs(*runs, loc='upper left'):
+def plot_runs(*runs, loc='upper left', estimates=True):
   
     def run_legend(run):
         return Line2D([0], [0], color=run.colour, label=run.label)
@@ -88,7 +90,7 @@ def plot_runs(*runs, loc='upper left'):
     plt.gcf().autofmt_xdate()
 
     for run in runs:
-        plot_subset(run.data, run.colour)
+        plot_subset(run.data, run.colour, estimates=estimates)
 
     ax.set_ylim(ymin=0)
 
@@ -147,9 +149,33 @@ def export_counts(file, counts):
 
     export_csv(file, fields, list(map(f, counts)))
 
+def plot_together(figure_path, loaded):
+
+    scott_base = get_counts(loaded['scott_base'])
+    scott_base_100 = get_counts(loaded['scott_base_100'])
+
+    cam_b  = subset("CamB", scott_base)
+    cam_c  = subset("CamC", scott_base)
+    cam_b_100  = subset("CamB", scott_base_100)
+    cam_c_100  = subset("CamC", scott_base_100)        
+
+
+    fig = plot_runs(
+        struct(data = cam_b_100, colour=paired(0), label="camera b (100)"),
+        struct(data = cam_c_100, colour=paired(2), label="camera c (100)" ),
+
+        struct(data = cam_b, colour=paired(1), label="camera b"),
+        struct(data = cam_c, colour=paired(3), label="camera c" ),        
+        estimates=False
+    )
+
+    fig.savefig(path.join(figure_path, "scott_base_combined.pdf"), bbox_inches='tight')
+
+
+
 def plot_counts(loaded):
     figure_path = "/home/oliver/sync/figures/seals/"
-
+    plot_together(figure_path, loaded)
 
     for k in ['scott_base', 'scott_base_100']:
         scott_base = get_counts(loaded[k])
@@ -165,6 +191,10 @@ def plot_counts(loaded):
         fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
         export_counts(path.join(figure_path, k + "_cam_b.csv"), cam_b)
         export_counts(path.join(figure_path, k + "_cam_c.csv"), cam_c)
+
+
+
+
 
 
     for k in ['seals', 'seals_102', 'seals_shanelle']:

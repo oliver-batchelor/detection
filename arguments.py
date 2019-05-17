@@ -85,7 +85,9 @@ detection_parameters = struct (
 
         scale  = param(1.0,     help='base scale of image_size'),
 
-        max_scale = param(4./3, help='maximum scale for cropped patches'),
+        max_scale = param(4./3, help='maximum scale multiplier for cropped patches'),
+        min_scale = param(None, type='float', help = 'minimum scale multiplier for cropped patches (default 1/max_scale)'),
+
         max_aspect = param(1.1, help = 'maximum aspect ratio on crops'),
 
         transposes  = param(False, help='enable image transposes in training'),
@@ -109,7 +111,7 @@ detection_parameters = struct (
     min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
     crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
     
-    top_anchors     = param(4,     help='select n top anchors for ground truth regardless of iou overlap'),
+    top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
     overlap_attenuation = param(False, help='weight anchor box targets by the amount of overlap iou'),
 )
 
