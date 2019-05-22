@@ -615,7 +615,7 @@ def run_trainer(args, conn = None, env = None):
 
         train_images = env.dataset.train_images
         if args.incremental is True:
-            t = env.epoch / args.pause_epochs
+            t = env.epoch / args.max_epochs
             n = max(1, min(int(t * len(train_images)), len(train_images)))
             train_images = train_images[:n]
 
