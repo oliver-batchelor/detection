@@ -27,8 +27,8 @@ base_path = '/home/oliver/storage/export/'
 def subset(text, image_counts):
     return [count for count in image_counts if text in count.image_file]
 
-def plot_estimate(images, colour, estimates=True):
-    estimates = transpose_structs(pluck('estimate', images))
+def plot_estimate(images, colour, style="-", estimates=True):
+    estimate_points = transpose_structs(pluck('estimate', images))
     times = pluck('time', images)
 
     mask = torch.ByteTensor([1 if i.category != 'discard' else 0 for i in images])
@@ -37,60 +37,60 @@ def plot_estimate(images, colour, estimates=True):
         return window.masked_mean(torch.Tensor(xs), mask=mask, window=7, clamp=False).numpy()
 
     # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
-    estimates = estimates._map(f)
-    plt.plot(times, estimates.middle, colour)
+    estimate_points = estimate_points._map(f)
+    plt.plot(times, estimate_points.middle, colour, linestyle=style)
 
     if estimates:
-        plt.fill_between(times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
+        plt.fill_between(times, estimate_points.upper, estimate_points.lower, facecolor=colour, alpha=0.4)
 
 
-def plot_points(images, colour, marker, key=lambda i: i.truth):
+def plot_points(images, colour, marker, fill='none', key=lambda i: i.truth):
     truth = list(map(key, images))
     times = pluck('time', images)
 
-    plt.plot(times, truth, marker, markeredgecolor=colour, markersize=8)
+    plt.scatter(times, truth, marker=marker, edgecolors=colour, facecolors=fill)
 
 
 def pick(images, classes):
     return [i for i in images if i.category in classes]
 
 
-def plot_subset(images, colour, estimates=True):
+def plot_subset(images, colour, style="-", estimates=True):
 
-    plot_estimate(images, colour, estimates=estimates)
+    plot_estimate(images, colour=colour, style=style, estimates=estimates)
 
-    plot_points(pick(images, ['train']), colour,   '+')
-    plot_points(pick(images, ['validate']), colour, 'x')
-    plot_points(pick(images, ['discard']), colour,  'rX', key=lambda i: i.estimate.middle)
+    plot_points(pick(images, ['train']), colour,   '^')
+    plot_points(pick(images, ['validate']), colour, 's')
+    plot_points(pick(images, ['discard']), colour,  'o', key=lambda i: i.estimate.middle)
 
-    plot_points(pick(images, ['test']), colour,    'gP')
+    plot_points(pick(images, ['test']), colour,    'P', fill='g')
 
 
 def plot_runs(*runs, loc='upper left', estimates=True):
   
     def run_legend(run):
-        return Line2D([0], [0], color=run.colour, label=run.label)
+        return Line2D([0], [0], color=run.colour, linestyle=run.get('style', '-'), label=run.label)
 
     legend = list(map(run_legend, runs)) + [
         Line2D([0], [0], marker='P', color='g', markeredgecolor='y', linestyle='None', label='test'),
 
-        Line2D([0], [0], marker='+', color='y',  markeredgecolor='y', linestyle='None', label='train'),
-        Line2D([0], [0], marker='x', color='y', markeredgecolor='y', linestyle='None', label='validate'),
+        Line2D([0], [0], marker='^', color='none',  markeredgecolor='y', linestyle='None', label='train'),
+        Line2D([0], [0], marker='s', color='none', markeredgecolor='y', linestyle='None', label='validate'),
 
-        Line2D([0], [0], marker='X', color='r', markeredgecolor='y', linestyle='None', label='discard')
+        Line2D([0], [0], marker='o', color='none', markeredgecolor='y', linestyle='None', label='discard')
     ]
 
-    fig, ax = make_chart()
+    fig, ax = make_chart(size =(20, 10))
 
 
 
-    plt.xlabel("Date")
-    plt.ylabel("Count")
+    plt.xlabel("date")
+    plt.ylabel("count")
 
     plt.gcf().autofmt_xdate()
 
     for run in runs:
-        plot_subset(run.data, run.colour, estimates=estimates)
+        plot_subset(run.data, run.colour, style=run.get('style', '-'), estimates=estimates)
 
     ax.set_ylim(ymin=0)
 
@@ -151,21 +151,32 @@ def export_counts(file, counts):
 
 def plot_together(figure_path, loaded):
 
+
     scott_base = get_counts(loaded['scott_base'])
     scott_base_100 = get_counts(loaded['scott_base_100'])
 
+    images_100 = {image.image_file:image for image in scott_base_100 if image.category != 'new'}
+
+    def hide_duplicate(image):
+        return image._extend(category = 'ignore' 
+            if (image.image_file in images_100) and (image.category != 'discard')
+            else image.category)
+            
+
+    scott_base = list(map(hide_duplicate, scott_base))
+
+    cam_b_100  = subset("CamB", scott_base_100)
+    cam_c_100  = subset("CamC", scott_base_100)
+
     cam_b  = subset("CamB", scott_base)
     cam_c  = subset("CamC", scott_base)
-    cam_b_100  = subset("CamB", scott_base_100)
-    cam_c_100  = subset("CamC", scott_base_100)        
-
 
     fig = plot_runs(
-        struct(data = cam_b_100, colour=paired(0), label="camera b (100)"),
-        struct(data = cam_c_100, colour=paired(2), label="camera c (100)" ),
+        struct(data = cam_b_100, colour='tab:olive', style="--", label="camera b (100)"),
+        struct(data = cam_b, colour='forestgreen', label="camera b"),
 
-        struct(data = cam_b, colour=paired(1), label="camera b"),
-        struct(data = cam_c, colour=paired(3), label="camera c" ),        
+        struct(data = cam_c_100, colour='skyblue', style="--", label="camera c (100)" ),
+        struct(data = cam_c, colour='royalblue', label="camera c" ),        
         estimates=False
     )
 
@@ -191,10 +202,6 @@ def plot_counts(loaded):
         fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
         export_counts(path.join(figure_path, k + "_cam_b.csv"), cam_b)
         export_counts(path.join(figure_path, k + "_cam_c.csv"), cam_c)
-
-
-
-
 
 
     for k in ['seals', 'seals_102', 'seals_shanelle']:

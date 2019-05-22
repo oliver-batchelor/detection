@@ -1,5 +1,6 @@
 from os import path
-from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct, transpose_structs, Struct, append_dict, transpose_dicts
+from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct, pprint_dict, \
+         transpose_structs, Struct, append_dict, transpose_dicts
 
 from scripts.load_figures import *
 
@@ -7,6 +8,9 @@ import math
 import json
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+
 from collections import OrderedDict
 
 import numpy as np
@@ -97,7 +101,6 @@ def best_epoch(key):
     def f(log):
         val = get_entry(log, "validate")
         return max(val, key=lambda entries: entries[1][key])[1]
-        
     return f  
 
 def plot_training_scatters(logs):
@@ -188,20 +191,94 @@ def unique_legend(**kwargs):
     plt.legend(by_label.values(), by_label.keys(), **kwargs)    
 
 
-def read_run(dataset, incremental, method, cycles, run):
-    logfile = path.join(log_path, 'lr', run, incremental,  method, str(cycles), dataset, 'log.json')
+def read_training(logfile):
     log = read_log(logfile)
 
     epoch, AP = extract_key(get_entry(log, "validate"), 'AP')
     _, loss = extract_key(get_entry(log, "train/loss"), 'total')
-    examples = np.array(epoch) * cycles
+    
+    best = best_epoch('AP')(log)
+    return struct(epoch=np.array(epoch), best_AP = best, AP=np.array(AP), loss=np.array(loss))
 
-    return struct(examples=examples, AP=np.array(AP), loss=np.array(loss))
+
 
     # if incremental == "full":
     #     scatters[dataset] += list(zip(AP, loss))
 
    
+def plot_noisy(figure_path):
+    def read_run(offset, noise, dataset):
+        logfile = path.join(log_path, 'noise', str(noise), str(offset), dataset, 'log.json')
+        return read_training(logfile)
+
+    fig, ax = make_chart(size=(8, 8)) 
+    datasets=['penguins', 'scott_base', 'seals', 'apples_lincoln', 'branches']
+
+    markers = ['x', 'o', 's', '^', '*']
+
+    color_map = plt.get_cmap('viridis')
+    APs = {dataset:np.zeros((5, 5)) for dataset in datasets}
+    AP30s = {dataset:np.zeros((5, 5)) for dataset in datasets}
+
+    AP50s = {dataset:np.zeros((5, 5)) for dataset in datasets}
+    AP75s = {dataset:np.zeros((5, 5)) for dataset in datasets}
+
+    # dataset_charts = {k: }
+
+    levels = [0, 4, 8, 16, 32]
+    for i, offset in enumerate(levels):
+        for j, noise in enumerate(levels):
+            logs = {dataset:read_run(offset, noise, dataset) for dataset in datasets}
+
+            for k, log in logs.items():
+                APs[k][j, i] = log.best_AP.AP
+                AP30s[k][j, i] = log.best_AP.mAP30
+                AP50s[k][j, i] = log.best_AP.mAP50
+                AP75s[k][j, i] = log.best_AP.mAP75
+
+            AP = sum(pluck('AP', logs.values())) / len(logs)
+            epoch = np.arange(0, 40) + 1
+
+            ax.plot(epoch, AP, marker = markers[j], color=color_map(i / 4), linewidth=1, markersize=4)
+
+    ax.set_xlim(xmin=0, xmax=40)
+    ax.set_ylim(ymin=0, ymax=100)
+
+    ax.set_xlabel("training epoch")
+    ax.set_ylabel("validation $AP_{COCO}$")
+
+    def noise_level(i):
+        return Line2D([0], [0], color='k', marker = markers[i], label="$\sigma={}\%$".format(levels[i]))
+
+    def offset_level(i):
+        return Line2D([0], [0], color=color_map(i / 4), label="$\Delta={}\%$".format(levels[i]))
+
+    legend = [noise_level(i) for i in range(0, 5)] + [offset_level(i) for i in range(0, 5)]
+    ax.legend(handles=legend, ncol=2, fontsize='x-small', loc='upper left')
+
+    ax.grid(True)
+
+    with open(path.join(figure_path, "noise_datasets.csv"), mode='w') as file:
+        degredation = {k:1.0 - (ap / ap[0][0]) for k, ap in APs.items()}
+
+        for k, d in degredation.items():
+            file.write(k + ":\n")
+            np.savetxt(file, d, delimiter=',')
+
+
+    with open(path.join(figure_path, "noise.csv"), mode='w') as file:
+        for k, aps in {'COCO':APs, '30':AP30s, '50':AP50s, '75':AP75s}.items():
+            degredation = {k:1.0 - (ap / ap[0][0]) for k, ap in aps.items()}
+            
+            combined = np.stack(degredation.values(), axis=0)
+            file.write(k + ":\n")
+
+            np.savetxt(file, np.mean(combined, 0), delimiter=',')
+            np.savetxt(file, np.std(combined, 0),  delimiter=',')
+
+    fig.savefig(path.join(figure_path, "noisy_training.pdf"), bbox_inches='tight')
+
+
 
 
 def plot_validation():
@@ -247,6 +324,13 @@ def plot_validation():
 
 
 def plot_lr(figure_path):
+
+    def read_run(dataset, incremental, method, cycles, run):
+        logfile = path.join(log_path, 'lr', run, incremental,  method, str(cycles), dataset, 'log.json')
+        log = read_training(logfile)       
+        return log._extend(examples=log.epoch * cycles)
+
+        return read_training(logfile)
 
     datasets = ["apples", "branches", "scallops"]
     methods = ['cosine', 'step', 'log']
@@ -551,9 +635,9 @@ def plot_best_pr(log):
 def with_name(row_dict, labels):
     return [row._extend(dataset = labels[k]) for k, row in row_dict.items()]
 
-if __name__ == '__main__':
 
-    figure_path = "/home/oliver/sync/figures/training"
+
+def export_best(figure_path):
     ap_keys = ['dataset','AP', 'mAP30', 'mAP50', 'mAP75']
 
     logs = read_logs(path.join(log_path, 'validate'), log_files)
@@ -562,17 +646,20 @@ if __name__ == '__main__':
     best_validate = logs._map(best_epoch('AP'))
     best_penguin = penguin_logs._map(best_epoch('mAP50'))
 
-
     export_csv(path.join(figure_path, "validate.csv"), ap_keys, with_name(best_validate, dataset_labels)) 
     export_csv(path.join(figure_path, "validate_penguins.csv"), ap_keys, with_name(best_penguin, penguin_labels)) 
 
     pprint_struct(best_validate)
     pprint_struct(best_penguin)
 
+if __name__ == '__main__':
+
+    figure_path = "/home/oliver/sync/figures/training"
+    # export_best(figure_path)
+
     #pprint_struct(logs._map(training_time))
 
-    # fig, ax = plot_best_pr(logs.seals1)
-    # fig, ax = plot_best_pr(logs.scott_base)
+    plot_noisy(figure_path)
 
 
     # fig, ax = plot_pr_grid(logs, keys=['apples1', 'apples2'],  labels=dataset_labels)
@@ -581,8 +668,8 @@ if __name__ == '__main__':
     # fig, ax = plot_training_lines(logs)
     # fig.savefig(path.join(figure_path, "splits.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_training_scatters(read_logs(path.join(log_path, 'validate_splits'), log_files))
-    fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
+    # fig, ax = plot_training_scatters(read_logs(path.join(log_path, 'validate_splits'), log_files))
+    # fig.savefig(path.join(figure_path, "splits_scatters.pdf"), bbox_inches='tight')
 
     # plot_scales(figure_path)
     # plot_lr(figure_path)
@@ -594,8 +681,8 @@ if __name__ == '__main__':
     #fig, ax = plot_multiclass(figure_path, 'multiclass', subsets_voc)
     #fig.savefig(path.join(figure_path, "multiclass.pdf"), bbox_inches='tight')
 
-    fig, ax = plot_validation()
-    fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
+    # fig, ax = plot_validation()
+    # fig.savefig(path.join(figure_path, "incremental.pdf"), bbox_inches='tight')
 
     #fig, ax = plot_multiclass(figure_path, 'multiclass_129', subsets_voc)
     #fig.savefig(path.join(figure_path, "multiclass_129.pdf"), bbox_inches='tight')
