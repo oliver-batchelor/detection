@@ -7,6 +7,5 @@ def merge(*dicts):
 
     return m
 
-
 models = fcn.models
 parameters = {k: v.parameters for k, v in models.items()}

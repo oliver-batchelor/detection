@@ -36,11 +36,11 @@ frame = cv.imread_color(args.input)
 nms_params = box.nms_defaults._extend(nms = args.threshold)
 pprint_struct(nms_params)
 
-detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device)
+detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device, crop_boxes=True)
         
 for prediction in detections._sequence():
     
-    if prediction.confidence > 0.5:
+    if prediction.confidence > 0.7:
         label_class = classes[prediction.label].name
         display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=display.to_rgb(label_class.colour))
 
