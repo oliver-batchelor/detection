@@ -55,15 +55,13 @@ def pick(images, classes):
     return [i for i in images if i.category in classes]
 
 
-def plot_subset(images, colour, style="-", estimates=True):
-
-    plot_estimate(images, colour=colour, style=style, estimates=estimates)
+def plot_point_sets(images, colour):
 
     plot_points(pick(images, ['train']), colour,   '^')
     plot_points(pick(images, ['validate']), colour, 's')
     plot_points(pick(images, ['discard']), colour,  'o', key=lambda i: i.estimate.middle)
 
-    plot_points(pick(images, ['test']), colour,    'P', fill='g')
+    plot_points(pick(images, ['test']), colour,    'P', fill='r')
 
 
 def plot_runs(*runs, loc='upper left', estimates=True):
@@ -72,12 +70,12 @@ def plot_runs(*runs, loc='upper left', estimates=True):
         return Line2D([0], [0], color=run.colour, linestyle=run.get('style', '-'), label=run.label)
 
     legend = list(map(run_legend, runs)) + [
-        Line2D([0], [0], marker='P', color='g', markeredgecolor='y', linestyle='None', label='test'),
+        Line2D([0], [0], marker='P', color='r', markeredgecolor='k', linestyle='None', label='test'),
 
-        Line2D([0], [0], marker='^', color='none',  markeredgecolor='y', linestyle='None', label='train'),
-        Line2D([0], [0], marker='s', color='none', markeredgecolor='y', linestyle='None', label='validate'),
+        Line2D([0], [0], marker='^', color='none',  markeredgecolor='k', linestyle='None', label='train'),
+        Line2D([0], [0], marker='s', color='none', markeredgecolor='k', linestyle='None', label='validate'),
 
-        Line2D([0], [0], marker='o', color='none', markeredgecolor='y', linestyle='None', label='discard')
+        Line2D([0], [0], marker='o', color='none', markeredgecolor='k', linestyle='None', label='discard')
     ]
 
     fig, ax = make_chart(size =(20, 10))
@@ -90,7 +88,10 @@ def plot_runs(*runs, loc='upper left', estimates=True):
     plt.gcf().autofmt_xdate()
 
     for run in runs:
-        plot_subset(run.data, run.colour, style=run.get('style', '-'), estimates=estimates)
+        plot_estimate(run.data, colour=run.colour, style=run.get('style', '-'), estimates=estimates)
+
+    for run in runs:
+        plot_point_sets(run.data, run.colour)
 
     ax.set_ylim(ymin=0)
 
@@ -183,10 +184,30 @@ def plot_together(figure_path, loaded):
     fig.savefig(path.join(figure_path, "scott_base_combined.pdf"), bbox_inches='tight')
 
 
+def plot_seals(figure_path, loaded):
+
+    seals = get_counts(loaded['seals'])
+    shanelle = get_counts(loaded['seals_shanelle'])
+
+
+    fig = plot_runs(
+        struct(data = shanelle, colour='y', label="$seals_b$"),
+        struct(data = seals, colour='g', label="$seals$"),
+        estimates=False,
+        loc='upper right'
+    )
+
+    fig.savefig(path.join(figure_path, "seals_combined.pdf"), bbox_inches='tight')
+
+
+
+
+
 
 def plot_counts(loaded):
     figure_path = "/home/oliver/sync/figures/seals/"
     plot_together(figure_path, loaded)
+    plot_seals(figure_path, loaded)
 
     for k in ['scott_base', 'scott_base_100']:
         scott_base = get_counts(loaded[k])

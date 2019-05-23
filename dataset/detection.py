@@ -74,6 +74,21 @@ def scale(scale):
                 target = d.target._extend(bbox = bbox))
     return apply
 
+def resize(size):
+    def apply(d):
+        h, w, _ = d.image.size()
+        scale = max(size / h, size / w)
+
+        bbox = box.transform(d.target.bbox, (0, 0), (scale, scale))
+        return d._extend(
+                image   = transforms.resize_scale(d.image, scale),
+                target = d.target._extend(bbox = bbox))
+    return apply
+
+
+
+
+
 def random_log(l, u):
     return math.exp(random.uniform(math.log(l), math.log(u)))
 
@@ -337,16 +352,19 @@ def flatten(collate_fn):
 def transform_testing(args, encoder=None):
     """ Returns a function which transforms an image and ground truths for testing
     """
-    s = args.scale
-    dest_size = (int(args.image_size * s), int(args.image_size * s))
-
     transform = identity
 
     if args.augment == "crop":
-        transform = scale(args.scale) if args.scale != 1 else identity      
+        transform = resize(args.resize) if args.resize is not None \
+            else scale(args.scale) if (args.scale != 1) \
+            else identity      
+
         # return transforms.compose(scaling, centre_on(dest_size))
 
     elif args.augment == "resize":
+        s = args.scale
+
+        dest_size = (int(args.image_size * s), int(args.image_size * s))
         transform =  resize_to(dest_size)
 
     encode = encode_with(args, encoder)         

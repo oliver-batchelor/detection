@@ -237,9 +237,7 @@ def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, crop_boxe
         prediction, _ = evaluate_decode(model, image, encoder=encoder, crop_boxes=crop_boxes, device=device)
         return  encoder.nms(prediction, nms_params=nms_params)
 
-
 def evaluate_raw(model, image, device):
-
     if image.dim() == 3:
         image = image.unsqueeze(0)
 

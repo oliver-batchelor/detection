@@ -300,7 +300,6 @@ def extra_layer(inp, features):
     return layer
 
 
-
 def split_at(xs, n):
     return xs[:n], xs[n:]
 
@@ -327,7 +326,6 @@ def extend_layers(layers, size, features=32):
 
     layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
     return layers[:size]
-
 
 
 

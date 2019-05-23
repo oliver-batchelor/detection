@@ -84,6 +84,7 @@ detection_parameters = struct (
         augment = param("crop", help = 'image augmentation method (crop | full | ssd)'),
 
         scale  = param(1.0,     help='base scale of image_size'),
+        resize = param(None, type='float', help='resize short side of images to this dimension'),
 
         max_scale = param(4./3, help='maximum scale multiplier for cropped patches'),
         min_scale = param(None, type='float', help = 'minimum scale multiplier for cropped patches (default 1/max_scale)'),
