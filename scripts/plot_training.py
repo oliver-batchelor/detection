@@ -97,11 +97,12 @@ def unzip(entries):
     return zip(*entries)
 
 
-def best_epoch(key):
+def best_epoch(key, test_set="validate"):
     def f(log):
-        val = get_entry(log, "validate")
+        val = get_entry(log, test_set)
         return max(val, key=lambda entries: entries[1][key])[1]
     return f  
+    
 
 def plot_training_scatters(logs):
     fig, ax = make_chart()
@@ -206,9 +207,9 @@ def read_training(logfile):
     #     scatters[dataset] += list(zip(AP, loss))
 
    
-def plot_noisy(figure_path):
+def plot_noisy(run_path, figure_path):
     def read_run(offset, noise, dataset):
-        logfile = path.join(log_path, 'noise', str(noise), str(offset), dataset, 'log.json')
+        logfile = path.join(log_path, run_path, str(noise), str(offset), dataset, 'log.json')
         return read_training(logfile)
 
     fig, ax = make_chart(size=(8, 8)) 
@@ -258,25 +259,55 @@ def plot_noisy(figure_path):
 
     ax.grid(True)
 
-    with open(path.join(figure_path, "noise_datasets.csv"), mode='w') as file:
-        degredation = {k:1.0 - (ap / ap[0][0]) for k, ap in APs.items()}
+    def diffs(ap):
+        baseline = ap[0][0]
+        ap = -(1.0 - ap / baseline) * 100
+        ap[0][0] = baseline
+        return ap
+
+    with open(path.join(figure_path, run_path + "_datasets.csv"), mode='w') as csv_file:
+        degredation = {k:diffs(ap) for k, ap in APs.items()}
 
         for k, d in degredation.items():
-            file.write(k + ":\n")
-            np.savetxt(file, d, delimiter=',')
+            csv_file.write(k + ":\n")
+            np.savetxt(csv_file, d, delimiter=',')
 
+# & $\sigma=0\%$  & $\mathbf{72.8\pm16.4}$  & $-6.3\pm6.4\%$   & $-18.6\pm9.0\%$  & $-39.5\pm17.5\%$ & $-29.2\pm19.2\%$ \\
 
-    with open(path.join(figure_path, "noise.csv"), mode='w') as file:
-        for k, aps in {'COCO':APs, '30':AP30s, '50':AP50s, '75':AP75s}.items():
-            degredation = {k:1.0 - (ap / ap[0][0]) for k, ap in aps.items()}
+    def tex_table(k, mean, std):
+        str = k + ": \n"
+
+        for j, noise in enumerate(levels):
+            str += "& $\sigma={}\%$".format(noise)
+            for i, offset in enumerate(levels):
+                str += " & "
+                m, s = mean[j, i], std[j, i]
+
+                if i == 0 and j == 0:
+                    str += "$\mathbf{{ {:.1f}\\pm{:.1f} }}$".format(m, s)
+                else:
+                    str += "${:.1f}\\pm{:.1f}\\%$".format(m, s)
+            str += " \\\\ \n"
+
+        return str
             
-            combined = np.stack(degredation.values(), axis=0)
-            file.write(k + ":\n")
 
-            np.savetxt(file, np.mean(combined, 0), delimiter=',')
-            np.savetxt(file, np.std(combined, 0),  delimiter=',')
+    with open(path.join(figure_path, run_path + ".csv"), mode='w') as csv_file:
+        with open(path.join(figure_path, run_path + ".tex"), mode='w') as tex_file:
 
-    fig.savefig(path.join(figure_path, "noisy_training.pdf"), bbox_inches='tight')
+            for k, aps in {'COCO':APs, '30':AP30s, '50':AP50s, '75':AP75s}.items():
+                degredation = {k:diffs(ap) for k, ap in aps.items()}
+                
+                combined = np.stack(degredation.values(), axis=0)
+                csv_file.write(k + ":\n")
+
+                np.savetxt(csv_file, np.mean(combined, 0), delimiter=',')
+                np.savetxt(csv_file, np.std(combined, 0),  delimiter=',')
+
+                tex_file.write(tex_table(k, np.mean(combined, 0), np.std(combined, 0)))
+                
+
+    fig.savefig(path.join(figure_path, run_path + "_training.pdf"), bbox_inches='tight')
 
 
 
@@ -344,7 +375,7 @@ def plot_lr(figure_path):
     runs = ['0', '1', '2', '3', '4', '5']
 
     for dataset in datasets:
-        fig, ax = make_chart()
+        fig, ax = make_chart(size=(8, 8))
         ax2 = ax.twinx()  
 
         aps = { (method, step) : [] for method in methods for step in steps}
@@ -388,13 +419,13 @@ def plot_lr(figure_path):
                 print("AP", method, step, ap.mean(), ap.std())
                     
         ax.set_xlabel("training examples")
-        ax.set_ylabel("average precision ($AP_{COCO}$), mean of " + str(len(runs)) + " runs")
-        ax2.set_ylabel("training loss, mean of " + str(len(runs)) + " runs")
+        ax.set_ylabel("$AP_{COCO}$, mean of " + str(len(runs)) + " runs")
+        ax2.set_ylabel("training loss")
 
-        plt.xlim(xmin=0)
+        plt.xlim(xmin=0, xmax=81920)
         plt.ylim(ymin=0)
 
-        unique_legend()
+        unique_legend(loc='center right')
 
         fig.savefig(path.join(figure_path, "lr_schedule", dataset + ".pdf"), bbox_inches='tight')
 
@@ -616,12 +647,12 @@ def plot_pr_grid(logs, keys, labels=dataset_labels):
 
     return fig, axs
 
-def plot_best_pr(log):
+def plot_best_pr(log, name="total"):
 
     APs = np.array(list(map(lambda entry: entry[1].AP, get_entry(log, "validate"))))
 
-    _, pr50s = unzip(get_entry(log, "validate/pr50/total"))
-    _, pr75s = unzip(get_entry(log, "validate/pr75/total"))
+    _, pr50s = unzip(get_entry(log, "validate/pr50/" + name))
+    _, pr75s = unzip(get_entry(log, "validate/pr75/" + name))
 
 
     i = np.argmax(APs)
@@ -652,14 +683,39 @@ def export_best(figure_path):
     pprint_struct(best_validate)
     pprint_struct(best_penguin)
 
+
+def last_entries(key = "test/mAP50", n = 8):
+    def f (log):
+        val = get_entry(log, key)
+        val = [struct(**v[1]) for v in val[len(val) - n:]]
+
+        return sum(val) / len(val)
+    return f
+
+
+def seals_AP():
+
+
+    logs = read_logs(path.join(log_path, 'validate'), log_files._subset('seals1', 'seals2'))
+    best_classes = logs._map(last_entries(key="test/mAP50"))
+
+    pprint_struct(best_classes)
+
+
 if __name__ == '__main__':
 
     figure_path = "/home/oliver/sync/figures/training"
     # export_best(figure_path)
 
+    seals_AP()
+
     #pprint_struct(logs._map(training_time))
 
-    plot_noisy(figure_path)
+    # plot_noisy('noise', figure_path)
+    # plot_noisy('noise_4', figure_path)
+    # plot_noisy('noise_16', figure_path)
+
+    # penguin_logs = read_logs('/home/oliver/storage/logs/penguins', penguins_a._merge(penguins_b))
 
 
     # fig, ax = plot_pr_grid(logs, keys=['apples1', 'apples2'],  labels=dataset_labels)

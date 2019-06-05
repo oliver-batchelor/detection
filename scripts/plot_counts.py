@@ -71,16 +71,12 @@ def plot_runs(*runs, loc='upper left', estimates=True):
 
     legend = list(map(run_legend, runs)) + [
         Line2D([0], [0], marker='P', color='r', markeredgecolor='k', linestyle='None', label='test'),
-
         Line2D([0], [0], marker='^', color='none',  markeredgecolor='k', linestyle='None', label='train'),
         Line2D([0], [0], marker='s', color='none', markeredgecolor='k', linestyle='None', label='validate'),
-
         Line2D([0], [0], marker='o', color='none', markeredgecolor='k', linestyle='None', label='discard')
     ]
 
     fig, ax = make_chart(size =(20, 10))
-
-
 
     plt.xlabel("date")
     plt.ylabel("count")
@@ -94,29 +90,19 @@ def plot_runs(*runs, loc='upper left', estimates=True):
         plot_point_sets(run.data, run.colour)
 
     ax.set_ylim(ymin=0)
-
-
     ax.legend(handles=legend, loc=loc)
     return fig
 
-
-
-
 def load(filename):
     return load_dataset(path.join(base_path, filename))
-
-
-
 
 datasets = struct(
     scott_base = 'scott_base.json',
     scott_base_100 = 'scott_base_100.json',
     seals      = 'seals.json',
     seals_102  = 'seals_102.json',
-
     seals_shanelle  = 'seals_shanelle.json',
 )
-
 
 def flatten_dict(dd, separator='_', prefix=''):
     return { prefix + separator + k if prefix else k : v
@@ -201,9 +187,6 @@ def plot_seals(figure_path, loaded):
 
 
 
-
-
-
 def plot_counts(loaded):
     figure_path = "/home/oliver/sync/figures/seals/"
     plot_together(figure_path, loaded)
@@ -243,6 +226,12 @@ def plot_counts(loaded):
 
 def show_errors(loaded):
 
+    def statistics(count1, count2):
+        diffs =  [count1[k] - count2[k] for k in truth.keys()]
+        abs_diffs =  [abs(count1[k] - count2[k]) for k in truth.keys()]
+        return struct(mean = np.mean(abs_diffs), std = np.std(diffs), max = np.max(abs_diffs))
+        
+
     # print ("--------" + k + "--------")
     truth = {image.image_file:image.truth
         for image in get_counts(loaded['seals']) if image.category=='test'}
@@ -253,15 +242,22 @@ def show_errors(loaded):
     estimate = {image.image_file:image.estimate.middle 
         for image in get_counts(loaded['seals']) if image.category=='test'}
 
+    estimate2 = {image.image_file:image.estimate.middle 
+        for image in get_counts(loaded['seals_shanelle']) if image.category=='test'}        
+
     # [(k, truth[k] - estimate[k], truth[k] - truth2[k]) for k in truth.keys()]
 
     errors = struct (
-        human_human = [abs(truth[k] - truth2[k]) for k in truth.keys()],
-        human_estimate = [abs(truth[k] - estimate[k]) for k in truth.keys()],
-        human_estimate2 = [abs(truth2[k] - estimate[k]) for k in truth.keys()]
+        human2_human = statistics(truth, truth2),
+        human_estimate = statistics(truth, estimate),
+        human2_estimate = statistics(truth2, estimate),
+
+        human_estimate2 = statistics(truth, estimate2),
+        human2_estimate2 = statistics(truth2, estimate2),
+        estimate_estimate2 = statistics(estimate, estimate2),
     )
 
-    print(errors._map(np.mean))
+    pprint_struct(errors)
 
 
     

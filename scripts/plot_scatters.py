@@ -210,8 +210,8 @@ if __name__ == '__main__':
     fig, ax = confidence_iou_scatter(conf_subset)
     fig.savefig(path.join(figure_path, "confidence_iou.pdf"), bbox_inches='tight')
 
-    t = confidence_iou_table(conf_subset)
-    export_csv(path.join(figure_path, "confidence_iou.csv"), [*conf_subset.keys(), 'total'], t.values()) 
+    #t = confidence_iou_table(conf_subset)
+    #export_csv(path.join(figure_path, "confidence_iou.csv"), [*conf_subset.keys(), 'total'], t.values()) 
 
 
     fig, ax = confidence_iou_scatter(loaded._subset('aerial_penguins', 'scott_base'))

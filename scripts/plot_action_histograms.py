@@ -138,7 +138,7 @@ def plot_combined_ratios(dataset, sigma=5):
 
     ax[0].set_ylabel('proportion')
     ax[1].set_ylabel('proportion')
-    ax[2].set_ylabel('annotation rate (instances/minute)')
+    ax[2].set_ylabel('annotation rate \n (instances/minute)')
 
     plt.xlabel('annotation time (minutes)')
 	

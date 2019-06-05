@@ -1,3 +1,5 @@
+import scripts.figures
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -78,8 +80,8 @@ def plot_boxes(ax):
   ax.set_xlim(xmin=0, xmax=6)  
   ax.set_ylim(ymin=0, ymax=6)  
 
-  ax.set_xlabel('noise level (center and size) $\sigma$ as percent of box size')
-  ax.set_ylabel('systematic offset $\Delta$ as percent of box size')
+  ax.set_xlabel('noise level (center and size) \n $\sigma$ (percent) ')
+  ax.set_ylabel('systematic offset \n $\Delta$ (percent)')
 
   plt.xticks([1,2,3,4,5], ['0', '4', '8', '16', '32'])
   plt.yticks([1,2,3,4,5], ['0', '4', '8', '16', '32'])
@@ -87,8 +89,11 @@ def plot_boxes(ax):
   
 def plot_noisy_boxes():
 
-  fig, ax = plt.subplots(1, 1, figsize=(8, 8), gridspec_kw = {'wspace':0.1, 'hspace':0.1})  
+  fig, ax = plt.subplots(figsize=(8, 8))  
   plot_boxes(ax)
+  
+  fig.set_figheight(8)
+  fig.set_figwidth(8)
 
   return fig, ax
 
