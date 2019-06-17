@@ -11,7 +11,8 @@ from tools import filter_map, pluck, filter_none, struct, table
 def load_dataset(filename):
     with open(filename, "r") as file:
         str = file.read()
-        return decode_dataset(json.loads(str))
+        raw = json.loads(str)
+        return decode_dataset(raw)
     raise Exception('load_file: file not readable ' + filename)
 
 

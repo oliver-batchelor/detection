@@ -6,8 +6,10 @@ from os import path
 from tools import *
 import tools.window as window
 
+from datetime import datetime, timedelta
+from dateutil.tz import tzutc
 
-import datetime
+
 import random
 
 from matplotlib.patches import Patch
@@ -27,21 +29,69 @@ base_path = '/home/oliver/storage/export/'
 def subset(text, image_counts):
     return [count for count in image_counts if text in count.image_file]
 
-def plot_estimate(images, colour, style="-", estimates=True):
+
+def sum_estimates(estimates):
+
+    start = min (e.times[0] for e in estimates)
+    end = max (e.times[-1] for e in estimates)
+
+    eval_times = np.linspace(start.timestamp(), end.timestamp(), 36000)
+
+    def interp(times, keys):
+        times = [t.timestamp() for t in times]
+        return np.interp(eval_times, times, keys)
+
+
+    d = {k:sum([interp(e.times, e[k]) for e in estimates]) for k in ['middle', 'lower', 'upper']}
+
+    times = [datetime.fromtimestamp(t, start.tzinfo) for t in eval_times]
+    return Struct(d)._extend(times = times)
+
+
+    # t = estimates[0].times[0]
+    # s = t.timestamp()
+
+    # print(t, datetime.fromtimestamp(s, t.tzinfo))
+
+
+def fill_gaps(images, delta):
+    min_gap = delta * 2
+    r = []
+
+    for i in range(len(images) - 1):
+        r.append(images[i])
+
+        t = images[i].time
+        next = images[i + 1].time
+
+        while (next - t > min_gap):
+            t += delta
+            r.append(struct(time = t, category='discard', estimate=images[i].estimate))
+
+    r.append(images[-1])
+    return r
+
+
+
+def get_estimates(images, delta=None):
+    if delta is not None:
+        images = fill_gaps(images, delta)
+
     estimate_points = transpose_structs(pluck('estimate', images))
     times = pluck('time', images)
 
     mask = torch.ByteTensor([1 if i.category != 'discard' else 0 for i in images])
-
     def f(xs):
         return window.masked_mean(torch.Tensor(xs), mask=mask, window=7, clamp=False).numpy()
 
-    # middle = window.rolling_window(torch.Tensor(estimates.middle), window=5).mean(1).numpy()
     estimate_points = estimate_points._map(f)
-    plt.plot(times, estimate_points.middle, colour, linestyle=style)
+    return estimate_points._extend(times=times)
 
-    if estimates:
-        plt.fill_between(times, estimate_points.upper, estimate_points.lower, facecolor=colour, alpha=0.4)
+def plot_estimate(estimates, colour, style="-", show_estimates=True):
+    plt.plot(estimates.times, estimates.middle, colour, linestyle=style)
+
+    if show_estimates:
+        plt.fill_between(estimates.times, estimates.upper, estimates.lower, facecolor=colour, alpha=0.4)
 
 
 def plot_points(images, colour, marker, fill='none', key=lambda i: i.truth):
@@ -64,27 +114,39 @@ def plot_point_sets(images, colour):
     plot_points(pick(images, ['test']), colour,    'P', fill='r')
 
 
-def plot_runs(*runs, loc='upper left', estimates=True):
+def plot_runs(*runs, loc='upper left', show_estimates=True, totals=None, delta=timedelta(minutes=10), size =(20, 10)):
   
     def run_legend(run):
         return Line2D([0], [0], color=run.colour, linestyle=run.get('style', '-'), label=run.label)
 
-    legend = list(map(run_legend, runs)) + [
-        Line2D([0], [0], marker='P', color='r', markeredgecolor='k', linestyle='None', label='test'),
+    legend = list(map(run_legend, runs)) + ([run_legend(totals)] if totals is not None else []) + [
+        # Line2D([0], [0], marker='P', color='r', markeredgecolor='k', linestyle='None', label='test'),
         Line2D([0], [0], marker='^', color='none',  markeredgecolor='k', linestyle='None', label='train'),
         Line2D([0], [0], marker='s', color='none', markeredgecolor='k', linestyle='None', label='validate'),
         Line2D([0], [0], marker='o', color='none', markeredgecolor='k', linestyle='None', label='discard')
-    ]
+    ] 
 
-    fig, ax = make_chart(size =(20, 10))
+    fig, ax = make_chart(size = size)
 
     plt.xlabel("date")
     plt.ylabel("count")
 
     plt.gcf().autofmt_xdate()
 
-    for run in runs:
-        plot_estimate(run.data, colour=run.colour, style=run.get('style', '-'), estimates=estimates)
+    ax.set_xlim([datetime(2018,12,20), datetime(2019, 2, 28)])
+    # s = datetime(2019, 1, 27, 17, 51, 0, tzinfo=tzutc())
+    # e = datetime(2019, 1, 29, 21, 13, 0, tzinfo=tzutc())
+
+    # ax.set_xlim([s, e])
+    
+    estimates = [get_estimates(run.data, delta=delta) for run in runs]
+
+    for run, estimate in zip(runs, estimates):
+        plot_estimate(estimate, colour=run.colour, style=run.get('style', '-'), show_estimates=show_estimates)
+
+    if totals is not None:
+        total_estimates = sum_estimates(estimates)
+        plot_estimate(total_estimates, colour=totals.colour, style=totals.get('style', '-'), show_estimates=show_estimates)
 
     for run in runs:
         plot_point_sets(run.data, run.colour)
@@ -98,10 +160,10 @@ def load(filename):
 
 datasets = struct(
     scott_base = 'scott_base.json',
-    scott_base_100 = 'scott_base_100.json',
-    seals      = 'seals.json',
-    seals_102  = 'seals_102.json',
-    seals_shanelle  = 'seals_shanelle.json',
+    # scott_base_100 = 'scott_base_100.json',
+    # seals      = 'seals.json',
+    # seals_102  = 'seals_102.json',
+    # seals_shanelle  = 'seals_shanelle.json',
 )
 
 def flatten_dict(dd, separator='_', prefix=''):
@@ -164,7 +226,7 @@ def plot_together(figure_path, loaded):
 
         struct(data = cam_c_100, colour='skyblue', style="--", label="camera c (100)" ),
         struct(data = cam_c, colour='royalblue', label="camera c" ),        
-        estimates=False
+        show_estimates=False
     )
 
     fig.savefig(path.join(figure_path, "scott_base_combined.pdf"), bbox_inches='tight')
@@ -187,12 +249,32 @@ def plot_seals(figure_path, loaded):
 
 
 
-def plot_counts(loaded):
-    figure_path = "/home/oliver/sync/figures/seals/"
-    plot_together(figure_path, loaded)
-    plot_seals(figure_path, loaded)
+def plot_scott_base(figure_path, dataset, k):
 
-    for k in ['scott_base', 'scott_base_100']:
+        cam_a  = subset("CameraA", dataset)
+        cam_b  = subset("CameraB", dataset)
+        cam_c  = subset("CameraC", dataset)
+
+        fig = plot_runs(
+            struct(data = cam_a, colour='r', label="camera a"),
+            struct(data = cam_b, colour='g', label="camera b"),
+            struct(data = cam_c, colour='b', label="camera c"),
+            totals = struct(colour='y', label="total"),
+            size=(40, 10)
+        )
+
+        fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
+
+        export_counts(path.join(figure_path, k + "_cam_a.csv"), cam_a)
+        export_counts(path.join(figure_path, k + "_cam_b.csv"), cam_b)
+        export_counts(path.join(figure_path, k + "_cam_c.csv"), cam_c)
+
+
+def plot_counts(figure_path, loaded):
+    # plot_together(figure_path, loaded)
+    # plot_seals(figure_path, loaded)
+
+    for k in ['scott_base']:
         scott_base = get_counts(loaded[k])
 
         cam_b  = subset("CamB", scott_base)
@@ -201,6 +283,7 @@ def plot_counts(loaded):
         fig = plot_runs(
             struct(data = cam_b, colour='g', label="camera b"),
             struct(data = cam_c, colour='y', label="camera c" ),
+            totals = struct(colour='b', label="total")
         )
 
         fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
@@ -208,20 +291,20 @@ def plot_counts(loaded):
         export_counts(path.join(figure_path, k + "_cam_c.csv"), cam_c)
 
 
-    for k in ['seals', 'seals_102', 'seals_shanelle']:
-        seals_total = get_counts(loaded[k])
-        seals_pairs = get_counts(loaded[k], class_id = 1)
+    # for k in ['seals', 'seals_102', 'seals_shanelle']:
+    #     seals_total = get_counts(loaded[k])
+    #     seals_pairs = get_counts(loaded[k], class_id = 1)
 
-        fig = plot_runs(
-            struct(data = seals_total, colour='y', label="total"),
-            struct(data = seals_pairs, colour='c', label="pairs"),
+    #     fig = plot_runs(
+    #         struct(data = seals_total, colour='y', label="total"),
+    #         struct(data = seals_pairs, colour='c', label="pairs"),
 
-            loc='upper right'
-        )
+    #         loc='upper right'
+    #     )
 
-        fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
-        export_counts(path.join(figure_path, k + ".csv"), seals_total)
-        export_counts(path.join(figure_path, k + "_pairs.csv"), seals_pairs)   
+    #     fig.savefig(path.join(figure_path, k + ".pdf"), bbox_inches='tight')
+    #     export_counts(path.join(figure_path, k + ".csv"), seals_total)
+    #     export_counts(path.join(figure_path, k + "_pairs.csv"), seals_pairs)   
 
 
 def show_errors(loaded):
@@ -263,11 +346,17 @@ def show_errors(loaded):
     
 
 if __name__ == '__main__':
-      
-    loaded = datasets._map(load)
+    figure_path = "/home/oliver/sync/figures/seals/"
 
-    plot_counts(loaded)
-    show_errors(loaded)
+    scott_base = load_dataset("/home/oliver/annotate/working/scott_base.json")
+    
+    # scott_base = load_dataset("/home/oliver/storage/export/scott_base.json")
+    print("loaded")
+    plot_scott_base(figure_path, get_counts(scott_base), "scott_base_new")
+
+    # loaded = datasets._map(load)
+    # plot_counts(loaded)
+    # show_errors(loaded)
 
 
 

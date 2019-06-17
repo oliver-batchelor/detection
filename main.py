@@ -673,7 +673,7 @@ def run_trainer(args, conn = None, env = None):
         env.epoch = env.epoch + 1
 
         if (args.detections > 0) and conn:
-            detect_images = least_recently_evaluated(env.dataset.new_images, n = args.detections, invalidate = args.invalidate)
+            detect_images = least_recently_evaluated(env.dataset.new_images, n = args.detections)
 
             results = run_detections(model, env, detect_images, hook=update('detect'))
             send_command('detections', results)
