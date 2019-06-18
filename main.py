@@ -409,6 +409,7 @@ def test_images(images, model, env, split=False, hook=None):
 
 
 def run_testing(name, images, model, env, split=False, hook=None, thresholds=None):
+
   if len(images) > 0:
       print("{} {}:".format(name, env.epoch))
       results = test_images(images, model, env, split=split, hook=hook)
@@ -449,7 +450,7 @@ def is_masked(image):
 def run_detections(model, env, images, hook=None, variation_window=None):
     if len(images) > 0:
         images = sorted(images, key = lambda img: img.key)
-        results = test_images(images, model, env, hook)
+        results = test_images(images, model, env, hook=hook)
 
         mask = torch.ByteTensor([is_masked(image) for image in images])
         detections = [make_detections(env, table_list(result.prediction)) for result in results]
@@ -588,9 +589,7 @@ def run_trainer(args, conn = None, env = None):
 
         activity = struct(tag = 'train', epoch = env.epoch)
         send_command('progress', struct(activity = activity, progress = (n, total)))
-
         poll_command()
-
 
 
     def update(name):
