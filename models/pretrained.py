@@ -9,8 +9,8 @@ from torch.autograd import Variable
 import itertools
 from torchvision.models import resnet, densenet, vgg
 
-from pretrainedmodels.models import senet
-import pretrainedmodels
+# from pretrainedmodels.models import senet
+# import pretrainedmodels
 
 from models.cifar.wrn import WideResNet
 from models.mobilenetv2 import MobileNetV2, InvertedResidual
@@ -75,8 +75,8 @@ def create_imagenet(name):
         settings = pretrainedmodels.pretrained_settings[name]
         model = pretrainedmodels.__dict__[name](pretrained='imagenet')
 
-        if isinstance(model, senet.SENet):
-            return senet_layers(model)
+        # if isinstance(model, senet.SENet):
+        #     return senet_layers(model)
         if isinstance(model, resnet.ResNet):
             return resnet_layers(model)
         elif isinstance(model, densenet.DenseNet):
@@ -94,8 +94,8 @@ models = {
     'resnet50':create_imagenet('resnet50'),
     'vgg11':create_imagenet('vgg11_bn'),
     'vgg13':create_imagenet('vgg13_bn'),
-    'se_resnet50':create_imagenet('se_resnet50'),
-    'se_resnext50':create_imagenet('se_resnext50_32x4d'),
+    # 'se_resnet50':create_imagenet('se_resnet50'),
+    # 'se_resnext50':create_imagenet('se_resnext50_32x4d'),
     'wrn22-6': create_wrn('WRN-22-6.pth', depth=22, num_classes=100, widen_factor=6),
     'wrn28-10': create_wrn('WRN-28-10.pth', depth=28, num_classes=100, widen_factor=10),
     'mobilenet_v2':create_mobilenet('mobilenet_v2.pth')
@@ -122,7 +122,6 @@ def senet_layers(model):
 
     layer0 = nn.Sequential(*layer0_modules)
     layer1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=2, padding=1), model.layer1)
-
     layers = [c.Identity(), layer0, layer1, model.layer2, model.layer3, model.layer4]
 
     return layers
