@@ -8,6 +8,7 @@ from torch.autograd import Variable
 
 import itertools
 from torchvision.models import resnet, densenet, vgg
+import torchvision.models as model_zoo
 
 # from pretrainedmodels.models import senet
 # import pretrainedmodels
@@ -72,8 +73,7 @@ def create_wrn(filename, depth, num_classes=100, widen_factor=1):
 def create_imagenet(name):
     def f():
 
-        settings = pretrainedmodels.pretrained_settings[name]
-        model = pretrainedmodels.__dict__[name](pretrained='imagenet')
+        model = model_zoo.__dict__[name](pretrained=True)
 
         # if isinstance(model, senet.SENet):
         #     return senet_layers(model)

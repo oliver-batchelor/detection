@@ -90,13 +90,13 @@ class PyramidOutput(nn.Module):
 
 def regression(n, joined=True):
     def f(features):
-        return JoinedOutput(n, features)
+        return PyramidOutput(n, features, joined=joined)
     return f
 
 
 def classifier(n, joined=True): 
     def f(features):
-        return JoinedOutput(n, features, init=init_classifier)
+        return PyramidOutput(n, features, init=init_classifier, joined=joined)
     return f
 
 
@@ -201,5 +201,5 @@ if __name__ == '__main__':
     x = torch.FloatTensor(4, 3, 370, 500)
     out = model.cuda()(x.cuda())
 
-    [print(k, y.size()) for k, y in out.items()]
+    [print(k, show_shapes(y)) for k, y in out.items()]
 
