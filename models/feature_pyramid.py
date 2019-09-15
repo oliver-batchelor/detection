@@ -4,8 +4,6 @@ import math
 import torch
 from torch import Tensor
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
 
 import itertools
 import torchvision.models as m
@@ -30,14 +28,12 @@ def init_weights(m):
         init.normal_(m.weight, std=0.01)
 
 
-def init_classifier(m):
+def init_classifier(m, prior=0.001):
     if isinstance(m, nn.Conv2d):
         init.normal_(m.weight, std=0.01)
-        if hasattr(m, 'bias') and m.bias is not None:
-            prior_prob = 0.001
-            b = -math.log((1 - prior_prob)/prior_prob)
+        if hasattr(m, 'bias') and m.bias is not None:           
+            b = -math.log((1 - prior)/prior)
             init.constant_(m.bias, b)
-            # init.constant_(m.bias, 0)
 
 
 def default_decoder(features):
@@ -55,49 +51,30 @@ def default_subnet(features, n):
         Conv(features, n, 1, bias=True))        
 
 
-def join_outputs(layers, n):
+def join_output(layers, n):
     def permute(layer):
         out = layer.permute(0, 2, 3, 1).contiguous()
         return out.view(out.size(0), -1, n)
 
     return torch.cat(list(map(permute, layers)), 1)    
 
-def outputs(layers, n):
-    def permute(layer):
-        out = layer.permute(0, 2, 3, 1).contiguous()
-        return out.view(out.size(0), -1, n)
 
-    return torch.cat(list(map(permute, layers)), 1)    
-
-class PyramidOutput(nn.Module):
-    def __init__(self, n_outputs, features, init=init_weights, joined=True):   
-        super().__init__()
-        modules = [(k, default_subnet(inputs, n_outputs)) for k, inputs in features.items()]
-        
+def output(n_outputs, init=init_weights):
+    def f(names, features):
+        modules = [(k, default_subnet(features, n_outputs)) for k in names]
         for k, m in modules:
-            m.apply(init_weights)
-
-        self.subnets = Parallel(OrderedDict(modules))
-        self.n_outputs = n_outputs
-        self.joined = joined
-
-    def forward(self, input):
-        if self.joined:
-            join_outputs(self.subnets(input), self.n_outputs)
-        else:
-            return self.subnets(input)
-
-
-def regression(n, joined=True):
-    def f(features):
-        return PyramidOutput(n, features, joined=joined)
+            m.apply(init)
+    
+        return Parallel(OrderedDict(modules))
     return f
 
 
-def classifier(n, joined=True): 
-    def f(features):
-        return PyramidOutput(n, features, init=init_classifier, joined=joined)
-    return f
+def shared_output(n_outputs, init=init_weights):
+    def f(names, features):
+        module = default_subnet(features, n_outputs)
+        module.apply(init)
+        return Shared(module)
+    return f    
 
 
 class FeaturePyramid(nn.Module):
@@ -106,13 +83,15 @@ class FeaturePyramid(nn.Module):
         layers:   The range of output layers required.
         features: Number of features in the outputs and decoder side of the network
 
-        outputs: A struct of functions to construct outputs given a list of feature map sizes. 
-            e.g. struct(classes=classifier(2), boxes=regression(4, joined=True))
+     outputs: A struct of functions to construct outputs given an input feature size and list of layers
+            e.g. struct(classes=outputs(2, init=init_classifier), boxes=shared_outputs(4))
     """
 
     def __init__(self, outputs, backbone_layers, layer_range=(3, 7), features=32, make_decoder=default_decoder):
         super().__init__()
        
+        assert layer_range[0] <= layer_range[1]
+
         def layer_names(r):
             return ["layer" + str(i) for i in range(r[0], r[1] + 1)]
 
@@ -131,8 +110,7 @@ class FeaturePyramid(nn.Module):
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
         self.decoder = UpCascade(named([make_decoder(features) for i in encoded_sizes]))
 
-        output_features = OrderedDict([(i, features) for i in layer_names(layer_range)])
-        self.outputs = nn.ModuleDict( {k :f(output_features) for k, f in outputs.items()} )
+        self.outputs = nn.ModuleDict( {k :f(layer_names(layer_range), features) for k, f in outputs.items()} )
 
         for m in [self.reduce, self.decoder]:
             m.apply(init_weights)
@@ -195,10 +173,10 @@ if __name__ == '__main__':
 
     _, *cmd_args = sys.argv
 
-    outputs = struct(classes=classifier(2), boxes=regression(4))
+    outputs = struct(classes=outputs(2), boxes=shared_outputs(4))
     model = feature_pyramid(outputs, 'resnet18')
 
-    x = torch.FloatTensor(4, 3, 370, 500)
+    x = torch.FloatTensor(4, 3, 500, 500)
     out = model.cuda()(x.cuda())
 
     [print(k, show_shapes(y)) for k, y in out.items()]

@@ -47,7 +47,6 @@ if __name__ == '__main__':
     model, encoder = io.create(models, creation_params, model_args)
 
     print(model)
-    io.model_stats(model)
 
     batches = 1
     dim = (512, 512)
