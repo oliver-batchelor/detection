@@ -20,6 +20,10 @@ from collections import OrderedDict
 from detection.loss import batch_focal_loss
 
 
+
+
+
+
 def image_size(inputs):
 
     if torch.is_tensor(inputs):
@@ -31,57 +35,49 @@ def image_size(inputs):
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes, class_weights):
-        self.anchor_cache = {}
+    def __init__(self, layer, class_weights):
 
         self.box_sizes = box_sizes
-        self.start_layer = start_layer
+        self.layer = layer
 
         self.class_weights=class_weights
 
 
-    def anchors(self, input_size, crop_boxes=False):
-        def layer_size(i):
-            stride = 2 ** i
-            return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
+    def layer_size(input_size, i):
+        stride = 2 ** i
+        return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
-        input_args = (input_size, crop_boxes)
-
-        if not (input_args in self.anchor_cache):
-            layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
-
-            self.anchor_cache[input_args] = box.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
-
-        return self.anchor_cache[input_args]
-
-    def encode(self, inputs, target, match_params=box.default_match):
-        inputs = image_size(inputs)
-        return box.encode(target, self.anchors(inputs, match_params.crop_boxes), match_params=match_params)
+    def encode(self, inputs, target, match_params=heatmap.default_match):
+        feature_size = layer_size(image_size(inputs), self.layer)
+        
+        return heatmap.encode(target, feature_size, channels=len(self.class_weights))
 
 
     def decode(self, inputs, prediction, crop_boxes=False):
-        assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
+        assert False
+        # assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
-        inputs = image_size(inputs)
-        anchor_boxes = self.anchors(inputs).type_as(prediction.location)
+        # inputs = image_size(inputs)
+        # anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
-        bbox = box.decode(prediction.location, anchor_boxes)
-        confidence, label = prediction.classification.max(1)
+        # bbox = box.decode(prediction.location, anchor_boxes)
+        # confidence, label = prediction.classification.max(1)
 
-        if crop_boxes:
-            box.clamp(bbox, (0, 0), inputs)
+        # if crop_boxes:
+        #     box.clamp(bbox, (0, 0), inputs)
 
-        return table(bbox = bbox, confidence = confidence, label = label)
+        # return table(bbox = bbox, confidence = confidence, label = label)
 
        
     def loss(self, encoding, prediction, device):
        target = encoding._map(Tensor.to, device)
-       return batch_focal_loss(target, prediction,  class_weights=self.class_weights)
+       return batch_keypoint_loss(target, prediction,  class_weights=self.class_weights)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
         return box.nms(prediction, nms_params)
     
+
 
 
 

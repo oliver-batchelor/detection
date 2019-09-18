@@ -1,4 +1,5 @@
 opencv-python
+Cython
 pycocotools
 matplotlib
 tensorflow

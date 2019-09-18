@@ -182,9 +182,8 @@ def initialise(config, dataset, args):
     pause_time = args.pause_epochs
     running_average = [] if epoch >= args.average_start else []
 
-    parameters = model.parameter_groups(args.lr, args.fine_tuning)
 
-    optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     # optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.weight_decay)
 
     device = torch.cuda.current_device()

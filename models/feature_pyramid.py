@@ -173,11 +173,11 @@ if __name__ == '__main__':
 
     _, *cmd_args = sys.argv
 
-    outputs = struct(classes=outputs(2), boxes=shared_outputs(4))
+    outputs = struct(classes=output(2), boxes=shared_output(4))
     model = feature_pyramid(outputs, 'resnet18')
 
     x = torch.FloatTensor(4, 3, 500, 500)
     out = model.cuda()(x.cuda())
 
-    [print(k, show_shapes(y)) for k, y in out.items()]
+    print(show_shapes(out))
 
