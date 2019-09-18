@@ -1,10 +1,10 @@
+-e git+git@github.com:saulzar/pytorch_tools.git@installable#egg=pytorch_tools
 opencv-python
 Cython
 pycocotools
 matplotlib
 tensorflow
 xmltodict
-pretrainedmodels
 websockets
 natsort
 

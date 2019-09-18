@@ -7,7 +7,8 @@ from torch import Tensor
 
 import numpy as np
 
-from detection import box
+from detection import box, display
+
 
 from tools import struct, table, show_shapes, sum_list, cat_tables
 
@@ -20,11 +21,14 @@ def gaussian_2d(shape, sigma_x=1, sigma_y=1):
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
 
-def draw_truncate_gaussian(heatmap, center, dim, k=1):
-    w, h = dim
+def draw_truncate_gaussian(heatmap, center, radius, k=1):
+    w_radius, h_radius = radius
+
+    w = w_radius * 2 + 1
+    h = h_radius * 2 + 1
 
     gaussian = heatmap.new_tensor(gaussian_2d((h, w), sigma_x=w / 6, sigma_y=h / 6))
-    x, y = int(center[0]), int(center[1])
+    x, y = center
 
     height, width = heatmap.shape[0:2]
 
@@ -67,15 +71,15 @@ def heatmap(target, heatmap_size, num_classes, match_params=default_match_params
 
     centres, size = box.split(extents)
     
-    radius = size / 2.
-    centers = centres.int()
+    radius = (size / 2.).int()
+    centres = centres.int()
 
-    
+   
     heatmap = torch.FloatTensor(num_classes, h, w)
     for (l, c, r) in zip(labels, centres, radius):
         assert l < heatmap.size(0)
 
-        draw_truncate_gaussian(heatmap[l], c, r)
+        draw_truncate_gaussian(heatmap[l], c, r.tolist())
 
     return heatmap
 
@@ -97,12 +101,18 @@ def random_boxes(centre_range, size_range, n):
 if __name__ == "__main__":
     from tools.image import cv
 
+    size = 600
+
     target = struct (
-        bbox = random_boxes((0, 600), (20, 100), 20),
+        bbox = random_boxes((0, size), (50, 200), 20),
         classification = torch.LongTensor(20).random_(0, 3)
     )
 
-    h = heatmap(target, (600, 600), 3)
+    h = heatmap(target, (size, size), 3).permute(1, 2, 0).contiguous()
+    
+
+    for b in target.bbox:
+        h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
 
     cv.display(h)    
 
