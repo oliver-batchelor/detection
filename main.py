@@ -469,10 +469,6 @@ def run_detections(model, env, images, hook=None, variation_window=None):
     
 
 
-def add_multimap(m, k, x):
-    xs = m[k] if k in m else []
-    xs.append(x)
-    m[k] = xs
 
 
 def report_training(results):

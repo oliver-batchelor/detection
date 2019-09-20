@@ -1,5 +1,6 @@
 from tools import struct
-from .retina_net import model as retina_net
+from .retina.model import model as retina
+from .ttf.model import model as ttf
 
 def merge(*dicts):
     m = {}
@@ -8,6 +9,6 @@ def merge(*dicts):
 
     return m
 
-models = struct(retina_net=retina_net)
+models = struct(retina=retina, ttf=ttf)
 parameters = models._map(lambda m: m.parameters)
     
