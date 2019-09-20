@@ -18,14 +18,19 @@ def split(boxes):
 def split4(boxes):
     return boxes[..., 0],  boxes[..., 1], boxes[..., 2], boxes[..., 3]
 
-def extents_form(boxes):
+
+def extents(boxes):
     lower, upper = split(boxes)
-    return torch.cat([(lower + upper) * 0.5, upper - lower], 1)
+    return struct(centre = (lower + upper) * 0.5, size = upper - lower)
+
+def extents_form(boxes):
+    b = extents(boxes)
+    return torch.cat([b.centre, b.size], boxes.dim() - 1)
 
 def point_form(boxes):
     centre, size = split(boxes)
-    extents = size * 0.5
-    return torch.cat([centre - extents, centre + extents], 1)
+    radius = size * 0.5
+    return torch.cat([centre - radius, centre + radius], boxes.dim() - 1)
 
 
 

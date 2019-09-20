@@ -21,13 +21,11 @@ def gaussian_2d(shape, sigma_x=1, sigma_y=1):
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
 
-def truncate_gaussian(heatmap, center, radius, k=1):
-    w_radius, h_radius = radius
-
+def truncate_gaussian(heatmap, center, w_radius, h_radius, k=1):
     w = w_radius * 2 + 1
     h = h_radius * 2 + 1
 
-    gaussian = heatmap.new_tensor(gaussian_2d((h, w), sigma_x=w / 6, sigma_y=h / 6))
+    gaussian = heatmap.new_tensor(gaussian_2d((int(h), int(w)), sigma_x=w / 6, sigma_y=h / 6))
     x, y = center
 
     height, width = heatmap.shape[0:2]
@@ -35,12 +33,11 @@ def truncate_gaussian(heatmap, center, radius, k=1):
     left, right = min(x, w_radius), min(width - x, w_radius + 1)
     top, bottom = min(y, h_radius), min(height - y, h_radius + 1)
 
-    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
-    masked_gaussian = gaussian[h_radius - top:h_radius + bottom,
-                        w_radius - left:w_radius + right]
-    if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-    return struct(heatmap = masked_heatmap, gaussian = masked_gaussian)
+    heatmap[y - top:y + bottom, x - left:x + right] = \
+        gaussian[h_radius - top:h_radius + bottom, w_radius - left:w_radius + right]
 
+    return heatmap
+   
 
 default_match_params = struct(
     alpha = 0.54
@@ -51,42 +48,46 @@ def layer_size(input_size, i):
     stride = 2 ** i
     return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
-def heatmap_layer(target, input_size, layer,  num_classes, match_params=default_match_params):
+def encode_layer(target, input_size, layer,  num_classes, match_params=default_match_params):
     stride, heatmap_size = layer_size(input_size, layer)
-    return heatmap(target._extend(bbox = target.bbox * (1. / stride)), heatmap_size, num_classes)
+    return encode_target(target._extend(bbox = target.bbox * (1. / stride)), heatmap_size, num_classes)
 
 
-def heatmap(target, heatmap_size, num_classes, match_params=default_match_params):
+def encode_target(target, heatmap_size, num_classes, match_params=default_match_params):
 
     m = target.bbox.size(0)
     w, h = heatmap_size
 
-    heatmap = torch.zeros(num_classes, h, w, dtype=torch.float)
-    bbox = struct(
-        weight =  torch.zeros(1, h, w, dtype=torch.float)
-        target =  torch.ones(4, h, w, dtype=torch.float)
-    )
-
 
     # sort by area, largest boxes first (and least priority)
-    box_areas = box.areas(target.bbox)
-    box_areas, boxes_ind = torch.sort(box_areas, descending=True)
+    areas = box.area(target.bbox)
+    areas, boxes_ind = torch.sort(areas, descending=True)
 
-    labels = target.classification[boxes_ind]
-    extents = box.extents_form(target.bbox)[boxes_ind]
+    heatmap = areas.new_zeros(num_classes, h, w)
+    bbox = struct(
+        weight =  areas.new_zeros(h, w),
+        target =  areas.new_ones(h, w, 4)
+    )
 
-    centres, size = box.split(extents)   
-    radius = (size / 2.).int()
-    centres = centres.int()
+    for (label, target_box) in zip(target.classification[boxes_ind], target.bbox[boxes_ind]):
+        assert label < num_classes
 
-   
-    heatmap = torch.FloatTensor(num_classes, h, w)
-    for (l, c, r) in zip(labels, centres, radius):
-        assert l < heatmap.size(0)
+        extents = box.extents(target_box)
+        area = extents.size.dot(extents.size)
+        radius = (extents.size / 2.).int()
 
-        masked = truncate_gaussian(heatmap[l], c, r.tolist())
+        box_heatmap = heatmap.new_zeros(h, w)
+        truncate_gaussian(box_heatmap, extents.centre.int(), radius[0].item(), radius[1].item())
 
-    return struct(heatmap = heatmap, bbox = bbox)
+        target_inds = box_heatmap > 0 
+        local_heatmap = box_heatmap[target_inds]
+
+        heatmap[label] = torch.max(box_heatmap, heatmap[label])
+
+        bbox.target[target_inds] = target_box
+        bbox.weight[target_inds] = local_heatmap * area.log() / local_heatmap.sum()    
+
+    return struct(heatmap=heatmap, bbox=bbox)
 
 
 def random_points(r, n):
@@ -112,9 +113,9 @@ if __name__ == "__main__":
         classification = torch.LongTensor(20).random_(0, 3)
     )
 
-    h = heatmap(target, (size, size), 3).permute(1, 2, 0).contiguous()
+    encoded = encode_target(target, (size, size), 3)
+    h = encoded.heatmap.permute(1, 2, 0).contiguous()
     
-
     for b in target.bbox:
         h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
 
