@@ -86,7 +86,6 @@ def encode_target(target, heatmap_size, num_classes, match_params=default_match_
     areas = box.area(target.bbox)
     areas, boxes_ind = torch.sort(areas, descending=True)
 
-<<<<<<< HEAD
     heatmap = areas.new_zeros(num_classes, h, w)
     bbox = struct(
         weight =  areas.new_zeros(h, w),
@@ -110,27 +109,6 @@ def encode_target(target, heatmap_size, num_classes, match_params=default_match_
 
         bbox.target[target_inds] = target_box
         bbox.weight[target_inds] = local_heatmap * area.log() / local_heatmap.sum()    
-=======
-    heatmap = box_areas.new_zeros(num_classes, h, w)
-    bbox = struct(
-        weight =  box_areas.new_zeros(1, h, w)
-        target =  box_areas.new_ones(4, h, w)
-    )
-
-    for (l, b) in zip(target.classification[boxes_ind], target.bbox[boxes_ind]):
-        assert l < heatmap.size(0)
-
-        extents = (b[2:4] - b[0:2]) / 2.
-        center = (b[2:4] + b[0:2]) * 0.5
-        area = extent.dot(extent)
-
-        local_heatmap = heatmap.new_zeros(h, w)
-        draw_truncate_gaussian(local_heatmap, center.int(), extents)
-
-        target_inds = local_heatmap > 0 
-        bbox.target[target_inds] = b
-        bbox.weight[target_inds] = local_heatmap * log(area) / local_heatmap.sum()      
->>>>>>> WIPY
 
     return struct(heatmap=heatmap, bbox=bbox)
 
