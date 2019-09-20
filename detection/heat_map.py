@@ -25,16 +25,39 @@ def truncate_gaussian(heatmap, center, w_radius, h_radius, k=1):
     w = w_radius * 2 + 1
     h = h_radius * 2 + 1
 
+<<<<<<< HEAD
     gaussian = heatmap.new_tensor(gaussian_2d((int(h), int(w)), sigma_x=w / 6, sigma_y=h / 6))
     x, y = center
+=======
+def draw_truncate_gaussian(heatmap, center, dim, k=1):
+    w, h = dim
+
+    gaussian = heatmap.new_tensor(gaussian_2d((h, w), sigma_x=w / 6, sigma_y=h / 6))
+    x, y = int(center[0]), int(center[1])
+>>>>>>> WIPY
 
     height, width = heatmap.shape[0:2]
 
     left, right = min(x, w_radius), min(width - x, w_radius + 1)
     top, bottom = min(y, h_radius), min(height - y, h_radius + 1)
 
+<<<<<<< HEAD
     heatmap[y - top:y + bottom, x - left:x + right] = \
         gaussian[h_radius - top:h_radius + bottom, w_radius - left:w_radius + right]
+=======
+    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+
+    masked_gaussian = gaussian[h_radius - top:h_radius + bottom,
+                        w_radius - left:w_radius + right]
+
+    if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
+        torch.max(masked_heatmap, masked_gaussian*k, out=masked_heatmap)
+
+    return heatmap
+   
+
+
+>>>>>>> WIPY
 
     return heatmap
    
@@ -63,6 +86,7 @@ def encode_target(target, heatmap_size, num_classes, match_params=default_match_
     areas = box.area(target.bbox)
     areas, boxes_ind = torch.sort(areas, descending=True)
 
+<<<<<<< HEAD
     heatmap = areas.new_zeros(num_classes, h, w)
     bbox = struct(
         weight =  areas.new_zeros(h, w),
@@ -86,6 +110,27 @@ def encode_target(target, heatmap_size, num_classes, match_params=default_match_
 
         bbox.target[target_inds] = target_box
         bbox.weight[target_inds] = local_heatmap * area.log() / local_heatmap.sum()    
+=======
+    heatmap = box_areas.new_zeros(num_classes, h, w)
+    bbox = struct(
+        weight =  box_areas.new_zeros(1, h, w)
+        target =  box_areas.new_ones(4, h, w)
+    )
+
+    for (l, b) in zip(target.classification[boxes_ind], target.bbox[boxes_ind]):
+        assert l < heatmap.size(0)
+
+        extents = (b[2:4] - b[0:2]) / 2.
+        center = (b[2:4] + b[0:2]) * 0.5
+        area = extent.dot(extent)
+
+        local_heatmap = heatmap.new_zeros(h, w)
+        draw_truncate_gaussian(local_heatmap, center.int(), extents)
+
+        target_inds = local_heatmap > 0 
+        bbox.target[target_inds] = b
+        bbox.weight[target_inds] = local_heatmap * log(area) / local_heatmap.sum()      
+>>>>>>> WIPY
 
     return struct(heatmap=heatmap, bbox=bbox)
 
