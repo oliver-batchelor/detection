@@ -490,7 +490,7 @@ class DetectionDataset:
         noisy = box.point_form(torch.cat([centre, size], 1))
         
         if image.category == 'train':
-            totals += struct(iou = box.iou_matched(noisy, image.target.bbox).sum(), n = n)
+            totals += struct(iou = box.iou_matrix_matched(noisy, image.target.bbox).sum(), n = n)
 
         return image._extend(target = image.target._extend(bbox = noisy))
 

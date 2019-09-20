@@ -32,7 +32,7 @@ def take_max_2d(t):
     return v, (i, j)
 
 def match_targets(target1, target2, threshold=0.5):
-    ious = box.iou(target1.bbox, target2.bbox)
+    ious = box.iou_matrix(target1.bbox, target2.bbox)
     matches = []
 
     if ious.size(0) == 0 or ious.size(1) == 0:
@@ -51,7 +51,7 @@ def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
     n = prediction.label.size(0)
     matches = []
 
-    ious = box.iou(prediction.bbox, target.bbox)
+    ious = box.iou_matrix(prediction.bbox, target.bbox)
 
     for i, p in enumerate(prediction._sequence()):
         match = None
@@ -149,7 +149,7 @@ def match_positives(pred, target):
     if m == 0 or n == 0:
         return const(torch.FloatTensor(n).zero_())
 
-    ious = box.iou(pred.bbox, target.bbox)
+    ious = box.iou_matrix(pred.bbox, target.bbox)
     return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
 
 def list_subset(xs, inds):

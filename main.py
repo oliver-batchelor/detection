@@ -299,7 +299,7 @@ def evaluate_review(env, image, nms_params, review):
             device=env.device)
         review = review._map(torch.Tensor.to, env.device)
 
-        ious = box.iou(prediction.bbox, review.bbox * scale)
+        ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
 
 
         review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)

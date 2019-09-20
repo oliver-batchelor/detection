@@ -21,7 +21,7 @@ def gaussian_2d(shape, sigma_x=1, sigma_y=1):
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
 
-def draw_truncate_gaussian(heatmap, center, radius, k=1):
+def truncate_gaussian(heatmap, center, radius, k=1):
     w_radius, h_radius = radius
 
     w = w_radius * 2 + 1
@@ -39,8 +39,7 @@ def draw_truncate_gaussian(heatmap, center, radius, k=1):
     masked_gaussian = gaussian[h_radius - top:h_radius + bottom,
                         w_radius - left:w_radius + right]
     if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-        torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
-    return heatmap
+    return struct(heatmap = masked_heatmap, gaussian = masked_gaussian)
 
 
 default_match_params = struct(
@@ -62,15 +61,21 @@ def heatmap(target, heatmap_size, num_classes, match_params=default_match_params
     m = target.bbox.size(0)
     w, h = heatmap_size
 
+    heatmap = torch.zeros(num_classes, h, w, dtype=torch.float)
+    bbox = struct(
+        weight =  torch.zeros(1, h, w, dtype=torch.float)
+        target =  torch.ones(4, h, w, dtype=torch.float)
+    )
+
+
     # sort by area, largest boxes first (and least priority)
-    box_areas = box.area(target.bbox)
+    box_areas = box.areas(target.bbox)
     box_areas, boxes_ind = torch.sort(box_areas, descending=True)
 
     labels = target.classification[boxes_ind]
     extents = box.extents_form(target.bbox)[boxes_ind]
 
-    centres, size = box.split(extents)
-    
+    centres, size = box.split(extents)   
     radius = (size / 2.).int()
     centres = centres.int()
 
@@ -79,9 +84,9 @@ def heatmap(target, heatmap_size, num_classes, match_params=default_match_params
     for (l, c, r) in zip(labels, centres, radius):
         assert l < heatmap.size(0)
 
-        draw_truncate_gaussian(heatmap[l], c, r.tolist())
+        masked = truncate_gaussian(heatmap[l], c, r.tolist())
 
-    return heatmap
+    return struct(heatmap = heatmap, bbox = bbox)
 
 
 def random_points(r, n):
@@ -94,7 +99,6 @@ def random_boxes(centre_range, size_range, n):
     extents = random_points(size_range, n) * 0.5
 
     return torch.cat([centre - extents, centre + extents], 1)
-
 
 
 

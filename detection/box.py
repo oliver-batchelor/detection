@@ -29,8 +29,6 @@ def point_form(boxes):
 
 
 
-
-
 def transform(boxes, offset=(0, 0), scale=(1, 1)):
     lower, upper = boxes[:, :2], boxes[:, 2:]
 
@@ -84,8 +82,8 @@ def clamp(boxes, lower, upper):
     return boxes
 
 
-def intersect(box_a, box_b):
-    """ Intersection of bounding boxes
+def intersect_matrix(box_a, box_b):
+    """ Intersection matrix of bounding boxes
     Args:
       box_a: (tensor) bounding boxes, Shape: [n,4].
       box_b: (tensor) bounding boxes, Shape: [m,4].
@@ -103,8 +101,8 @@ def intersect(box_a, box_b):
     inter = torch.clamp((max_xy - min_xy), min=0)
     return inter[:, :, 0] * inter[:, :, 1]
 
-def intersect_matched(box_a, box_b):
-    assert(box_a.size(0) == box_b.size(0))
+def intersect(box_a, box_b):
+    assert box_a.shape == box_b.shape
 
     max_xy = torch.min(box_a[:, 2:], box_b[:, 2:])
     min_xy = torch.max(box_a[:, :2], box_b[:, :2])
@@ -112,32 +110,68 @@ def intersect_matched(box_a, box_b):
     inter = torch.clamp((max_xy - min_xy), min=0)
     return inter[:, 0] * inter[:, 1]
 
-def iou(box_a, box_b):
-    """Compute the IOU of two sets of boxes in point form.
+def union_matrix(box_a, box_b):
+    """Compute the union area matrix between two sets of boxes in point form.
     Args:
         box_a, box b: Bounding boxes in point form. shapes ([n, 4], [m, 4])
     Return:
-        jaccard overlap: (tensor) Shape: [n, m]
+        intersection: (tensor) Shape: [n, m]
+        union: (tensor) Shape: [n, m]
     """
     inter = intersect(box_a, box_b)
     area_a = ((box_a[:, 2]-box_a[:, 0]) *
               (box_a[:, 3]-box_a[:, 1])).unsqueeze(1).expand_as(inter)  # [n,m]
     area_b = ((box_b[:, 2]-box_b[:, 0]) *
               (box_b[:, 3]-box_b[:, 1])).unsqueeze(0).expand_as(inter)  # [n,m]
-    union = area_a + area_b - inter
-    return inter / union  # [n,m]
+    unions = area_a + area_b - inter
+    return inter, unions  # [n,m]    
 
-def iou_matched(box_a, box_b):  
+def iou_matrix(box_a, box_b):
+    """Compute the IOU of two sets of boxes in point form.
+    Args:
+        box_a, box b: Bounding boxes in point form. shapes ([n, 4], [m, 4])
+    Return:
+        jaccard overlap: (tensor) Shape: [n, m]
+    """
+    inter, union = union_matrix(box_a, box_b)
+    return inter / union
+
+def union(box_a, box_b):  
+    assert box_a.shape == box_b.shape
+
     inter = intersect_matched(box_a, box_b)
 
     area_a = ((box_a[:, 2]-box_a[:, 0]) *
               (box_a[:, 3]-box_a[:, 1]))
     area_b = ((box_b[:, 2]-box_b[:, 0]) *
               (box_b[:, 3]-box_b[:, 1]))
-    union = area_a + area_b - inter
-    return inter / union 
+    unions = area_a + area_b - inter
+    return inter, unions 
 
+def iou(box_a, box_b):  
+    assert box_a.shape == box_b.shape
 
+    inter, unions = union(box_a, box_b)
+    return conditional_div(inter, unions)
+
+def merge(box_a, box_b):
+    l1, u1 = split(box_a)
+    l2, u2 = split(box_b)
+
+    return torch.cat([l1.min(l2), u1.max(u2)], 1)
+
+def conditional_div(a, b):
+    return a / torch.where(b == 0, b.new_ones(b.shape), b)
+
+def giou(box_a, box_b):
+    hull = area(merge(box_a, box_b))
+
+    inter, unions = union(box_a, box_b)
+
+    iou =  conditional_div(inter, unions)
+    giou = conditional_div(hull - unions, hull)
+
+    return iou - giou
 
 
 nms_defaults = struct(
