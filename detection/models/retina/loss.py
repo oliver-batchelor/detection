@@ -43,11 +43,13 @@ def focal_loss_bce(target, pred, alpha, gamma=2, eps=1e-6):
 
 
 
-def focal_loss(target, prediction, class_weights, balance=4, gamma=2, eps=1e-6):
+def focal_loss(target, prediction, class_weights, balance=10, gamma=2, eps=1e-6):
     batch = target.location.size(0)
     num_classes = prediction.classification.size(2)
 
     class_weights = prediction.classification.new([0.0, *class_weights])
+
+    # print((target.classification > 0).sum(), (target.classification < 0).sum())
 
     pos_mask = (target.classification > 0).unsqueeze(2).expand_as(prediction.location)
     invalid_mask = (target.classification < 0).unsqueeze(2).expand_as(prediction.classification)
@@ -57,9 +59,9 @@ def focal_loss(target, prediction, class_weights, balance=4, gamma=2, eps=1e-6):
 
     loc_loss = F.smooth_l1_loss(prediction.location.view(-1), target.location.view(-1), reduction='none')
 
-    class_loss = class_loss.view_as(prediction.classification).masked_fill_(invalid_mask, 0)   
+    class_loss = class_loss.view_as(prediction.classification).masked_fill_(invalid_mask, 0)
     loc_loss = loc_loss.view_as(prediction.location).masked_fill_(~pos_mask, 0)
 
-    return struct(classification = class_loss.sum(), location = loc_loss.sum())
+    return struct(classification = class_loss.sum() / balance, location = loc_loss.sum())
 
 

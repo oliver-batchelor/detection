@@ -265,7 +265,7 @@ def make_detections(env, predictions):
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
-        nms_params=nms_params, crop_boxes=env.args.crop_boxes, device=env.device)
+        nms_params=nms_params, device=env.device)
     return make_detections(env, list(detections._sequence()))
 
 
