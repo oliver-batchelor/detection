@@ -106,8 +106,8 @@ def decode(prediction, anchor_boxes):
       label: (tensor) detected class label [k].
     '''
 
-    loc_pos, loc_size = split(prediction)
-    anchor_pos, anchor_size = split(anchor_boxes)
+    loc_pos, loc_size = box.split(prediction)
+    anchor_pos, anchor_size = box.split(anchor_boxes)
 
     pos = loc_pos * anchor_size + anchor_pos
     sizes = loc_size.exp() * anchor_size

@@ -96,7 +96,7 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
 
 def summarize_train_stats(name, results, classes, log):
     totals = sum_results(results)
-    avg = totals._subset('loss', 'instances', 'error', 'boxes') / totals.size
+    avg = totals._subset('loss', 'instances', 'error') / totals.size
 
     log.scalars(name + "/loss", avg.loss._extend(total = avg.error))
 
@@ -106,8 +106,8 @@ def summarize_train_stats(name, results, classes, log):
     # log.scalars(name + "/instances",
     #     struct(total = totals.instances, **class_counts))
 
-    if 'boxes' in totals:
-        log_boxes(name, class_names, totals.boxes / totals.size,  log)
+    # if 'boxes' in totals:
+    #     log_boxes(name, class_names, totals.boxes / totals.size,  log)
 
     if 'predictions' in totals:
         log_predictions(name, class_names, totals.predictions, log)
@@ -148,10 +148,10 @@ def split_image(image, eval_size, overlap=0):
 
 
 
-def evaluate_image(model, image, encoder, nms_params=box.nms_defaults, crop_boxes=False, device=torch.cuda.current_device()):
+def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
-        prediction, _ = evaluate_decode(model, image, encoder=encoder, crop_boxes=crop_boxes, device=device)
+        prediction, _ = evaluate_decode(model, image, encoder=encoder,  device=device)
         return  encoder.nms(prediction, nms_params=nms_params)
 
 def evaluate_raw(model, image, device):
@@ -169,9 +169,9 @@ def evaluate_raw(model, image, device):
     #gc.collect()
     return predictions
 
-def evaluate_decode(model, image, encoder, device, offset = (0, 0), crop_boxes=False):
+def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
     raw = evaluate_raw(model, image, device=device)
-    p = encoder.decode(image, raw, crop_boxes=crop_boxes)
+    p = encoder.decode(image, raw)
 
     offset = torch.Tensor([*offset, *offset]).to(device)
     return p._extend(bbox = p.bbox + offset), raw
@@ -194,7 +194,6 @@ eval_defaults = struct(
     image_size = (600, 600),
     batch_size = 1,
     nms_params = box.nms_defaults,
-    crop_boxes = False,
 
     device=torch.cuda.current_device(),
     debug = ()
@@ -204,7 +203,7 @@ def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
         prediction, raw = evaluate_decode(model, data.image.squeeze(0), encoder, 
-            device=params.device, crop_boxes=params.crop_boxes)
+            device=params.device)
 
         train_stats = test_loss(data, encoder, data.encoding, raw, debug=params.debug, device=params.device)
         return encoder.nms(prediction, nms_params=params.nms_params), train_stats

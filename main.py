@@ -398,7 +398,6 @@ def test_images(images, model, env, split=False, hook=None):
         image_size = (env.args.image_size, env.args.image_size),
         batch_size = env.args.batch_size,
         nms_params = get_nms_params(env.args),
-        crop_boxes = env.args.crop_boxes,
         device = env.device,
         debug = env.debug
     )  
@@ -474,9 +473,9 @@ def run_detections(model, env, images, hook=None, variation_window=None):
 def report_training(results):
     images = {}
 
-    for r in results:
-        for file, loss in r.files:
-            add_multimap(images, file, struct(loss = loss))
+    # for r in results:
+    #     for file, loss in r.files:
+    #         add_multimap(images, file, struct(loss = loss))
 
     return images
 

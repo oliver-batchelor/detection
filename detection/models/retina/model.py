@@ -52,7 +52,7 @@ class Encoder:
         if not (input_args in self.anchor_cache):
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
 
-            self.anchor_cache[input_args] = anchor.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
+            self.anchor_cache[input_args] = anchor.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=self.match_params.crop_boxes)
 
         return self.anchor_cache[input_args]
 
@@ -61,16 +61,16 @@ class Encoder:
         return anchor.encode(target, self.anchors(inputs, self.match_params.crop_boxes), match_params=self.match_params)
 
 
-    def decode(self, inputs, prediction, crop_boxes=False):
+    def decode(self, inputs, prediction):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
         inputs = image_size(inputs)
         anchor_boxes = self.anchors(inputs).type_as(prediction.location)
 
-        bbox = box.decode(prediction.location, anchor_boxes)
+        bbox = anchor.decode(prediction.location, anchor_boxes)
         confidence, label = prediction.classification.max(1)
 
-        if crop_boxes:
+        if self.match_params.crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
         return table(bbox = bbox, confidence = confidence, label = label)
@@ -142,7 +142,6 @@ parameters = struct(
 
         crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
         top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
-        overlap_attenuation = param(False, help='weight anchor box targets by the amount of overlap iou'),
     )   
   )
 
