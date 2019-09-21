@@ -200,7 +200,6 @@ def create(args, dataset_args):
         crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), 
         match_nearest = args.top_anchors,
-        overlap_attenuation = args.overlap_attenuation
     )
 
     class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
