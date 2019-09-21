@@ -17,10 +17,6 @@ from tools import struct, table, show_shapes, sum_list, cat_tables
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
 
-from detection.loss import batch_focal_loss
-
-
-
 
 
 
@@ -39,15 +35,13 @@ class Encoder:
 
         self.box_sizes = box_sizes
         self.layer = layer
-
         self.class_weights=class_weights
-
 
     def layer_size(input_size, i):
         stride = 2 ** i
         return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
-    def encode(self, inputs, target, match_params=heatmap.default_match):
+    def encode(self, inputs, target):
         feature_size = layer_size(image_size(inputs), self.layer)
         
         return heatmap.encode(target, feature_size, channels=len(self.class_weights))

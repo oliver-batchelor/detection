@@ -59,7 +59,7 @@ def summarize_stats(results, epoch, globals={}):
 def train_statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
     num_classes = prediction.classification.size(2)
 
-    stats = struct(error=loss.sum(),
+    stats = struct(error=sum(loss.values()),
         loss = loss._map(Tensor.item),
         size = data.image.size(0),
         instances=data.lengths.sum().item(),
@@ -89,7 +89,7 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
         loss = encoder.loss(data.encoding, prediction, device=device)
 
         stats = train_statistics(data, loss, prediction, data.encoding, debug, device)
-        return struct(error = loss.total / image.data.size(0), statistics=stats, size = data.image.size(0))
+        return struct(error = sum(loss.values()) / image.data.size(0), statistics=stats, size = data.image.size(0))
 
     return f
 

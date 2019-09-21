@@ -14,10 +14,11 @@ from detection import box
 from models.feature_pyramid import feature_pyramid, output, shared_output, init_classifier, join_output
 from tools import struct, table, show_shapes, sum_list, cat_tables
 
-from tools.parameters import param, choice, parse_args, parse_choice, make_parser
+from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
 
-from detection.loss import batch_focal_loss
+from . import anchor, loss
+
 
 
 def image_size(inputs):
@@ -31,13 +32,14 @@ def image_size(inputs):
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes, class_weights):
+    def __init__(self, start_layer, box_sizes, class_weights, match_params):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
         self.start_layer = start_layer
 
         self.class_weights=class_weights
+        self.match_params = match_params
 
 
     def anchors(self, input_size, crop_boxes=False):
@@ -50,13 +52,13 @@ class Encoder:
         if not (input_args in self.anchor_cache):
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
 
-            self.anchor_cache[input_args] = box.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
+            self.anchor_cache[input_args] = anchor.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=crop_boxes)
 
         return self.anchor_cache[input_args]
 
-    def encode(self, inputs, target, match_params=box.default_match):
+    def encode(self, inputs, target):
         inputs = image_size(inputs)
-        return box.encode(target, self.anchors(inputs, match_params.crop_boxes), match_params=match_params)
+        return anchor.encode(target, self.anchors(inputs, self.match_params.crop_boxes), match_params=self.match_params)
 
 
     def decode(self, inputs, prediction, crop_boxes=False):
@@ -76,7 +78,7 @@ class Encoder:
        
     def loss(self, encoding, prediction, device):
        target = encoding._map(Tensor.to, device)
-       return batch_focal_loss(target, prediction,  class_weights=self.class_weights)
+       return loss.focal_loss(target, prediction,  class_weights=self.class_weights)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
@@ -117,7 +119,8 @@ class RetinaNet(nn.Module):
             location = join_output(output.location, 4)
         )
 
-        
+
+
 
 base_options = '|'.join(pretrained.models.keys())
 
@@ -128,11 +131,19 @@ parameters = struct(
     last      = param (7, help = "last layer of anchor boxes"),
 
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
-
     shared    = param (False, help = "share weights between network heads at different levels"),
     square    = param (False, help = "restrict box outputs (and anchors) to square"),
 
-    separate =  param (False, help = "separate box location prediction for each class")
+    separate =  param (False, help = "separate box location prediction for each class"),
+
+    match = group('match thresholds',
+        pos_match = param (0.5, help = "lower iou threshold matching positive anchor boxes in training"),
+        neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training"),
+
+        crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
+        top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
+        overlap_attenuation = param(False, help='weight anchor box targets by the amount of overlap iou'),
+    )   
   )
 
 def extra_layer(inp, features):
@@ -161,7 +172,8 @@ def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
 
     scales = [1, pow(2, 1/3), pow(2, 2/3)]
 
-    return len(aspects) * len(scales), [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
+    return len(aspects) * len(scales), \
+        [anchor.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
 
 
 def extend_layers(layers, size, features=32):
@@ -184,8 +196,16 @@ def create(args, dataset_args):
     model = RetinaNet(backbone_name=args.backbone, layer_range=(args.first, args.last), num_boxes=num_boxes, \
         num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
 
+
+    match_params = struct(
+        crop_boxes=args.crop_boxes, 
+        match_thresholds=(args.neg_match, args.pos_match), 
+        match_nearest = args.top_anchors,
+        overlap_attenuation = args.overlap_attenuation
+    )
+
     class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
-    encoder = Encoder(args.first, box_sizes, class_weights=class_weights)
+    encoder = Encoder(args.first, box_sizes, class_weights=class_weights, match_params=match_params)
 
     return model, encoder
     

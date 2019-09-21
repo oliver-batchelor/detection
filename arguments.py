@@ -53,7 +53,7 @@ train_parameters = struct (
 
     paused          = param(False, help='start trainer paused'),
     num_workers     = param(4,      help='number of workers used to process dataset'),
-    model           = choice(default='fcn', options=models.parameters, help='model type and parameters e.g. "fcn --start=4"'),
+    model           = choice(default='retina', options=models.parameters, help='model type and parameters e.g. "retina --start=4"'),
 
     bn_momentum    = param(0.9, "momentum for batch normalisation modules"),
 
@@ -97,10 +97,6 @@ detection_parameters = struct (
         image_samples   = param(1,      help='number of training samples to extract from each loaded image')
     ),
 
-    match = group('match thresholds',
-        pos_match = param (0.5, help = "lower iou threshold matching positive anchor boxes in training"),
-        neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training")
-    ),
 
     nms = group('nms',
         nms_threshold    = param (0.5, help = "overlap threshold (iou) used in nms to filter duplicates"),
@@ -109,11 +105,7 @@ detection_parameters = struct (
     ),
 
     select_instance = param(0.5, help = 'probability of cropping around an object instance as opposed to a random patch'),
-    min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included'),
-    crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
-    
-    top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
-    overlap_attenuation = param(False, help='weight anchor box targets by the amount of overlap iou'),
+    min_visible     = param (0.4, help = 'minimum proportion of area for an overlapped box to be included')
 )
 
 

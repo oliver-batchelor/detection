@@ -204,46 +204,10 @@ def random_crop_padded(dest_size, scale_range=(1, 1), aspect_range=(1, 1), borde
     return apply
 
 
-# def ssd_crop():
-    
-#     options = [ None, 0.9, 0.7, 0.5, 0.3, 0.1, 0.0 ]
-
-#     def apply(d):
-#         height, width, _ = d.image.size()
-
-#         min_overlap = options[random.randint(0, len(options) - 1)]
-
-#         # Return full image
-#         if min_overlap is None:
-#             return d
-
-#         for i in range(0, 50):
-
-#             w = random.randint(int(0.1 * width), width)
-#             h = random.uniform(int(0.1 * height), height)
-
-#             if max(w / h, h / w) > 2.0:
-#                 continue
-
-#             x = random.
-
-
-
-#         return d._extend(
-#                 image = transforms.warp_affine(d.image, t, dest_size),
-#                 target = d.target._extend(bbox = box.transform(d.target.bbox, (-x, -y), (sx, sy)))
-#             )
-#     return apply
-
-
-def filter_boxes(min_visible = 0.4, crop_boxes = False):
-    
+def filter_boxes(min_visible = 0.4):   
     def apply(d):
         size = (d.image.size(1), d.image.size(0))
         target = box.filter_hidden(d.target, (0, 0), size, min_visible=min_visible)
-
-        if crop_boxes:
-            box.clamp(target.bbox, (0, 0), size)    
 
         return d._extend(target = target)
     
@@ -277,9 +241,9 @@ def load_testing(args, images, collate_fn=collate_batch):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
 
 
-def encode_target(encoder, match_params=box.default_match):
+def encode_target(encoder):
     def f(d):
-        encoding = encoder.encode(d.image, d.target, match_params=match_params)
+        encoding = encoder.encode(d.image, d.target)
 
         return struct(
             image   = d.image,
@@ -294,17 +258,10 @@ def identity(x):
     return x
 
 
-def get_match_params(args):
-    return struct(
-        crop_boxes=args.crop_boxes, 
-        match_thresholds=(args.neg_match, args.pos_match), 
-        match_nearest = args.top_anchors,
-        class_weights = None,
-        overlap_attenuation = args.overlap_attenuation
-    )
+
 
 def encode_with(args, encoder=None):
-    return identity if encoder is None else  encode_target(encoder, match_params=get_match_params(args))    
+    return identity if encoder is None else  encode_target(encoder)    
 
 
 def transform_training(args, encoder=None):
@@ -323,9 +280,7 @@ def transform_training(args, encoder=None):
     else:
         assert false, "unknown augmentation method " + args.augment
 
-    min_visible = 0 if args.overlap_attenuation else args.min_visible
-
-    filter = filter_boxes(min_visible=min_visible, crop_boxes=args.crop_boxes)
+    filter = filter_boxes(min_visible=args.min_visible)
     flip   = random_flips(horizontal=args.flips, vertical=args.vertical_flips, transposes=args.transposes)
     
     

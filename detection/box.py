@@ -65,7 +65,7 @@ def filter_invalid(target):
 
 def filter_hidden(target, lower, upper, min_visible=0.0):
     bounds = torch.Tensor([[*lower, *upper]])
-    overlaps = (intersect(bounds, target.bbox) / area(target.bbox)).squeeze(0)
+    overlaps = (intersect_matrix(bounds, target.bbox) / area(target.bbox)).squeeze(0)
     return target._index_select(overlaps.gt(min_visible).nonzero().squeeze(1))
 
 
@@ -120,7 +120,7 @@ def union_matrix(box_a, box_b):
         intersection: (tensor) Shape: [n, m]
         union: (tensor) Shape: [n, m]
     """
-    inter = intersect(box_a, box_b)
+    inter = intersect_matrix(box_a, box_b)
     area_a = ((box_a[:, 2]-box_a[:, 0]) *
               (box_a[:, 3]-box_a[:, 1])).unsqueeze(1).expand_as(inter)  # [n,m]
     area_b = ((box_b[:, 2]-box_b[:, 0]) *

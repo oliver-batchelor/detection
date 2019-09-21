@@ -1,6 +1,6 @@
 
 
-def ct_focal_loss(pred, gt, gamma=2.0):
+def focal_loss(heatmap, prediction, gamma=2.0):
     """
     Focal loss used in CornerNet & CenterNet. Note that the values in gt (label) are in [0, 1] since
     gaussian is used to reduce the punishment and we treat [0, 1) as neg example.
@@ -10,12 +10,13 @@ def ct_focal_loss(pred, gt, gamma=2.0):
         gamma: gamma in focal loss.
     Returns:
     """
-    pos_inds = gt.eq(1).float()
-    neg_inds = gt.lt(1).float()
 
-    neg_weights = torch.pow(1 - gt, 4)  # reduce punishment
-    pos_loss = -torch.log(pred) * torch.pow(1 - pred, gamma) * pos_inds
-    neg_loss = -torch.log(1 - pred) * torch.pow(pred, gamma) * neg_weights * neg_inds
+    neg_weights = (1 - heatmap).pow(4)  # reduce punishment
+
+    pos_loss = -prediction.log() * (1 - pred).pow(gamma)
+    neg_loss = -torch.log(1 - pred) * torch.pow(pred, gamma) * neg_weights
+
+    all_loss = torch.where(target == 1, pos_loss, neg_loss)
 
     num_pos = pos_inds.float().sum()
     pos_loss = pos_loss.sum()

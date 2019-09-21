@@ -20,7 +20,6 @@ from tools import struct, table, show_shapes, sum_list, cat_tables, Struct
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
 
-from detection.loss import batch_focal_loss
 
 
 def init_weights(m):
