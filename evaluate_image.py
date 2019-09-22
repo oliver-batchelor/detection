@@ -30,6 +30,7 @@ pprint_struct(model_args)
 classes = model_args.dataset.classes
 
 model.to(device)
+encoder.to(device)
 
 frame = cv.imread_color(args.input)
 

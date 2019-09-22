@@ -45,6 +45,7 @@ print(model_args)
 classes = model_args.dataset.classes
 
 model.to(device)
+encoder.to(device)
 frames, info  = cv.video_capture(args.input)
 
 print(info)

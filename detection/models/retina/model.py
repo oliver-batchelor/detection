@@ -12,7 +12,7 @@ import models.pretrained as pretrained
 from detection import box
 
 from models.feature_pyramid import feature_pyramid, output, shared_output, init_classifier, join_output
-from tools import struct, table, show_shapes, sum_list, cat_tables
+from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
@@ -22,63 +22,81 @@ from . import anchor, loss
 
 
 def image_size(inputs):
-
     if torch.is_tensor(inputs):
-        assert(inputs.dim() == 3)
-        inputs = inputs.size(1), inputs.size(0)
+        assert inputs.dim() in [3, 4]
+
+        if inputs.dim() == 3:
+            return inputs.size(1), inputs.size(0)
+        else:
+            return inputs.size(2), inputs.size(1)
+        
 
     assert (len(inputs) == 2)
     return inputs
 
 
 class Encoder:
-    def __init__(self, start_layer, box_sizes, class_weights, match_params):
+    def __init__(self, start_layer, box_sizes, class_weights, params, device = torch.device('cpu')):
         self.anchor_cache = {}
 
         self.box_sizes = box_sizes
         self.start_layer = start_layer
 
         self.class_weights=class_weights
-        self.match_params = match_params
+        self.params = params
+        self.device = device
 
+    def to(self, device):
+        self.device = device
+        self.anchor_cache = {k: anchors.to(device) 
+            for k, anchors in self.anchor_cache.items()}
 
-    def anchors(self, input_size, crop_boxes=False):
+    def anchors(self, input_size):
         def layer_size(i):
             stride = 2 ** i
             return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
-        input_args = (input_size, crop_boxes)
+        input_args = (input_size, self.params.crop_boxes)
 
         if not (input_args in self.anchor_cache):
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
+            anchors = anchor.make_anchors(self.box_sizes, layer_dims, device=self.device)
+            if self.params.crop_boxes:
+                anchors = anchor.crop_anchors(anchors, input_size)
 
-            self.anchor_cache[input_args] = anchor.make_anchors(self.box_sizes, layer_dims, input_size, crop_boxes=self.match_params.crop_boxes)
+            self.anchor_cache[input_args] = anchors
 
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
-        inputs = image_size(inputs)
-        return anchor.encode(target, self.anchors(inputs, self.match_params.crop_boxes), match_params=self.match_params)
-
+        # inputs = image_size(inputs)
+        # return anchor.encode(target, self.anchors(inputs), self.params)
+        return struct()
 
     def decode(self, inputs, prediction):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
-        inputs = image_size(inputs)
-        anchor_boxes = self.anchors(inputs).type_as(prediction.location)
+        anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
 
         bbox = anchor.decode(prediction.location, anchor_boxes)
         confidence, label = prediction.classification.max(1)
 
-        if self.match_params.crop_boxes:
+        if self.params.crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
         return table(bbox = bbox, confidence = confidence, label = label)
 
        
-    def loss(self, encoding, prediction, device):
-       target = encoding._map(Tensor.to, device)
-       return loss.focal_loss(target, prediction,  class_weights=self.class_weights)
+    def loss(self, inputs, target, encoding, prediction):
+        anchor_boxes = self.anchors(image_size(inputs))
+        target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
+
+        # print(show_shapes(target), show_shapes(prediction))      
+
+        class_loss = loss.focal_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+        loc_loss = loss.location_loss_l1(target.location, prediction.location, target.classification)
+
+        return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
@@ -134,14 +152,15 @@ parameters = struct(
     shared    = param (False, help = "share weights between network heads at different levels"),
     square    = param (False, help = "restrict box outputs (and anchors) to square"),
 
-    separate =  param (False, help = "separate box location prediction for each class"),
-
-    match = group('match thresholds',
+    params = group('parameters',
         pos_match = param (0.5, help = "lower iou threshold matching positive anchor boxes in training"),
         neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training"),
 
         crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
         top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
+
+        location_loss =  param ("l1", help = "location loss function (giou | l1)"),
+        balance = param(4, help = "loss = class_loss / balance + location loss")
     )   
   )
 
@@ -196,14 +215,16 @@ def create(args, dataset_args):
         num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
 
 
-    match_params = struct(
+    params = struct(
         crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), 
-        match_nearest = args.top_anchors,
+        top_anchors = args.top_anchors,
+        location_loss =  args.location_loss,
+        balance = args.balance
     )
 
     class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
-    encoder = Encoder(args.first, box_sizes, class_weights=class_weights, match_params=match_params)
+    encoder = Encoder(args.first, box_sizes, class_weights=class_weights, params=params)
 
     return model, encoder
     

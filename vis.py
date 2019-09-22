@@ -80,6 +80,7 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
 
     with torch.no_grad():
         model.to(device)
+        encoder.to(device)
 
         raw_prediction = evaluate.evaluate_raw(model, data.image, device=device)
         decoded = encoder.decode(data.image, raw_prediction, crop_boxes=args.crop_boxes)

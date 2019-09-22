@@ -6,31 +6,28 @@ from tools import struct, Table, show_shapes
 from detection import box
 
 
-def make_boxes(box_sizes, box_dim, image_dim):
+def make_boxes(box_sizes, box_dim, device=torch.device('cpu')):
     stride, w, h = box_dim
     n = len(box_sizes)
 
     sx, sy = stride, stride
-    #sx, sy = image_dim[0] / w, image_dim[1] / h
 
-    xs = torch.arange(0, w, dtype=torch.float).add_(0.5).mul_(sx).view(1, w, 1, 1).expand(h, w, n, 1)
-    ys = torch.arange(0, h, dtype=torch.float).add_(0.5).mul_(sy).view(h, 1, 1, 1).expand(h, w, n, 1)
+    xs = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(sx).view(1, w, 1, 1).expand(h, w, n, 1)
+    ys = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(sy).view(h, 1, 1, 1).expand(h, w, n, 1)
 
-
-    box_sizes = torch.FloatTensor(box_sizes).view(1, 1, n, 2).expand(h, w, n, 2)
+    box_sizes = torch.tensor(box_sizes, device=device, dtype=torch.float).view(1, 1, n, 2).expand(h, w, n, 2)
     boxes = torch.cat([xs, ys, box_sizes], 3).view(-1, 4)
 
     return boxes
 
 
-def make_anchors(box_sizes, layer_dims, image_dim, crop_boxes=True):
-    boxes = [make_boxes(boxes, box_dim, image_dim) for boxes, box_dim in zip(box_sizes, layer_dims)]
-    boxes = torch.cat(boxes, 0)
+def crop_anchors(boxes, image_dim):
+    return box.extents_form(clamp(box.point_form(boxes), (0, 0), image_dim))    
 
-    if crop_boxes:
-        return box.extents_form(clamp(box.point_form(boxes), (0, 0), image_dim))
+def make_anchors(box_sizes, layer_dims, device=torch.device('cpu')):
+    boxes = [make_boxes(boxes, box_dim, device) for boxes, box_dim in zip(box_sizes, layer_dims)]
+    return torch.cat(boxes, 0)
 
-    return boxes
 
 def anchor_sizes(size, aspects, scales):
     def anchor(s, ar):
@@ -40,22 +37,18 @@ def anchor_sizes(size, aspects, scales):
 
 
 def encode(target, anchor_boxes, match_params):
-    return encode_thresholds(target, anchor_boxes, match_params)
-
-
-
-def encode_thresholds(target, anchor_boxes, match_params):
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
     if m == 0: return struct (
-        location        = torch.FloatTensor(n, 4).fill_(0), 
-        classification  = torch.LongTensor(n).fill_(0))
+        location        = target.bbox.new_zeros(n, 4), 
+        classification  = target.bbox.new_zeros(n, dtype=torch.long)
+    )
 
     ious = box.iou_matrix(box.point_form(anchor_boxes), target.bbox)
 
-    if match_params.match_nearest > 0:
-        top_ious, inds = ious.topk(match_params.match_nearest, dim = 0)
+    if match_params.top_anchors > 0:
+        top_ious, inds = ious.topk(match_params.top_anchors, dim = 0)
         ious = ious.scatter(0, inds, top_ious * 2)
 
     max_ious, max_ids = ious.max(1)

@@ -42,26 +42,31 @@ def focal_loss_bce(target, pred, alpha, gamma=2, eps=1e-6):
     return errs
 
 
+def location_loss_l1(target, prediction, class_target):
 
-def focal_loss(target, prediction, class_weights, balance=10, gamma=2, eps=1e-6):
-    batch = target.location.size(0)
-    num_classes = prediction.classification.size(2)
+    neg_mask = (class_target == 0).unsqueeze(2).expand_as(prediction)
+    loss = F.smooth_l1_loss(prediction.view(-1, 4), target.view(-1, 4), reduction='none')\
+        
+    return loss.masked_fill_(neg_mask.view_as(loss), 0).sum()
 
-    class_weights = prediction.classification.new([0.0, *class_weights])
+def location_loss_giou(target, prediction, class_target):
 
-    # print((target.classification > 0).sum(), (target.classification < 0).sum())
+    neg_mask = (class_target == 0).unsqueeze(2).expand_as(prediction)
+    giou = box.giou(prediction.view(-1, 4), target.view(-1, 4))
 
-    pos_mask = (target.classification > 0).unsqueeze(2).expand_as(prediction.location)
-    invalid_mask = (target.classification < 0).unsqueeze(2).expand_as(prediction.classification)
+    return (1 - giou).sum()
+
+
+
+def focal_loss(target, prediction, class_weights,  gamma=2, eps=1e-6):
+    batch, _, num_classes = prediction.shape
+
+    class_weights = prediction.new([0.0, *class_weights])
+    invalid_mask = (target < 0).unsqueeze(2).expand_as(prediction)
     
-    class_loss = focal_loss_label(target.classification.clamp(min = 0).view(-1), 
-        prediction.classification.view(-1, num_classes), class_weights=class_weights, gamma=gamma)
+    loss = focal_loss_label(target.clamp(min = 0).view(-1), 
+        prediction.view(-1, num_classes), class_weights=class_weights, gamma=gamma)\
 
-    loc_loss = F.smooth_l1_loss(prediction.location.view(-1), target.location.view(-1), reduction='none')
-
-    class_loss = class_loss.view_as(prediction.classification).masked_fill_(invalid_mask, 0)
-    loc_loss = loc_loss.view_as(prediction.location).masked_fill_(~pos_mask, 0)
-
-    return struct(classification = class_loss.sum() / balance, location = loc_loss.sum())
+    return loss.masked_fill_(invalid_mask.view_as(loss), 0).sum()
 
 

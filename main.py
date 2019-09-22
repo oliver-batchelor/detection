@@ -603,6 +603,7 @@ def run_trainer(args, conn = None, env = None):
 
         log = EpochLogger(env.log, env.epoch)
         model = env.model.to(env.device)
+        encoder = env.encoder.to(env.device)
 
         log.scalars("dataset", Struct(env.dataset.count_categories()))
 
@@ -696,6 +697,8 @@ def run_trainer(args, conn = None, env = None):
     def detect_all():
         print("detecting...")
         model = env.model.to(env.device)
+        encoder = env.encoder.to(env.device)
+
         detect_images = env.dataset.get_images()
 
         results = run_detections(model, env, detect_images, hook=update('detect'), variation_window=args.variation_window)
