@@ -6,7 +6,7 @@ from tools import struct, Table, show_shapes
 import torch
 
 import math
-import extern._C as extern
+import torchvision.ops as torchvision
 
 
 def split(boxes):
@@ -141,7 +141,7 @@ def iou_matrix(box_a, box_b):
 def union(box_a, box_b):  
     assert box_a.shape == box_b.shape
 
-    inter = intersect_matched(box_a, box_b)
+    inter = intersect(box_a, box_b)
 
     area_a = ((box_a[:, 2]-box_a[:, 0]) *
               (box_a[:, 3]-box_a[:, 1]))
@@ -182,9 +182,15 @@ nms_defaults = struct(
     detections  = 500
 )
 
+def random_points(r, n):
+    lower, upper = r
+    return torch.FloatTensor(n, 2).uniform_(*r)
 
+def random(centre_range, size_range, n):
+    centre = random_points(centre_range, n)
+    extents = random_points(size_range, n) * 0.5
 
-
+    return torch.cat([centre - extents, centre + extents], 1)
 
 def nms(prediction, params, max_box_factor=200):
     # max_boxes is a 'safety' parameter, otherwise nms will can sometimes all the gpu ram
@@ -192,14 +198,22 @@ def nms(prediction, params, max_box_factor=200):
     inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
     prediction = prediction._index_select(inds)._extend(index = inds)
 
-    prediction = prediction._sort_on('confidence', descending=True)
-    prediction = prediction._take(max_box_factor * params.detections)
+    # prediction = prediction._sort_on('confidence', descending=True)
+    # prediction = prediction._take(max_box_factor * params.detections)
 
-    inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)
+    #inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)\
+    inds = torchvision.nms(prediction.bbox, prediction.confidence, params.nms)
     
     return prediction._index_select(inds)._take(params.detections)
 
 
 
     
+
+if __name__ == "__main__":
+
+    boxes1 = random((0, 10), (50, 100), 10)
+    boxes2 = random((0, 10), (50, 100), 10)
+    
+    print(iou(boxes1, boxes2), giou(boxes1, boxes2))
 

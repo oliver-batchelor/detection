@@ -36,7 +36,7 @@ def anchor_sizes(size, aspects, scales):
     return [anchor(size * scale, ar) for scale in scales for ar in aspects]
 
 
-def encode(target, anchor_boxes, match_params):
+def encode(target, anchor_boxes, params):
     n = anchor_boxes.size(0)
     m = target.bbox.size(0)
 
@@ -47,19 +47,22 @@ def encode(target, anchor_boxes, match_params):
 
     ious = box.iou_matrix(box.point_form(anchor_boxes), target.bbox)
 
-    if match_params.top_anchors > 0:
-        top_ious, inds = ious.topk(match_params.top_anchors, dim = 0)
+    if params.top_anchors > 0:
+        top_ious, inds = ious.topk(params.top_anchors, dim = 0)
         ious = ious.scatter(0, inds, top_ious * 2)
 
     max_ious, max_ids = ious.max(1)
 
     class_target = encode_classes(target.label, max_ious, max_ids, 
-        match_thresholds=match_params.match_thresholds)
+        match_thresholds=params.match_thresholds)
 
-    return struct (
-        location  = encode_boxes(target.bbox[max_ids], anchor_boxes),
-        classification = class_target
-    )
+
+    location = target.bbox[max_ids]
+    if params.location_loss == "l1":
+        location = encode_boxes(location, anchor_boxes) 
+
+    
+    return struct (location  = location, classification = class_target)
 
 
 def encode_classes(label, max_ious, max_ids, match_thresholds=(0.4, 0.5)):
@@ -98,6 +101,7 @@ def decode(prediction, anchor_boxes):
       boxes: (tensor) detected boxes in point form, sized [k, 4].
       label: (tensor) detected class label [k].
     '''
+    assert prediction.shape == anchor_boxes.shape
 
     loc_pos, loc_size = box.split(prediction)
     anchor_pos, anchor_size = box.split(anchor_boxes)
@@ -105,8 +109,7 @@ def decode(prediction, anchor_boxes):
     pos = loc_pos * anchor_size + anchor_pos
     sizes = loc_size.exp() * anchor_size
     
-
-    return box.point_form(torch.cat([pos, sizes], 1))
+    return box.point_form(torch.cat([pos, sizes], pos.dim() - 1))
 
 
 

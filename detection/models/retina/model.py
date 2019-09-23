@@ -69,14 +69,12 @@ class Encoder:
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
-        # inputs = image_size(inputs)
-        # return anchor.encode(target, self.anchors(inputs), self.params)
         return struct()
 
     def decode(self, inputs, prediction):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
-        anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
+        anchor_boxes = self.anchors(image_size(inputs))
 
         bbox = anchor.decode(prediction.location, anchor_boxes)
         confidence, label = prediction.classification.max(1)
@@ -91,10 +89,14 @@ class Encoder:
         anchor_boxes = self.anchors(image_size(inputs))
         target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
 
-        # print(show_shapes(target), show_shapes(prediction))      
-
         class_loss = loss.focal_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
-        loc_loss = loss.location_loss_l1(target.location, prediction.location, target.classification)
+        loc_loss = 0
+
+        if self.params.location_loss == "l1":
+            loc_loss = loss.l1(target.location, prediction.location, target.classification) 
+        elif self.params.location_loss == "giou":
+            bbox = anchor.decode(prediction.location, anchor_boxes.unsqueeze(0).expand(prediction.location.size()))
+            loc_loss = loss.giou(target.location, bbox, target.classification)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
@@ -157,10 +159,10 @@ parameters = struct(
         neg_match = param (0.4,  help = "upper iou threshold matching negative anchor boxes in training"),
 
         crop_boxes      = param(False, help='crop boxes to the edge of the image patch in training'),
-        top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap'),
+        top_anchors     = param(1,     help='select n top anchors for ground truth regardless of iou overlap (0 disabled)'),
 
         location_loss =  param ("l1", help = "location loss function (giou | l1)"),
-        balance = param(4, help = "loss = class_loss / balance + location loss")
+        balance = param(4., help = "loss = class_loss / balance + location loss")
     )   
   )
 
@@ -214,7 +216,7 @@ def create(args, dataset_args):
     model = RetinaNet(backbone_name=args.backbone, layer_range=(args.first, args.last), num_boxes=num_boxes, \
         num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
 
-
+    assert args.location_loss in ["l1", "giou"]
     params = struct(
         crop_boxes=args.crop_boxes, 
         match_thresholds=(args.neg_match, args.pos_match), 

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from tools import tensor, struct, show_shapes
-
+from detection import box
 
 # makes a one_hot vector from class labels
 def one_hot(label, num_classes):
@@ -42,20 +42,27 @@ def focal_loss_bce(target, pred, alpha, gamma=2, eps=1e-6):
     return errs
 
 
-def location_loss_l1(target, prediction, class_target):
+def l1(target, prediction, class_target):
 
+    loss = F.smooth_l1_loss(prediction.view(-1, 4), target.view(-1, 4), reduction='none')
+       
     neg_mask = (class_target == 0).unsqueeze(2).expand_as(prediction)
-    loss = F.smooth_l1_loss(prediction.view(-1, 4), target.view(-1, 4), reduction='none')\
-        
-    return loss.masked_fill_(neg_mask.view_as(loss), 0).sum()
+    return loss.masked_fill_(neg_mask.view_as(loss), 0).sum()  
 
-def location_loss_giou(target, prediction, class_target):
+def giou(target, prediction, class_target):
 
-    neg_mask = (class_target == 0).unsqueeze(2).expand_as(prediction)
     giou = box.giou(prediction.view(-1, 4), target.view(-1, 4))
+    neg_mask = (class_target == 0).view_as(giou)
 
-    return (1 - giou).sum()
+    # Constant 0.05 is to make the magnitude roughly equivalent with l1 loss
+    return 0.05 * (1 - giou).masked_fill_(neg_mask, 0).sum() 
 
+def iou(target, prediction, class_target):
+
+    iou = box.iou(prediction.view(-1, 4), target.view(-1, 4))
+    neg_mask = (class_target == 0).view_as(iou)
+
+    return 0.05 * (1 - iou).masked_fill_(neg_mask, 0).sum() 
 
 
 def focal_loss(target, prediction, class_weights,  gamma=2, eps=1e-6):
