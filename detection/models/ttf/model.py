@@ -11,61 +11,74 @@ import torchvision.models as m
 import models.pretrained as pretrained
 from detection import box
 
-from models.feature_pyramid import feature_pyramid, output, shared_output, init_classifier, join_output
-from tools import struct, table, show_shapes, sum_list, cat_tables
+from tools.image.transforms import normalize_batch
+from models.common import Named, Parallel, image_size
 
-from tools.parameters import param, choice, parse_args, parse_choice, make_parser
+from models.feature_pyramid import feature_map, init_weights, init_classifier, \
+    join_output, residual_subnet, pyramid_parameters
+
+from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables
+
+from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
 
+from . import encoding, loss
 
 
 
-def image_size(inputs):
 
-    if torch.is_tensor(inputs):
-        assert(inputs.dim() == 3)
-        inputs = inputs.size(1), inputs.size(0)
+def make_centres(w, h, stride, device):               
+    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
+    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
 
-    assert (len(inputs) == 2)
-    return inputs
+    return torch.stack(torch.meshgrid(x, y), dim=2)
+
+def expand_centres(centres, stride, input_size, device):
+    w, h = max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride))
+
+    ch, cw, _ = centres.shape
+    if ch < h or cw < w:
+        return make_centres(max(w, cw), max(h, ch), stride, device=device)
+    else:
+        return centres
 
 
 class Encoder:
-    def __init__(self, layer, class_weights):
+    def __init__(self, layer, class_weights, params, device = torch.device('cpu')):
+        self.centre_map = torch.FloatTensor(0, 0, 2).to(device)
 
-        self.box_sizes = box_sizes
         self.layer = layer
-        self.class_weights=class_weights
+        self.stride =  stride = 2 ** layer
+        self.class_weights = class_weights
 
-    def layer_size(input_size, i):
-        stride = 2 ** i
-        return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
+        self.params = params
+        self.device = device
+
+    def to(self, device):
+        self.device = device
+        self.centre_map = centre_map.to(device)
+
+    def centres(self, input_size):
+        self.centre_map = expand_centres(self.centre_map, self.stride, input_size, device=self.device)
+        return self.centre_map[:input_size[0], :input_size[1]]
 
     def encode(self, inputs, target):
-        feature_size = layer_size(image_size(inputs), self.layer)
-        
-        return heatmap.encode(target, feature_size, channels=len(self.class_weights))
+        return struct()
 
-
-    def decode(self, inputs, prediction, crop_boxes=False):
+    def decode(self, inputs, prediction):
         assert False
-        # assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
-
-        # inputs = image_size(inputs)
-        # anchor_boxes = self.anchors(inputs).type_as(prediction.location)
-
-        # bbox = box.decode(prediction.location, anchor_boxes)
-        # confidence, label = prediction.classification.max(1)
-
-        # if crop_boxes:
-        #     box.clamp(bbox, (0, 0), inputs)
-
-        # return table(bbox = bbox, confidence = confidence, label = label)
-
        
-    def loss(self, encoding, prediction, device):
-       target = encoding._map(Tensor.to, device)
-       return batch_keypoint_loss(target, prediction,  class_weights=self.class_weights)
+    def loss(self, inputs, target, enc, prediction):
+        centres = self.centres(image_size(inputs))
+        batch, num_classes, _, _ = prediction.classification.shape
+
+        target = stack_tables([encoding.encode_target(t, centres.shape, num_classes, self.params) for t in target])
+        class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+
+        # bbox = decode(prediction.location, centres.unsqueeze(0).expand(prediction.location.size()))
+        # loc_loss = loss.giou(target.location, bbox, target.classification)
+
+        return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
 
     def nms(self, prediction, nms_params=box.nms_defaults):
@@ -73,109 +86,54 @@ class Encoder:
     
 
 
+class TTFNet(nn.Module):
 
-
-def check_equal(*elems):
-    first, *rest = elems
-    return all(first == elem for elem in rest)
-
-
-class RetinaNet(nn.Module):
-
-    def __init__(self, backbone_name, layer_range, features=32, num_boxes=9, num_classes=2, shared=False, square=False):
+    def __init__(self, backbone_name, first, depth, features=32, num_classes=2):
         super().__init__()
-       
+
         self.num_classes = num_classes
-        self.square = square
 
-        classifier = shared_output if shared else output
-
-        outputs = struct(
-            location = output(4 * num_boxes), 
-            classification =  classifier(num_classes * num_boxes, init=init_classifier)
+        self.outputs = Named(
+            location=residual_subnet(features, 4),
+            classification=residual_subnet(features, num_classes)
         )
 
-        self.pyramid = feature_pyramid(outputs=outputs, backbone_name=backbone_name, \
-         features=features, layer_range=layer_range)
-       
+        self.outputs.classification.apply(init_classifier)
+        self.outputs.location.apply(init_weights)
+
+        self.pyramid = feature_map(backbone_name=backbone_name, features=features, first=first, depth=depth)     
 
     def forward(self, input):
-        output = self.pyramid(input)
+        features = self.pyramid(input)
+        return self.outputs(features)
 
-        return struct(
-            classification = torch.sigmoid(join_output(output.classification , self.num_classes)),
-            location = join_output(output.location, 4)
-        )
-
-        
-
-base_options = '|'.join(pretrained.models.keys())
 
 parameters = struct(
-    backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
-    features  = param (64, help = "fixed size features in new conv layers"),
-    first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
-    last      = param (7, help = "last layer of anchor boxes"),
-
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
+    
+    params = group('parameters',
+        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
+        balance = param(4., help = "loss = class_loss / balance + location loss")
+    ),
 
-    shared    = param (False, help = "share weights between network heads at different levels"),
-    square    = param (False, help = "restrict box outputs (and anchors) to square"),
-
-    separate =  param (False, help = "separate box location prediction for each class")
+    pyramid = group('pyramid_parameters', **pyramid_parameters)
   )
-
-def extra_layer(inp, features):
-    layer = nn.Sequential(
-        *([Conv(inp, features, 1)] if inp != features else []),
-        Residual(basic_block(features, features)),
-        Residual(basic_block(features, features)),
-        Conv(features, features, stride=2)
-    )
-
-    layer.apply(init_weights)
-    return layer
-
-
-def split_at(xs, n):
-    return xs[:n], xs[n:]
-
-
-def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
-
-    aspects = [1/2, 1, 2]
-    if square:
-        aspects = [1]
-    elif tall:
-        aspects = [1/8, 1/4, 1/2]
-
-    scales = [1, pow(2, 1/3), pow(2, 2/3)]
-
-    return len(aspects) * len(scales), [box.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
-
-
-def extend_layers(layers, size, features=32):
-
-    layer_sizes = pretrained.layer_sizes(layers)
-
-    features_in = layer_sizes[-1]
-    num_extra = max(0, size - len(layers))
-
-    layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
-    return layers[:size]
 
 
 
 def create(args, dataset_args):
     num_classes = len(dataset_args.classes)
 
-    num_boxes, box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
+    model = TTFNet(backbone_name=args.backbone, first=args.first, depth=args.depth,
+        num_classes=num_classes, features=args.features)
 
-    model = RetinaNet(backbone_name=args.backbone, layer_range=(args.first, args.last), num_boxes=num_boxes, \
-        num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
+    params = struct(
+        alpha=args.alpha, 
+        balance = args.balance
+    )
 
     class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
-    encoder = Encoder(args.first, box_sizes, class_weights=class_weights)
+    encoder = Encoder(args.first, class_weights=class_weights, params=params)
 
     return model, encoder
     
@@ -196,7 +154,10 @@ if __name__ == '__main__':
 
     model, encoder = model.create(model_args, struct(classes = classes, input_channels = 3))
 
-    x = torch.FloatTensor(4, 3, 370, 500)
-    out = model.cuda()(x.cuda())
+    x = torch.FloatTensor(4, 370, 500, 3)
+    out = model.cuda()(normalize_batch(x).cuda())
+
+    target = encoding.random_target(classes=len(classes))
+    encoder.loss(x, target, struct(), out)
 
     print(show_shapes(out))

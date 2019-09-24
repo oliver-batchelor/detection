@@ -65,7 +65,7 @@ def iou(target, prediction, class_target):
     return 0.05 * (1 - iou).masked_fill_(neg_mask, 0).sum() 
 
 
-def focal_loss(target, prediction, class_weights,  gamma=2, eps=1e-6):
+def class_loss(target, prediction, class_weights,  gamma=2, eps=1e-6):
     batch, _, num_classes = prediction.shape
 
     class_weights = prediction.new([0.0, *class_weights])

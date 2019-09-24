@@ -13,7 +13,6 @@ import torchvision.models as model_zoo
 # from pretrainedmodels.models import senet
 # import pretrainedmodels
 
-from models.cifar.wrn import WideResNet
 from models.mobilenetv2 import MobileNetV2, InvertedResidual
 
 import models.common as c
@@ -54,21 +53,6 @@ def create_mobilenet(filename):
 
     return f
 
-def create_wrn(filename, depth, num_classes=100, widen_factor=1):
-    def f ():
-        model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor)
-        model = nn.DataParallel(model).cpu()
-
-        model_path = path.join('weights', filename)
-        progress = torch.load(model_path)
-
-        model.load_state_dict(progress['state_dict'])
-        model = model.module
-
-        layer0 = nn.Sequential(model.conv1, model.block1)
-        return [layer0, model.block2, model.block3]
-    return f
-
 
 def create_imagenet(name):
     def f():
@@ -94,10 +78,6 @@ models = {
     'resnet50':create_imagenet('resnet50'),
     'vgg11':create_imagenet('vgg11_bn'),
     'vgg13':create_imagenet('vgg13_bn'),
-    # 'se_resnet50':create_imagenet('se_resnet50'),
-    # 'se_resnext50':create_imagenet('se_resnext50_32x4d'),
-    'wrn22-6': create_wrn('WRN-22-6.pth', depth=22, num_classes=100, widen_factor=6),
-    'wrn28-10': create_wrn('WRN-28-10.pth', depth=28, num_classes=100, widen_factor=10),
     'mobilenet_v2':create_mobilenet('mobilenet_v2.pth')
 }
 

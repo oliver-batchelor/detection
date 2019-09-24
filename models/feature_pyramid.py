@@ -11,7 +11,7 @@ import torchvision.models as m
 import models.pretrained as pretrained
 from detection import box
 
-from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared,  \
+from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, Lookup,  \
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
@@ -35,7 +35,7 @@ def init_classifier(m, prior=0.001):
             init.constant_(m.bias, b)
 
 
-def default_decoder(features):
+def residual_decoder(features):
         decoder = nn.Sequential (
             Residual(basic_block(features, features)),
             Residual(basic_block(features, features))
@@ -43,7 +43,7 @@ def default_decoder(features):
         # decoder = identity
         return Decode(features, module=decoder)
 
-def default_subnet(features, n):
+def residual_subnet(features, n):
     return nn.Sequential(
         Residual(basic_block(features, features)),
         Residual(basic_block(features, features)),
@@ -58,49 +58,23 @@ def join_output(layers, n):
     return torch.cat(list(map(permute, layers)), 1)    
 
 
-def output(n_outputs, init=init_weights):
-    def f(names, features):
-        modules = [(k, default_subnet(features, n_outputs)) for k in names]
-        for k, m in modules:
-            m.apply(init)
-    
-        return Parallel(OrderedDict(modules))
-    return f
-
-
-def shared_output(n_outputs, init=init_weights):
-    def f(names, features):
-        module = default_subnet(features, n_outputs)
-        module.apply(init)
-        return Shared(module)
-    return f    
-
-
 class FeaturePyramid(nn.Module):
     """ 
-        backbone: The backbone network split into a list of layers acting at one resolution level (downsampling + processing layers)
-        layers:   The range of output layers required.
+        backbone_layers: The backbone network split into a list of layers acting at one resolution level (downsampling + processing layers)
+        first:    Highest level resolution
         features: Number of features in the outputs and decoder side of the network
-
-     outputs: A struct of functions to construct outputs given an input feature size and list of layers
-            e.g. struct(classes=outputs(2, init=init_classifier), boxes=shared_outputs(4))
     """
-
-    def __init__(self, outputs, backbone_layers, layer_range=(3, 7), features=32, make_decoder=default_decoder):
+    def __init__(self, backbone_layers, first=3, features=32, make_decoder=residual_decoder):
         super().__init__()
-       
-        assert layer_range[0] <= layer_range[1]
 
-        def layer_names(r):
-            return ["layer" + str(i) for i in range(r[0], r[1] + 1)]
+        backbone_names = list(backbone_layers.keys())
+        self.backbone = Cascade(backbone_layers, drop_initial = first)
 
-        def named(modules, r = layer_range):
-            names = layer_names(r)
+        self.names = backbone_names[first:]
+        def named(modules):
+            assert len(modules) == len(self.names)
+            return OrderedDict(zip(self.names, modules))
 
-            assert len(modules) == len(names)
-            return OrderedDict(zip(names, modules))
-
-        self.backbone = Cascade(named(backbone_layers, (0, layer_range[1])), drop_initial = layer_range[0])
 
         def make_reducer(size):
             return Conv(size, features, 1)
@@ -109,25 +83,20 @@ class FeaturePyramid(nn.Module):
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
         self.decoder = UpCascade(named([make_decoder(features) for i in encoded_sizes]))
 
-        self.outputs = nn.ModuleDict( {k :f(layer_names(layer_range), features) for k, f in outputs.items()} )
-
         for m in [self.reduce, self.decoder]:
             m.apply(init_weights)
 
     def forward(self, input):
         layers = self.backbone(input)
-        layers = self.decoder(self.reduce(layers))
-
-        output_dict = {k : output(layers) for k, output in self.outputs.items()}
-        return Struct(output_dict)
+        return self.decoder(self.reduce(layers))
 
 base_options = '|'.join(pretrained.models.keys())
 
-parameters = struct(
+pyramid_parameters = struct(
     backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
     features  = param (64, help = "fixed size features in new conv layers"),
-    first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
-    last      = param (7, help = "last layer of anchor boxes"),
+    first     = param (3, help = "first layer of feature maps, scale = 1 / 2^first"),
+    depth      = param (8, help = "depth in scale levels"),
   )
 
 def extra_layer(inp, features):
@@ -142,11 +111,6 @@ def extra_layer(inp, features):
     return layer
 
 
-def split_at(xs, n):
-    return xs[:n], xs[n:]
-
-
-
 def extend_layers(layers, size, features=32):
     layer_sizes = pretrained.layer_sizes(layers)
 
@@ -157,23 +121,29 @@ def extend_layers(layers, size, features=32):
     return layers[:size]
 
 
-def feature_pyramid(outputs, backbone_name, layer_range=(3, 7), features=32):
+def label_layers(layers):
+    layers = [(str(i), layer) for i, layer in enumerate(layers)]
+    return OrderedDict(layers)
 
-    assert layer_range[0] <= layer_range[1]
+def feature_pyramid(backbone_name, first=3, depth=8, features=64):
+
+    assert first < depth
     assert backbone_name in pretrained.models, "base model not found: " + backbone_name + ", options: " + base_options
 
     base_layers = pretrained.models[backbone_name]()
-    backbone_layers = extend_layers(base_layers, layer_range[1] + 1, features = features*2)
+    backbone_layers = label_layers(extend_layers(base_layers, depth, features = features*2))
+    
+    return FeaturePyramid(backbone_layers, first=first, features=features)
 
-    return FeaturePyramid(outputs, backbone_layers, layer_range=layer_range, features=features)
-
+def feature_map(backbone_name, **options):
+    pyramid = feature_pyramid(backbone_name, **options)
+    return nn.Sequential(pyramid, Lookup(0))
 
 if __name__ == '__main__':
 
     _, *cmd_args = sys.argv
 
-    outputs = struct(classes=output(2), boxes=shared_output(4))
-    model = feature_pyramid(outputs, 'resnet18')
+    model = feature_pyramid('resnet18')
 
     x = torch.FloatTensor(4, 3, 500, 500)
     out = model.cuda()(x.cuda())

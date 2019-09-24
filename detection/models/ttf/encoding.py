@@ -39,21 +39,17 @@ def truncate_gaussian(heatmap, center, w_radius, h_radius, k=1):
     return heatmap
    
 
-default_match_params = struct(
-    alpha = 0.54
-)
-
 
 def layer_size(input_size, i):
     stride = 2 ** i
     return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
-def encode_layer(target, input_size, layer,  num_classes, match_params=default_match_params):
+def encode_layer(target, input_size, layer,  num_classes, params):
     stride, heatmap_size = layer_size(input_size, layer)
     return encode_target(target._extend(bbox = target.bbox * (1. / stride)), heatmap_size, num_classes)
 
 
-def encode_target(target, heatmap_size, num_classes, match_params=default_match_params):
+def encode_target(target, heatmap_size, num_classes, params):
 
     m = target.bbox.size(0)
     w, h = heatmap_size
@@ -103,15 +99,18 @@ def random_boxes(centre_range, size_range, n):
 
 
 
+def random_target(centre_range=(0, 600), size_range=(50, 200), classes=3, n=20):
+    return struct (
+        bbox = random_boxes(centre_range, size_range, n),
+        classification = torch.LongTensor(n).random_(0, classes)
+    )
+
+
 if __name__ == "__main__":
     from tools.image import cv
 
     size = 600
-
-    target = struct (
-        bbox = random_boxes((0, size), (50, 200), 20),
-        classification = torch.LongTensor(20).random_(0, 3)
-    )
+    target = random_target(centre_range=(0, size))
 
     encoded = encode_target(target, (size, size), 3)
     h = encoded.heatmap.permute(1, 2, 0).contiguous()

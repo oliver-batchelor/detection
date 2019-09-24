@@ -11,28 +11,15 @@ import torchvision.models as m
 import models.pretrained as pretrained
 from detection import box
 
-from models.feature_pyramid import feature_pyramid, output, shared_output, init_classifier, join_output
+from models.common import Named, Parallel, image_size
+
+from models.feature_pyramid import feature_pyramid, init_weights, init_classifier, join_output, residual_subnet, pyramid_parameters
 from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
 
 from . import anchor, loss
-
-
-
-def image_size(inputs):
-    if torch.is_tensor(inputs):
-        assert inputs.dim() in [3, 4]
-
-        if inputs.dim() == 3:
-            return inputs.size(1), inputs.size(0)
-        else:
-            return inputs.size(2), inputs.size(1)
-        
-
-    assert (len(inputs) == 2)
-    return inputs
 
 
 class Encoder:
@@ -86,10 +73,11 @@ class Encoder:
 
        
     def loss(self, inputs, target, encoding, prediction):
+
         anchor_boxes = self.anchors(image_size(inputs))
         target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
 
-        class_loss = loss.focal_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+        class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
         loc_loss = 0
 
         if self.params.location_loss == "l1":
@@ -112,27 +100,35 @@ def check_equal(*elems):
     return all(first == elem for elem in rest)
 
 
+def output(features, n, layers, init=init_weights):
+    modules = [(str(i), residual_subnet(features, n)) for i in layers]
+    for k, module in modules:
+        module.apply(init)
+
+    return Parallel(OrderedDict(modules))
+
+
 class RetinaNet(nn.Module):
 
-    def __init__(self, backbone_name, layer_range, features=32, num_boxes=9, num_classes=2, shared=False, square=False):
+    def __init__(self, backbone_name, first, depth, features=32, num_boxes=9, num_classes=2, shared=False):
         super().__init__()
+
+        def named(modules):
+            modules = [(str(i + first), module) for i, module in enumerate(modules)]
+            return OrderedDict(modules)
        
         self.num_classes = num_classes
-        self.square = square
 
-        classifier = shared_output if shared else output
-
-        outputs = struct(
-            location = output(4 * num_boxes), 
-            classification =  classifier(num_classes * num_boxes, init=init_classifier)
+        self.outputs = Named(
+            location=output(features, 4 * num_boxes, range(first, depth)),
+            classification=output(features, num_classes * num_boxes, range(first, depth), init=init_classifier)
         )
 
-        self.pyramid = feature_pyramid(outputs=outputs, backbone_name=backbone_name, \
-         features=features, layer_range=layer_range)
-       
+        self.pyramid = feature_pyramid(backbone_name=backbone_name, features=features, first=first, depth=depth)     
 
     def forward(self, input):
-        output = self.pyramid(input)
+        features = self.pyramid(input)
+        output = self.outputs(features)
 
         return struct(
             classification = torch.sigmoid(join_output(output.classification , self.num_classes)),
@@ -142,14 +138,8 @@ class RetinaNet(nn.Module):
 
 
 
-base_options = '|'.join(pretrained.models.keys())
-
 parameters = struct(
-    backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
-    features  = param (64, help = "fixed size features in new conv layers"),
-    first     = param (3, help = "first layer of anchor boxes, anchor size = anchor_scale * 2^n"),
-    last      = param (7, help = "last layer of anchor boxes"),
-
+   
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
     shared    = param (False, help = "share weights between network heads at different levels"),
     square    = param (False, help = "restrict box outputs (and anchors) to square"),
@@ -163,26 +153,14 @@ parameters = struct(
 
         location_loss =  param ("l1", help = "location loss function (giou | l1)"),
         balance = param(4., help = "loss = class_loss / balance + location loss")
-    )   
+    ),
+
+    pyramid = group('pyramid_parameters', **pyramid_parameters)
   )
 
-def extra_layer(inp, features):
-    layer = nn.Sequential(
-        *([Conv(inp, features, 1)] if inp != features else []),
-        Residual(basic_block(features, features)),
-        Residual(basic_block(features, features)),
-        Conv(features, features, stride=2)
-    )
-
-    layer.apply(init_weights)
-    return layer
 
 
-def split_at(xs, n):
-    return xs[:n], xs[n:]
-
-
-def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
+def anchor_sizes(start, depth, anchor_scale=4, square=False, tall=False):
 
     aspects = [1/2, 1, 2]
     if square:
@@ -193,28 +171,17 @@ def anchor_sizes(start, end, anchor_scale=4, square=False, tall=False):
     scales = [1, pow(2, 1/3), pow(2, 2/3)]
 
     return len(aspects) * len(scales), \
-        [anchor.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, end + 1)]
-
-
-def extend_layers(layers, size, features=32):
-
-    layer_sizes = pretrained.layer_sizes(layers)
-
-    features_in = layer_sizes[-1]
-    num_extra = max(0, size - len(layers))
-
-    layers += [extra_layer(features_in if i == 0 else features, features) for i in range(0, num_extra)]
-    return layers[:size]
+        [anchor.anchor_sizes(anchor_scale * (2 ** i), aspects, scales) for i in range(start, depth)]
 
 
 
 def create(args, dataset_args):
     num_classes = len(dataset_args.classes)
 
-    num_boxes, box_sizes = anchor_sizes(args.first, args.last, anchor_scale=args.anchor_scale, square=args.square)
+    num_boxes, box_sizes = anchor_sizes(args.first, args.depth, anchor_scale=args.anchor_scale, square=args.square)
 
-    model = RetinaNet(backbone_name=args.backbone, layer_range=(args.first, args.last), num_boxes=num_boxes, \
-        num_classes=num_classes, features=args.features, shared=args.shared, square=args.square)
+    model = RetinaNet(backbone_name=args.backbone, first=args.first, depth=args.depth, num_boxes=num_boxes, \
+        num_classes=num_classes, features=args.features, shared=args.shared)
 
     assert args.location_loss in ["l1", "giou"]
     params = struct(

@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from functools import partial
 from tools.model import match_size_2d,  centre_crop
 
-
+from tools import Struct, show_shapes
 
 def identity(x, **kwargs):
     return x
@@ -15,7 +15,18 @@ def identity(x, **kwargs):
 def reverse(xs):
     return list(reversed(xs))
 
+def image_size(inputs):
+    if torch.is_tensor(inputs):
+        assert inputs.dim() in [3, 4]
 
+        if inputs.dim() == 3:
+            return inputs.size(1), inputs.size(0)
+        else:
+            return inputs.size(2), inputs.size(1)
+        
+
+    assert (len(inputs) == 2)
+    return inputs
 
 def map_modules(m, type, f):
     if isinstance(m, type):
@@ -75,8 +86,6 @@ class Cascade(nn.Sequential):
         return out[self.drop:]
 
 
-
-
 class UpCascade(nn.Module):
     def __init__(self, *decoders):
         super(UpCascade, self).__init__()
@@ -104,7 +113,21 @@ class Parallel(nn.Module):
 
     def forward(self, inputs):
         assert len(inputs) == len(self.parallel)
+        assert type(inputs) is list, "type of inputs is: " + str(type(inputs))
+        
         return [m(i) for m, i in zip(self.parallel, inputs)]
+
+
+class Named(nn.Module):
+    def __init__(self, **named):
+        super(Named, self).__init__()
+        
+        for k, v in named.items():
+            self.add_module(k, v)
+
+    def forward(self, input):
+        output = {k: module(input) for k, module in self.named_children()}
+        return Struct(output)
 
 
 class Shared(nn.Module):
@@ -135,7 +158,13 @@ class Residual(nn.Sequential):
         return output + input
 
 
+class Lookup(nn.Module):
+    def __init__(self, k):
+        super().__init__() 
+        self.k = k
 
+    def forward(self, inputs):
+        return inputs[self.k]
 
 
 class Conv(nn.Module):
