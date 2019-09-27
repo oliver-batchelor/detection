@@ -1,16 +1,16 @@
 import torch
 
-def class_loss(heatmap, prediction, gamma=2.0):
+def class_loss(target, prediction, class_weights):
     """
     Focal loss variant of BCE as used in CornerNet and CenterNet.
     """
 
     # As per RetinaNet focal loss - if heatmap == 1
-    pos_loss = -prediction.log() * (1 - pred).pow(gamma)
+    pos_loss = -prediction.log() * (1 - prediction).pow(2)
 
     # Negative penalty very small around gaussian near centre
-    neg_weights = (1 - heatmap).pow(4) 
-    neg_loss = -(1 - pred).log() * pred.pow(gamma) * neg_weights
+    neg_weights = (1 - target).pow(4) 
+    neg_loss = -(1 - prediction).log() * prediction.pow(2) * neg_weights
 
     return torch.where(target == 1, pos_loss, neg_loss)
 

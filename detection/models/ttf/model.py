@@ -17,7 +17,7 @@ from models.common import Named, Parallel, image_size
 from models.feature_pyramid import feature_map, init_weights, init_classifier, \
     join_output, residual_subnet, pyramid_parameters
 
-from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables
+from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables, tensors_to
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
@@ -72,8 +72,12 @@ class Encoder:
         centres = self.centres(image_size(inputs))
         batch, num_classes, _, _ = prediction.classification.shape
 
-        target = stack_tables([encoding.encode_target(t, centres.shape, num_classes, self.params) for t in target])
-        class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+        input_size = image_size(inputs)
+
+        targets = [encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) for t in target]
+        target = stack_tables(targets)
+
+        class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
         # bbox = decode(prediction.location, centres.unsqueeze(0).expand(prediction.location.size()))
         # loc_loss = loss.giou(target.location, bbox, target.classification)
@@ -158,6 +162,8 @@ if __name__ == '__main__':
     out = model.cuda()(normalize_batch(x).cuda())
 
     target = encoding.random_target(classes=len(classes))
-    encoder.loss(x, target, struct(), out)
+    target = tensors_to(target, device='cuda:0')
+
+    encoder.loss(x, [target, target, target, target], struct(), out)
 
     print(show_shapes(out))

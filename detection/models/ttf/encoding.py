@@ -21,32 +21,34 @@ def gaussian_2d(shape, sigma_x=1, sigma_y=1):
     h[h < np.finfo(h.dtype).eps * h.max()] = 0
     return h
 
-def truncate_gaussian(heatmap, center, w_radius, h_radius, k=1):
-    w = w_radius * 2 + 1
-    h = h_radius * 2 + 1
+def clipped_gaussian(image_size, extents, alpha):
 
-    gaussian = heatmap.new_tensor(gaussian_2d((int(h), int(w)), sigma_x=w / 6, sigma_y=h / 6))
-    x, y = center
+    radius = (extents.size / (2. * alpha)).int()
+    w, h = (radius * 2 + 1).tolist()
+    rw, rh = radius.tolist()
 
-    height, width = heatmap.shape[0:2]
+    x, y = extents.centre.int().tolist()     
+    gaussian = torch.FloatTensor(gaussian_2d((h, w), sigma_x=w / 6, sigma_y=h / 6))
 
-    left, right = min(x, w_radius), min(width - x, w_radius + 1)
-    top, bottom = min(y, h_radius), min(height - y, h_radius + 1)
+    left, right = min(x, rw), min(image_size[0] - x, rw + 1)
+    top, bottom = min(y, rh), min(image_size[1] - y, rh + 1)
+    
+    if x + right > x - left and y + bottom > y - top:
+    
+        slices = [slice(y - top, y + bottom), slice(x - left, x + right)]
+        clipped = gaussian[rh - top:rh + bottom, rw - left:rw + right]
 
-    heatmap[y - top:y + bottom, x - left:x + right] = \
-        gaussian[h_radius - top:h_radius + bottom, w_radius - left:w_radius + right]
-
-    return heatmap
-   
+        return [(clipped, slices)]
+    return []
 
 
 def layer_size(input_size, i):
     stride = 2 ** i
-    return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
+    return stride, (max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
 
 def encode_layer(target, input_size, layer,  num_classes, params):
     stride, heatmap_size = layer_size(input_size, layer)
-    return encode_target(target._extend(bbox = target.bbox * (1. / stride)), heatmap_size, num_classes)
+    return encode_target(target._extend(bbox = target.bbox * (1. / stride)), heatmap_size, num_classes, params)
 
 
 def encode_target(target, heatmap_size, num_classes, params):
@@ -54,36 +56,32 @@ def encode_target(target, heatmap_size, num_classes, params):
     m = target.bbox.size(0)
     w, h = heatmap_size
 
-
     # sort by area, largest boxes first (and least priority)
     areas = box.area(target.bbox)
     areas, boxes_ind = torch.sort(areas, descending=True)
 
     heatmap = areas.new_zeros(num_classes, h, w)
-    bbox = struct(
-        weight =  areas.new_zeros(h, w),
-        target =  areas.new_ones(h, w, 4)
-    )
+    box_weight =  areas.new_zeros(h, w)
+    box_target =  areas.new_ones(h, w, 4)
+    
 
     for (label, target_box) in zip(target.classification[boxes_ind], target.bbox[boxes_ind]):
         assert label < num_classes
 
         extents = box.extents(target_box)
         area = extents.size.dot(extents.size)
-        radius = (extents.size / 2.).int()
 
-        box_heatmap = heatmap.new_zeros(h, w)
-        truncate_gaussian(box_heatmap, extents.centre.int(), radius[0].item(), radius[1].item())
+        for gaussian, slices in clipped_gaussian(heatmap_size, extents, params.alpha):
+            gaussian = gaussian.type_as(heatmap)
 
-        target_inds = box_heatmap > 0 
-        local_heatmap = box_heatmap[target_inds]
+            local_heatmap = heatmap[label][slices]
+            torch.max(gaussian, local_heatmap, out=local_heatmap)
+            
+            mask = gaussian > 0
+            box_target[slices][mask] = target_box
+            box_weight[slices].where(~mask,  gaussian * area.log() / gaussian.sum())  
 
-        heatmap[label] = torch.max(box_heatmap, heatmap[label])
-
-        bbox.target[target_inds] = target_box
-        bbox.weight[target_inds] = local_heatmap * area.log() / local_heatmap.sum()    
-
-    return struct(heatmap=heatmap, bbox=bbox)
+    return struct(heatmap=heatmap, box_target=box_target, box_weight=box_weight)
 
 
 def random_points(r, n):
@@ -110,12 +108,13 @@ if __name__ == "__main__":
     from tools.image import cv
 
     size = 600
-    target = random_target(centre_range=(0, size))
+    target = random_target(centre_range=(-20, 620), size_range=(10, 100), n=100)
 
-    encoded = encode_target(target, (size, size), 3)
+    layer = 0
+    encoded = encode_layer(target, (size, size), 0, 3, struct(alpha=0.54))
     h = encoded.heatmap.permute(1, 2, 0).contiguous()
     
-    for b in target.bbox:
+    for b in target.bbox / (2**layer):
         h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
 
     cv.display(h)    
