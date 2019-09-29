@@ -16,6 +16,11 @@ def split4(boxes):
     return boxes[..., 0],  boxes[..., 1], boxes[..., 2], boxes[..., 3]
 
 
+def join(lower, upper):
+    assert lower.shape == upper.shape
+    return torch.cat([lower, upper], lower.dim() - 1)
+
+
 def extents(boxes):
     lower, upper = split(boxes)
     return struct(centre = (lower + upper) * 0.5, size = upper - lower)

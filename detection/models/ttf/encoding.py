@@ -84,6 +84,15 @@ def encode_target(target, heatmap_size, num_classes, params):
     return struct(heatmap=heatmap, box_target=box_target, box_weight=box_weight)
 
 
+def decode_boxes(predictions, centres, scale_factor=16):
+    lower, upper = box.split(predictions)
+
+    lower = centres - lower * scale_factor
+    upper = centres + upper * scale_factor
+
+    return box.join(lower, upper)
+
+
 def random_points(r, n):
     lower, upper = r
     return torch.FloatTensor(n, 2).uniform_(*r)

@@ -79,6 +79,13 @@ class Encoder:
 
         class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
+        centres = self.centres(input_size)
+        centres = centres.unsqueeze(0).expand(batch, *centres.shape)
+
+        print(centres.shape, prediction.location.shape)
+
+        box_predictions = encoding.decode_boxes(prediction.location, centres)
+
         # bbox = decode(prediction.location, centres.unsqueeze(0).expand(prediction.location.size()))
         # loc_loss = loss.giou(target.location, bbox, target.classification)
 
