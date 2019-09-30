@@ -81,14 +81,14 @@ def encode_target(target, heatmap_size, num_classes, params):
             box_target[slices][mask] = target_box
             box_weight[slices].where(~mask,  gaussian * area.log() / gaussian.sum())  
 
-    return struct(heatmap=heatmap, box_target=box_target, box_weight=box_weight)
+    return struct(heatmap=heatmap.permute(1, 2, 0), box_target=box_target, box_weight=box_weight)
 
 
-def decode_boxes(predictions, centres, scale_factor=16):
+def decode_boxes(predictions, centres):
     lower, upper = box.split(predictions)
 
-    lower = centres - lower * scale_factor
-    upper = centres + upper * scale_factor
+    lower = centres - lower
+    upper = centres + upper
 
     return box.join(lower, upper)
 

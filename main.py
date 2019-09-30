@@ -1,3 +1,5 @@
+import torch
+
 import time
 import os
 import json
@@ -7,7 +9,6 @@ import random
 import sys
 import traceback
 
-import torch
 from torch import nn
 import torch.optim as optim
 
@@ -38,7 +39,6 @@ import arguments
 import pprint
 
 pp = pprint.PrettyPrinter(indent=2)
-
 
 def ready(*xs):
     return all(v is not None for v in xs)
@@ -775,4 +775,5 @@ def run_main():
 
 
 if __name__ == '__main__':
+    # torch.multiprocessing.set_start_method('spawn')
     run_main()

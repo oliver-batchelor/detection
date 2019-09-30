@@ -96,7 +96,7 @@ pyramid_parameters = struct(
     backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of feature maps, scale = 1 / 2^first"),
-    depth      = param (8, help = "depth in scale levels"),
+    depth      = param (8, help = "depth in scale levels")
   )
 
 def extra_layer(inp, features):

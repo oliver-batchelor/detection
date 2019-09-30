@@ -56,6 +56,9 @@ class Encoder:
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
+        anchor_boxes = self.anchors(image_size(inputs))
+        target = anchor.encode(target, anchor_boxes, self.params) 
+        
         return struct()
 
     def decode(self, inputs, prediction):
