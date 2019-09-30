@@ -21,7 +21,7 @@ from detection import box
 import collections
 
 
-def collate_batch(batch):
+def _collate_batch(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
     error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
@@ -51,6 +51,11 @@ def collate_batch(batch):
     raise TypeError(error_msg.format(elem_type))
 
 
+# Use this to get around pickling problems using multi-processing
+def callable(name, f):
+    cls = type(name, (object,), {'__call__': f})
+
+callable('collate_batch', _collate_batch)
 
 empty_target = table (
         bbox = torch.FloatTensor(0, 4),
