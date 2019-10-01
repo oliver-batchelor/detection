@@ -7,8 +7,6 @@ def class_loss(target, prediction, class_weights):
     Focal loss variant of BCE as used in CornerNet and CenterNet.
     """
 
-    print(target.shape, prediction.shape)
-
     # As per RetinaNet focal loss - if heatmap == 1
     pos_loss = -prediction.log() * (1 - prediction).pow(2)
 
@@ -16,7 +14,7 @@ def class_loss(target, prediction, class_weights):
     neg_weights = (1 - target).pow(4) 
     neg_loss = -(1 - prediction).log() * prediction.pow(2) * neg_weights
 
-    return torch.where(target == 1, pos_loss, neg_loss)
+    return torch.where(target == 1, pos_loss, neg_loss).sum()
 
 def giou(target, prediction, weight):
     assert target.shape == prediction.shape, str(target.shape) + " vs. " + str(prediction.shape)

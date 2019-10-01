@@ -67,7 +67,11 @@ class Encoder:
         return struct()
 
     def decode(self, inputs, prediction):
-        assert False
+        boxes = self._decode_boxes(prediction.location)
+        
+
+        return table(bbox = bbox, confidence = confidence, label = label)
+
 
     def _decode_boxes(self, prediction):
         batch, h, w, _ = prediction.shape
@@ -105,36 +109,34 @@ class TTFNet(nn.Module):
         self.num_classes = num_classes
         self.scale_factor = scale_factor
 
-        self.outputs = Named(
-            location=residual_subnet(features, 4),
-            classification=residual_subnet(features, num_classes)
-        )
+        self.regressor = residual_subnet(features, 4)
+        self.classifier = residual_subnet(features, num_classes)
 
-        self.outputs.classification.apply(init_classifier)
-        self.outputs.location.apply(init_weights)
+        self.classifier.apply(init_classifier)
+        self.regressor.apply(init_weights)
 
         self.pyramid = feature_map(backbone_name=backbone_name, features=features, first=first, depth=depth)     
 
     def forward(self, input):
         permute = lambda layer: layer.permute(0, 2, 3, 1).contiguous()
-
         features = self.pyramid(input)
-        outputs = self.outputs(features)._map(permute)
-
-        return outputs._extend (location = outputs.location * self.scale_factor)
+        
+        return struct(
+            location = permute(self.regressor(features)) * self.scale_factor,
+            classification = permute(self.classifier(features).sigmoid())
+         )
 
 
 parameters = struct(
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
     
     params = group('parameters',
-        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
+        alpha   = param(1., help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
         balance = param(4., help = "loss = class_loss / balance + location loss")
     ),
 
     pyramid = group('pyramid_parameters', **pyramid_parameters)
   )
-
 
 
 def create(args, dataset_args):
@@ -175,12 +177,14 @@ if __name__ == '__main__':
     model.to(device)
     encoder.to(device)
 
-    x = torch.FloatTensor(4, 370, 500, 3)
+    x = torch.FloatTensor(4, 370, 500, 3).uniform_(0, 255)
     out = model.cuda()(normalize_batch(x).cuda())
+    print(show_shapes(out))
 
     target = encoding.random_target(classes=len(classes))
     target = tensors_to(target, device='cuda:0')
 
-    encoder.loss(x, [target, target, target, target], struct(), out)
+    loss = encoder.loss(x, [target, target, target, target], struct(), out)
+    print(loss)
 
-    print(show_shapes(out))
+    

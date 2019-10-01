@@ -23,7 +23,7 @@ def gaussian_2d(shape, sigma_x=1, sigma_y=1):
 
 def clipped_gaussian(image_size, extents, alpha):
 
-    radius = (extents.size / (2. * alpha)).int()
+    radius = ((extents.size / 2.) * alpha).int()
     w, h = (radius * 2 + 1).tolist()
     rw, rh = radius.tolist()
 
@@ -64,22 +64,23 @@ def encode_target(target, heatmap_size, num_classes, params):
     box_weight =  areas.new_zeros(h, w)
     box_target =  areas.new_ones(h, w, 4)
     
-
-    for (label, target_box) in zip(target.classification[boxes_ind], target.bbox[boxes_ind]):
+    for (label, target_box) in zip(target.label[boxes_ind], target.bbox[boxes_ind]):
         assert label < num_classes
 
         extents = box.extents(target_box)
         area = extents.size.dot(extents.size)
 
         for gaussian, slices in clipped_gaussian(heatmap_size, extents, params.alpha):
-            gaussian = gaussian.type_as(heatmap)
+            gaussian = gaussian.type_as(heatmap) 
 
             local_heatmap = heatmap[label][slices]
             torch.max(gaussian, local_heatmap, out=local_heatmap)
             
-            mask = gaussian > 0
+            loc_weight = gaussian * (area.log() / gaussian.sum())
+
+            mask = loc_weight > box_weight[slices]
             box_target[slices][mask] = target_box
-            box_weight[slices].where(~mask,  gaussian * area.log() / gaussian.sum())  
+            box_weight[slices][mask] = loc_weight[mask]
 
     return struct(heatmap=heatmap.permute(1, 2, 0), box_target=box_target, box_weight=box_weight)
 
@@ -109,7 +110,7 @@ def random_boxes(centre_range, size_range, n):
 def random_target(centre_range=(0, 600), size_range=(50, 200), classes=3, n=20):
     return struct (
         bbox = random_boxes(centre_range, size_range, n),
-        classification = torch.LongTensor(n).random_(0, classes)
+        label = torch.LongTensor(n).random_(0, classes)
     )
 
 
@@ -120,13 +121,17 @@ if __name__ == "__main__":
     target = random_target(centre_range=(-20, 620), size_range=(10, 100), n=100)
 
     layer = 0
-    encoded = encode_layer(target, (size, size), 0, 3, struct(alpha=0.54))
-    h = encoded.heatmap.permute(1, 2, 0).contiguous()
+    encoded = encode_layer(target, (size, size), 0, 3, struct(alpha=1))
+
+    h = encoded.heatmap.contiguous()
+    w = encoded.box_weight.contiguous() * 255
+
     
     for b in target.bbox / (2**layer):
         h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
+        w = display.draw_box(w, b, thickness=1, color=(255, 0, 255, 255))
 
-    cv.display(h)    
+    cv.display(torch.cat([h, w.unsqueeze(2).expand_as(h)], dim=1))    
 
 
 
