@@ -3,6 +3,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 import numpy as np
@@ -11,6 +12,15 @@ from detection import box, display
 
 
 from tools import struct, table, show_shapes, sum_list, cat_tables
+
+def simple_nms(predictions, kernel=3, nms_params=box.nms_defaults):
+    
+    maxima = F.max_pool2d(heat, (kernel, kernel), stride=1, padding=(kernel - 1) // 2)
+    maxima.masked_fill_(maxima == predictions, 0.)
+    
+    # threshold   = 0.05,
+    # detections  = 500
+
 
 
 def gaussian_2d(shape, sigma_x=1, sigma_y=1):
