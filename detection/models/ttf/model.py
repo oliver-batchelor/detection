@@ -27,23 +27,6 @@ from . import encoding, loss
 
 
 
-def make_centres(w, h, stride, device):               
-    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
-    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
-
-    return torch.stack(torch.meshgrid(y, x), dim=2)
-
-def expand_centres(centres, stride, input_size, device):
-    w, h = max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride))
-
-    ch, cw, _ = centres.shape
-
-    if ch < h or cw < w:
-        return make_centres(max(w, cw), max(h, ch), stride, device=device)
-    else:
-        return centres
-
-
 class Encoder:
     def __init__(self, layer, class_weights, params, device = torch.device('cpu')):
         self.centre_map = torch.FloatTensor(0, 0, 2).to(device)
@@ -59,23 +42,17 @@ class Encoder:
         self.device = device
         self.centre_map = self.centre_map.to(device)
 
-    def _centres(self, input_size):
-        self.centre_map = expand_centres(self.centre_map, self.stride, input_size, device=self.device)
-        return self.centre_map[:input_size[0], :input_size[1]]
+    def _centres(self, w, h):
+        self.centre_map = encoding.expand_centres(self.centre_map, self.stride, (w, h), device=self.device)
+        return self.centre_map[:h, :w]
 
     def encode(self, inputs, target):
         return struct()
 
-    def decode(self, inputs, prediction):
-        assert False
+    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
+        boxes = self._decode_boxes(prediction.location)       
+        return encoding.decode(prediction, centres=encoding.self._centres(w, h), nms_params=nms_params)
 
-    def _decode_boxes(self, prediction):
-        batch, h, w, _ = prediction.shape
-
-        centres = self._centres((w * self.stride, h * self.stride))
-        centres = centres.unsqueeze(0).expand(batch, *centres.shape)
-
-        return encoding.decode_boxes(prediction, centres)
        
     def loss(self, inputs, target, enc, prediction):
         batch, h, w, num_classes = prediction.classification.shape
@@ -86,7 +63,9 @@ class Encoder:
 
         class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
-        box_prediction = self._decode_boxes(prediction.location)
+        centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
+        box_prediction = encoding.decode_boxes(prediction, centres)
+
         loc_loss = loss.giou(target.box_target, box_prediction, target.box_weight)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
@@ -105,36 +84,34 @@ class TTFNet(nn.Module):
         self.num_classes = num_classes
         self.scale_factor = scale_factor
 
-        self.outputs = Named(
-            location=residual_subnet(features, 4),
-            classification=residual_subnet(features, num_classes)
-        )
+        self.regressor = residual_subnet(features, 4)
+        self.classifier = residual_subnet(features, num_classes)
 
-        self.outputs.classification.apply(init_classifier)
-        self.outputs.location.apply(init_weights)
+        self.classifier.apply(init_classifier)
+        self.regressor.apply(init_weights)
 
         self.pyramid = feature_map(backbone_name=backbone_name, features=features, first=first, depth=depth)     
 
     def forward(self, input):
         permute = lambda layer: layer.permute(0, 2, 3, 1).contiguous()
-
         features = self.pyramid(input)
-        outputs = self.outputs(features)._map(permute)
-
-        return outputs._extend (location = outputs.location * self.scale_factor)
+        
+        return struct(
+            location = permute(self.regressor(features)) * self.scale_factor,
+            classification = permute(self.classifier(features).sigmoid())
+         )
 
 
 parameters = struct(
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
     
     params = group('parameters',
-        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
+        alpha   = param(1., help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
         balance = param(4., help = "loss = class_loss / balance + location loss")
     ),
 
     pyramid = group('pyramid_parameters', **pyramid_parameters)
   )
-
 
 
 def create(args, dataset_args):
@@ -175,12 +152,14 @@ if __name__ == '__main__':
     model.to(device)
     encoder.to(device)
 
-    x = torch.FloatTensor(4, 370, 500, 3)
+    x = torch.FloatTensor(4, 370, 500, 3).uniform_(0, 255)
     out = model.cuda()(normalize_batch(x).cuda())
+    print(show_shapes(out))
 
     target = encoding.random_target(classes=len(classes))
     target = tensors_to(target, device='cuda:0')
 
-    encoder.loss(x, [target, target, target, target], struct(), out)
+    loss = encoder.loss(x, [target, target, target, target], struct(), out)
+    print(loss)
 
-    print(show_shapes(out))
+    

@@ -14,7 +14,7 @@ from detection import box
 from models.common import Named, Parallel, image_size
 
 from models.feature_pyramid import feature_pyramid, init_weights, init_classifier, join_output, residual_subnet, pyramid_parameters
-from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables
+from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables, tensors_to
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
@@ -56,15 +56,15 @@ class Encoder:
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
-        anchor_boxes = self.anchors(image_size(inputs))
-        target = anchor.encode(target, anchor_boxes, self.params) 
+        # anchor_boxes = self.anchors(image_size(inputs))
+        # return anchor.encode(target, anchor_boxes, self.params) 
         
         return struct()
 
-    def decode(self, inputs, prediction):
+    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
-        anchor_boxes = self.anchors(image_size(inputs))
+        anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
 
         bbox = anchor.decode(prediction.location, anchor_boxes)
         confidence, label = prediction.classification.max(1)
@@ -72,13 +72,17 @@ class Encoder:
         if self.params.crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
-        return table(bbox = bbox, confidence = confidence, label = label)
+        decoded = table(bbox = bbox, confidence = confidence, label = label)
+        return box.nms(decoded, nms_params)
 
        
     def loss(self, inputs, target, encoding, prediction):
+        
 
-        anchor_boxes = self.anchors(image_size(inputs))
+        anchor_boxes = self.anchors(image_size(inputs)) #.to(prediction.location.device)
+        
         target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
+        # target = tensors_to(encoding, device=prediction.location.device)
 
         class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
         loc_loss = 0
@@ -92,8 +96,6 @@ class Encoder:
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
 
-    def nms(self, prediction, nms_params=box.nms_defaults):
-        return box.nms(prediction, nms_params)
     
 
 
