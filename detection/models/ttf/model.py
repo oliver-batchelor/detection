@@ -50,8 +50,12 @@ class Encoder:
         return struct()
 
     def decode(self, inputs, prediction, nms_params=box.nms_defaults):
-        boxes = self._decode_boxes(prediction.location)       
-        return encoding.decode(prediction, centres=encoding.self._centres(w, h), nms_params=nms_params)
+        h, w, _ = prediction.classification.shape
+        
+        centres = self._centres(w, h)
+        boxes = decode_boxes(prediction.location, centres)
+
+        return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
 
        
     def loss(self, inputs, target, enc, prediction):
@@ -64,15 +68,11 @@ class Encoder:
         class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
-        box_prediction = encoding.decode_boxes(prediction, centres)
+        box_prediction = encoding.decode_boxes(prediction.location, centres)
 
         loc_loss = loss.giou(target.box_target, box_prediction, target.box_weight)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
- 
-
-    def nms(self, prediction, nms_params=box.nms_defaults):
-        return box.nms(prediction, nms_params)
     
 
 
@@ -163,3 +163,5 @@ if __name__ == '__main__':
     print(loss)
 
     
+
+

@@ -19,7 +19,7 @@ def make_centres(w, h, stride, device):
     return torch.stack(torch.meshgrid(y, x), dim=2)
 
 def expand_centres(centres, stride, input_size, device):
-    w, h = max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride))
+    w, h = max(1, math.ceil(input_size[0])), max(1, math.ceil(input_size[1]))
     ch, cw, _ = centres.shape
 
     if ch < h or cw < w:
@@ -28,17 +28,29 @@ def expand_centres(centres, stride, input_size, device):
         return centres
 
 
-def decode(predictions, centres, kernel=3, detections=500, threshold=0.05):
+def decode_boxes(predictions, centres):
+    lower, upper = box.split(predictions)
+
+    lower = centres - lower
+    upper = centres + upper
+
+    return box.join(lower, upper)
 
 
+def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
+    h, w, num_classes = classification.shape
 
-def simple_nms(predictions, kernel=3, nms_params=box.nms_defaults):
-    
-    maxima = F.max_pool2d(heat, (kernel, kernel), stride=1, padding=(kernel - 1) // 2)
-    maxima.masked_fill_(maxima == predictions, 0.)
-    
-    # threshold   = 0.05,
-    # detections  = 500
+    maxima = F.max_pool2d(classification, (kernel, kernel), stride=1, padding=(kernel - 1) // 2)
+    maxima.masked_fill_(maxima != classification, 0.)
+
+    confidence, inds = maxima.view(-1).topk(k = nms_params.detections, dim=0)
+
+    labels   = inds % num_classes
+    box_inds = inds // num_classes
+
+    print(confidence)
+
+    # inds = 
 
 
 
@@ -114,13 +126,7 @@ def encode_target(target, heatmap_size, num_classes, params):
     return struct(heatmap=heatmap.permute(1, 2, 0), box_target=box_target, box_weight=box_weight)
 
 
-def decode_boxes(predictions, centres):
-    lower, upper = box.split(predictions)
 
-    lower = centres - lower
-    upper = centres + upper
-
-    return box.join(lower, upper)
 
 
 def random_points(r, n):
@@ -143,6 +149,17 @@ def random_target(centre_range=(0, 600), size_range=(50, 200), classes=3, n=20):
     )
 
 
+def show_targets(encoded, target, layer=0):
+
+    h = encoded.heatmap.contiguous()
+    w = encoded.box_weight.contiguous() * 255
+
+    for b in target.bbox / (2**layer):
+        h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
+        w = display.draw_box(w, b, thickness=1, color=(255, 0, 255, 255))
+
+    cv.display(torch.cat([h, w.unsqueeze(2).expand_as(h)], dim=1))    
+
 if __name__ == "__main__":
     from tools.image import cv
 
@@ -152,15 +169,7 @@ if __name__ == "__main__":
     layer = 0
     encoded = encode_layer(target, (size, size), 0, 3, struct(alpha=1))
 
-    h = encoded.heatmap.contiguous()
-    w = encoded.box_weight.contiguous() * 255
-
-    
-    for b in target.bbox / (2**layer):
-        h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
-        w = display.draw_box(w, b, thickness=1, color=(255, 0, 255, 255))
-
-    cv.display(torch.cat([h, w.unsqueeze(2).expand_as(h)], dim=1))    
-
-
+    decoded = decode(encoded.heatmap, encoded.box_target)
+    print(show_shapes(decoded))
+    show_targets(encoded, decoded)
 
