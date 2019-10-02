@@ -61,7 +61,7 @@ class Encoder:
         
         return struct()
 
-    def decode(self, inputs, prediction):
+    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
         anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
@@ -72,7 +72,8 @@ class Encoder:
         if self.params.crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
-        return table(bbox = bbox, confidence = confidence, label = label)
+        decoded = table(bbox = bbox, confidence = confidence, label = label)
+        return box.nms(decoded, nms_params)
 
        
     def loss(self, inputs, target, encoding, prediction):
@@ -95,8 +96,6 @@ class Encoder:
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
 
-    def nms(self, prediction, nms_params=box.nms_defaults):
-        return box.nms(prediction, nms_params)
     
 
 

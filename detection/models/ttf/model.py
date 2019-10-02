@@ -27,23 +27,6 @@ from . import encoding, loss
 
 
 
-def make_centres(w, h, stride, device):               
-    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
-    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
-
-    return torch.stack(torch.meshgrid(y, x), dim=2)
-
-def expand_centres(centres, stride, input_size, device):
-    w, h = max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride))
-
-    ch, cw, _ = centres.shape
-
-    if ch < h or cw < w:
-        return make_centres(max(w, cw), max(h, ch), stride, device=device)
-    else:
-        return centres
-
-
 class Encoder:
     def __init__(self, layer, class_weights, params, device = torch.device('cpu')):
         self.centre_map = torch.FloatTensor(0, 0, 2).to(device)
@@ -59,27 +42,17 @@ class Encoder:
         self.device = device
         self.centre_map = self.centre_map.to(device)
 
-    def _centres(self, input_size):
-        self.centre_map = expand_centres(self.centre_map, self.stride, input_size, device=self.device)
-        return self.centre_map[:input_size[0], :input_size[1]]
+    def _centres(self, w, h):
+        self.centre_map = encoding.expand_centres(self.centre_map, self.stride, (w, h), device=self.device)
+        return self.centre_map[:h, :w]
 
     def encode(self, inputs, target):
         return struct()
 
-    def decode(self, inputs, prediction):
-        boxes = self._decode_boxes(prediction.location)
-        
+    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
+        boxes = self._decode_boxes(prediction.location)       
+        return encoding.decode(prediction, centres=encoding.self._centres(w, h), nms_params=nms_params)
 
-        return table(bbox = bbox, confidence = confidence, label = label)
-
-
-    def _decode_boxes(self, prediction):
-        batch, h, w, _ = prediction.shape
-
-        centres = self._centres((w * self.stride, h * self.stride))
-        centres = centres.unsqueeze(0).expand(batch, *centres.shape)
-
-        return encoding.decode_boxes(prediction, centres)
        
     def loss(self, inputs, target, enc, prediction):
         batch, h, w, num_classes = prediction.classification.shape
@@ -90,7 +63,9 @@ class Encoder:
 
         class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
-        box_prediction = self._decode_boxes(prediction.location)
+        centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
+        box_prediction = encoding.decode_boxes(prediction, centres)
+
         loc_loss = loss.giou(target.box_target, box_prediction, target.box_weight)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)

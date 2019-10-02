@@ -8,9 +8,28 @@ from torch import Tensor
 import numpy as np
 
 from detection import box, display
-
-
 from tools import struct, table, show_shapes, sum_list, cat_tables
+
+
+def make_centres(w, h, stride, device):               
+    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
+    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
+
+    return torch.stack(torch.meshgrid(y, x), dim=2)
+
+def expand_centres(centres, stride, input_size, device):
+    w, h = max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride))
+    ch, cw, _ = centres.shape
+
+    if ch < h or cw < w:
+        return make_centres(max(w, cw), max(h, ch), stride, device=device)
+    else:
+        return centres
+
+
+def decode(predictions, centres, kernel=3, detections=500, threshold=0.05):
+
+
 
 
 def gaussian_2d(shape, sigma_x=1, sigma_y=1):
