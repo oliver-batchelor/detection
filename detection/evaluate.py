@@ -211,12 +211,12 @@ def mAP_smoothed(image_pairs, xs):
 
 
 def mAP_classes(image_pairs, num_classes):
-    confidence    = torch.cat([i.prediction.confidence for i in image_pairs]).float()
+    confidence    = torch.cat([i.detections.confidence for i in image_pairs]).float()
     confidence, order = confidence.sort(0, descending=True)    
 
-    matchers =  [match_positives(i.prediction, i.target) for i in image_pairs]
+    matchers =  [match_positives(i.detections, i.target) for i in image_pairs]
 
-    predicted_label = torch.cat([i.prediction.label for i in image_pairs])[order]
+    predicted_label = torch.cat([i.detections.label for i in image_pairs])[order]
     target_label = torch.cat([i.target.label for i in image_pairs])
 
     num_targets = torch.bincount(target_label, minlength=num_classes)

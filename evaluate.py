@@ -29,9 +29,8 @@ def mean_results(results):
 def sum_results(results):
     return reduce(operator.add, results)
 
-
-
-def statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
+# TODO: move this entirely to the individual object detector
+def make_statistics(data, encoder, loss, prediction):
     num_classes = prediction.classification.size(2)
 
     stats = struct(error=sum(loss.values()),
@@ -55,8 +54,8 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
 
         loss = encoder.loss(image, targets, data.encoding, prediction)
 
-        stats = statistics(data, loss, prediction, debug, device)
-        return struct(error = sum(loss.values()) / image.data.size(0), statistics=stats, size = data.image.size(0))
+        statistics = make_statistics(data, encoder, loss, prediction)
+        return struct(error = sum(loss.values()) / image.data.size(0), statistics=statistics, size = data.image.size(0))
     return f
 
 
@@ -75,32 +74,6 @@ def summarize_train(name, results, classes, epoch, log):
     print('{} epoch: {} {}'.format(name, epoch, summary))
 
 
-def axis_splits(size, eval_size, min_overlap=0):
-    if eval_size >= size:
-        return [(0, size)]
-
-    n = math.ceil((size - min_overlap) / (eval_size - min_overlap))
-    overlap = (n * eval_size - size) / (n - 1)
-    size_crop = eval_size - overlap
-    offsets = [int(i * size_crop) for i in range(n)]
-    return [(x, x + eval_size) for x in offsets]
-
-def image_splits(size, eval_size, overlap=0):
-    w, h = size
-    ex, ey = eval_size
-    return [((lx, ly), (ux, uy))
-        for lx, ux in axis_splits(w, ex, overlap)
-        for ly, uy in axis_splits(h, ey, overlap) ]
-
-def split_image(image, eval_size, overlap=0):
-    def sub_image(ranges):
-        (lx, ly), (ux, uy) = ranges
-        return ((lx, ly), image.narrow(0, ly, uy - ly).narrow(1, lx, ux - lx))
-
-    size = (image.size(1), image.size(0))
-    return [ sub_image(r) for r in image_splits(size, eval_size, overlap) ]
-
-
 
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
@@ -109,11 +82,11 @@ def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=t
         assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
 
         norm_data = normalize_batch(batch).to(device)
-        predictions = model(norm_data)._map(lambda p: p.detach()[0])
+        prediction = model(norm_data)._map(lambda p: p.detach()[0])
 
-        return (detections = encoder.decode(batch, predictions), predictions = predictions)
+        return struct(detections = encoder.decode(batch, prediction), prediction = prediction)
 
-    
+  
 
 
 eval_defaults = struct(
@@ -131,42 +104,30 @@ eval_defaults = struct(
 def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
-        prediction = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
+        result = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
 
-        prediction = prediction._map(unsqueeze)
-        target = data.target._map(Tensor.to, device)
+        prediction = result.prediction._map(lambda p: p.unsqueeze(0))
+        target = data.target._map(Tensor.to, params.device)
 
-        loss = encoder.loss(data.image, target, encoding, prediction)
-        stats = statistics(data, encoder, loss, debug=params.debug, device=params.device)
+        loss = encoder.loss(data.image, [target], data.encoding, prediction)
+        statistics = make_statistics(data, encoder, loss, result.prediction)
 
+        return result._extend(statistics=statistics)
 
-def evaluate_split(model, data, encoder, params=eval_defaults):
-    assert False, "fixme: object detector dependent implementations"
-    # model.eval()
-    # with torch.no_grad():
-    #     splits = split_image(data.image.squeeze(0), params.image_size, params.overlap)
-
-    #     outputs = [evaluate_decode(model, image, encoder, device=params.device, offset=offset) for offset, image in splits]
-    #     prediction, raw = zip(*outputs)
-
-    #     #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
-    #     return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
 
 
 def eval_test(model, encoder, params=eval_defaults):
-    evaluate = evaluate_full
-
     def f(data):
-        prediction, train_stats = evaluate(model, data, encoder, params)
+        result = evaluate_full(model, data, encoder, params)
         return struct (
             id = data.id,
             target = data.target._map(Tensor.to, params.device),
 
-            detections = detections,
+            detections = result.detections,
 
             # for summary of loss
             instances=data.lengths.sum().item(),
-            stats = stats,
+            statistics = result.statistics,
 
             size = data.image.size(0),
         )

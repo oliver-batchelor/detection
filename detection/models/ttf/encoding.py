@@ -9,7 +9,7 @@ from torch import Tensor
 import numpy as np
 
 from detection import box, display
-from tools import struct, table, show_shapes, sum_list, cat_tables
+from tools import struct, table, show_shapes, sum_list, cat_tables, show_shapes
 
 
 def make_centres(w, h, stride, device):               
