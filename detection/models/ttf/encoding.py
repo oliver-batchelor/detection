@@ -36,21 +36,21 @@ def decode_boxes(predictions, centres):
 
     return box.join(lower, upper)
 
-
 def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
     h, w, num_classes = classification.shape
+    classification = classification.permute(2, 0, 1).contiguous()
 
     maxima = F.max_pool2d(classification, (kernel, kernel), stride=1, padding=(kernel - 1) // 2)
-    maxima.masked_fill_(maxima != classification, 0.)
+    mask = (maxima == classification) & (maxima >= nms_params.threshold)
+    
+    maxima.masked_fill_(~mask, 0.)
+    confidence, inds = maxima.view(-1).topk(k = min(nms_params.detections, mask.sum()), dim=0)
 
-    confidence, inds = maxima.view(-1).topk(k = nms_params.detections, dim=0)
+    labels   = inds // (h * w)
+    box_inds = inds % (h * w)
+    
+    return struct(label = labels, bbox = boxes.view(-1, 4)[box_inds], confidence=confidence)
 
-    labels   = inds % num_classes
-    box_inds = inds // num_classes
-
-    print(confidence)
-
-    # inds = 
 
 
 
@@ -103,7 +103,7 @@ def encode_target(target, heatmap_size, num_classes, params):
 
     heatmap = areas.new_zeros(num_classes, h, w)
     box_weight =  areas.new_zeros(h, w)
-    box_target =  areas.new_ones(h, w, 4)
+    box_target =  areas.new_zeros(h, w, 4)
     
     for (label, target_box) in zip(target.label[boxes_ind], target.bbox[boxes_ind]):
         assert label < num_classes
@@ -154,9 +154,14 @@ def show_targets(encoded, target, layer=0):
     h = encoded.heatmap.contiguous()
     w = encoded.box_weight.contiguous() * 255
 
-    for b in target.bbox / (2**layer):
-        h = display.draw_box(h, b, thickness=1, color=(255, 0, 255, 255))
-        w = display.draw_box(w, b, thickness=1, color=(255, 0, 255, 255))
+    for b, l in zip(target.bbox / (2**layer), target.label):
+
+        print(b, l)
+        color = [0.2, 0.2, 0.2, 1]
+        color[l] = 1
+
+        h = display.draw_box(h, b, thickness=1, color=color)
+        w = display.draw_box(w, b, thickness=1, color=color)
 
     cv.display(torch.cat([h, w.unsqueeze(2).expand_as(h)], dim=1))    
 
@@ -164,10 +169,10 @@ if __name__ == "__main__":
     from tools.image import cv
 
     size = 600
-    target = random_target(centre_range=(-20, 620), size_range=(10, 100), n=100)
+    target = random_target(centre_range=(0, 600), size_range=(10, 100), n=100)
 
     layer = 0
-    encoded = encode_layer(target, (size, size), 0, 3, struct(alpha=1))
+    encoded = encode_layer(target, (size, size), layer, 3, struct(alpha=0.54))
 
     decoded = decode(encoded.heatmap, encoded.box_target)
     print(show_shapes(decoded))

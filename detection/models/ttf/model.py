@@ -53,9 +53,11 @@ class Encoder:
         h, w, _ = prediction.classification.shape
         
         centres = self._centres(w, h)
-        boxes = decode_boxes(prediction.location, centres)
+        boxes = encoding.decode_boxes(prediction.location, centres)
 
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
+
+       
 
        
     def loss(self, inputs, target, enc, prediction):

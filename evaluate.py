@@ -21,18 +21,6 @@ import operator
 from functools import reduce
 
 
-def eval_forward(model, device=torch.cuda.current_device()):
-
-    def f(data):
-        norm_data = normalize_batch(data.image).to(device)
-        return model(norm_data)
-
-    return f
-
-
-
-
-
 
 def mean_results(results):
     total = reduce(operator.add, results)
@@ -43,58 +31,32 @@ def sum_results(results):
 
 
 
-def summarize_stats(results, epoch, globals={}):
-    avg = mean_results(results)
-    counts = avg.box_counts
-    
-
-    print ("image: mean = {}, std = {}".format(str(avg.image.mean), str(avg.image.std)))
-    print("instances: {:.2f}, anchors {:.2f}, anchors/instance {:.2f}, positive {:.2f},  ignored {:.2f}, negative {:.2f} "
-        .format(avg.boxes, counts.total, counts.positive / avg.boxes, counts.positive, counts.ignored, counts.negative ))
-
-    balances = counts.classes / counts.positive
-    print("class balances: {}".format(str(balances.tolist())))
-
-
-def train_statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
+def statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
     num_classes = prediction.classification.size(2)
 
     stats = struct(error=sum(loss.values()),
         loss = loss._map(Tensor.item),
         size = data.image.size(0),
         instances=data.lengths.sum().item(),
-        # class_instances=count_instances(data.target.label, num_classes)
     )
 
-    # if debug.predictions and prediction is not None:
-    #     stats = stats._extend(predictions = prediction_stats(encoding, prediction))
-
-    # if debug.boxes:
-    #     stats = stats._extend(
-    #         boxes=count_classes(encoding.classification, num_classes),
-    #     )
-
-        
     return stats
 
 
 
 def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_device()):
-
     def f(data):
-
         image = data.image.to(device)
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
-        target = data.target._map(Tensor.to, device)
 
-        targets = split_table(target, data.lengths.tolist())
+        target_table = data.target._map(Tensor.to, device)
+        targets = split_table(target_table, data.lengths.tolist())
 
         loss = encoder.loss(image, targets, data.encoding, prediction)
 
-        stats = train_statistics(data, loss, prediction, data.encoding, debug, device)
+        stats = statistics(data, loss, prediction, debug, device)
         return struct(error = sum(loss.values()) / image.data.size(0), statistics=stats, size = data.image.size(0))
-
     return f
 
 
@@ -103,18 +65,6 @@ def summarize_train_stats(name, results, classes, log):
     avg = totals._subset('loss', 'instances', 'error') / totals.size
 
     log.scalars(name + "/loss", avg.loss._extend(total = avg.error))
-
-    class_names = [c.name.name for c in classes]
-
-    # class_counts = {"class_{}".format(c):count for c, count in zip(class_names, totals.class_instances) }
-    # log.scalars(name + "/instances",
-    #     struct(total = totals.instances, **class_counts))
-
-    # if 'boxes' in totals:
-    #     log_boxes(name, class_names, totals.boxes / totals.size,  log)
-
-    if 'predictions' in totals:
-        log_predictions(name, class_names, totals.predictions, log)
 
     loss_str = " + ".join(["{} : {:.3f}".format(k, v) for k, v in sorted(avg.loss.items())])
     return ('n: {}, instances : {:.2f}, loss: {} = {:.3f}'.format(totals.size, avg.instances, loss_str, avg.error))
@@ -155,42 +105,15 @@ def split_image(image, eval_size, overlap=0):
 def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
-        prediction, _ = evaluate_decode(model, image, encoder=encoder,  device=device)
-        return  encoder.nms(prediction, nms_params=nms_params)
+        batch = image.unsqueeze(0) if image.dim() == 3 else image          
+        assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
 
-def evaluate_raw(model, image, device):
-    if image.dim() == 3:
-        image = image.unsqueeze(0)
+        norm_data = normalize_batch(batch).to(device)
+        predictions = model(norm_data)._map(lambda p: p.detach()[0])
 
-    assert image.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
+        return (detections = encoder.decode(batch, predictions), predictions = predictions)
+
     
-    def detach(p):
-        return p.detach()[0]
-
-    norm_data = normalize_batch(image).to(device)
-    predictions = model(norm_data)._map(detach)
-
-    #gc.collect()
-    return predictions
-
-def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
-    raw = evaluate_raw(model, image, device=device)
-    p = encoder.decode(image, raw)
-
-    offset = torch.Tensor([*offset, *offset]).to(device)
-    return p._extend(bbox = p.bbox + offset), raw
-
-def test_loss(data, encoder, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
-    def unsqueeze(p):
-        return p.unsqueeze(0)
-
-    if prediction is not None:
-        prediction = prediction._map(unsqueeze)
-
-    target = data.target._map(Tensor.to, device),
-
-    loss = encoder.loss(data.image, target, encoding, prediction)
-    return train_statistics(data, loss, prediction, encoding, debug, device)
 
 
 eval_defaults = struct(
@@ -208,27 +131,30 @@ eval_defaults = struct(
 def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
-        prediction, raw = evaluate_decode(model, data.image.squeeze(0), encoder, 
-            device=params.device)
+        prediction = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
 
-        train_stats = test_loss(data, encoder, data.encoding, raw, debug=params.debug, device=params.device)
-        return encoder.nms(prediction, nms_params=params.nms_params), train_stats
+        prediction = prediction._map(unsqueeze)
+        target = data.target._map(Tensor.to, device)
+
+        loss = encoder.loss(data.image, target, encoding, prediction)
+        stats = statistics(data, encoder, loss, debug=params.debug, device=params.device)
 
 
 def evaluate_split(model, data, encoder, params=eval_defaults):
-    model.eval()
-    with torch.no_grad():
-        splits = split_image(data.image.squeeze(0), params.image_size, params.overlap)
+    assert False, "fixme: object detector dependent implementations"
+    # model.eval()
+    # with torch.no_grad():
+    #     splits = split_image(data.image.squeeze(0), params.image_size, params.overlap)
 
-        outputs = [evaluate_decode(model, image, encoder, device=params.device, offset=offset) for offset, image in splits]
-        prediction, raw = zip(*outputs)
+    #     outputs = [evaluate_decode(model, image, encoder, device=params.device, offset=offset) for offset, image in splits]
+    #     prediction, raw = zip(*outputs)
 
-        #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
-        return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
+    #     #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
+    #     return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
 
 
 def eval_test(model, encoder, params=eval_defaults):
-    evaluate = evaluate_split if params.split else evaluate_full
+    evaluate = evaluate_full
 
     def f(data):
         prediction, train_stats = evaluate(model, data, encoder, params)
@@ -236,11 +162,11 @@ def eval_test(model, encoder, params=eval_defaults):
             id = data.id,
             target = data.target._map(Tensor.to, params.device),
 
-            prediction = prediction,
+            detections = detections,
 
             # for summary of loss
             instances=data.lengths.sum().item(),
-            train_stats = train_stats,
+            stats = stats,
 
             size = data.image.size(0),
         )
