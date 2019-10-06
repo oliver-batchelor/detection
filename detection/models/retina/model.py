@@ -14,7 +14,7 @@ from detection import box
 from models.common import Named, Parallel, image_size
 
 from models.feature_pyramid import feature_pyramid, init_weights, init_classifier, join_output, residual_subnet, pyramid_parameters
-from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables, tensors_to
+from tools import struct, table, shape, sum_list, cat_tables, stack_tables, tensors_to
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
@@ -213,8 +213,8 @@ if __name__ == '__main__':
     model_args = struct(**parser.parse_args().__dict__)
 
     classes = [
-        struct(name=struct(weighting=0.25)),
-        struct(name=struct(weighting=0.25))
+        struct(weighting=0.25),
+        struct(weighting=0.25)
     ]
 
     model, encoder = model.create(model_args, struct(classes = classes, input_channels = 3))
@@ -222,4 +222,4 @@ if __name__ == '__main__':
     x = torch.FloatTensor(4, 3, 370, 500)
     out = model.cuda()(x.cuda())
 
-    print(show_shapes(out))
+    print(shape(out))

@@ -15,7 +15,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
-from tools import struct, table, show_shapes, sum_list, cat_tables, Struct
+from tools import struct, table, shape, sum_list, cat_tables, Struct
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
@@ -148,5 +148,5 @@ if __name__ == '__main__':
     x = torch.FloatTensor(4, 3, 500, 500)
     out = model.cuda()(x.cuda())
 
-    print(show_shapes(out))
+    print(shape(out))
 

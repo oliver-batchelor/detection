@@ -78,12 +78,12 @@ detection_parameters = struct (
         hue             = param(0.05,  help='variation in brightness (additive) when training'),
         saturation      = param(0.00,  help='variation in contrast (multiplicative) when training'),        
 
-        image_size      = param(600,   help='size of patches to train on'),
+        train_size      = param(600,   help='size of patches to train on'),
 
         border_bias     = param(0.1,    help = "bias random crop to select border more often (proportion of size)"),
         augment = param("crop", help = 'image augmentation method (crop | full | ssd)'),
 
-        scale  = param(1.0,     help='base scale of image_size'),
+        scale  = param(1.0,     help='base scale of train_size'),
         resize = param(None, type='float', help='resize short side of images to this dimension'),
 
         max_scale = param(4./3, help='maximum scale multiplier for cropped patches'),

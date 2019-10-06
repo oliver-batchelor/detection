@@ -43,7 +43,8 @@ for prediction in detections._sequence():
     
     if prediction.confidence > 0.7:
         label_class = classes[prediction.label].name
-        display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=display.to_rgb(label_class.colour))
+        display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
+            name=label_class.name, color=display.to_rgb(label_class.colour))
 
 frame = cv.resize(frame, (frame.size(1) // 2,  frame.size(0) // 2))
 cv.display(frame)

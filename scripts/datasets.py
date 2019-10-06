@@ -54,7 +54,7 @@ def image_annotations(image):
 def dataset_sizes(dataset):
     def annotation_sizes(image):
         annotations = image_annotations(image)
-        w, h = image.image_size
+        w, h = image.train_size
         
         def percent_size(ann):
             x1, y1, x2, y2 = ann.box
@@ -94,7 +94,7 @@ def annotation_summary(dataset):
         box_areas = list(map(box_area, annotations))
         box_lengths = list(map(box_length, annotations))
 
-        return struct(n = n, categories=categories, box_areas=box_areas, box_lengths=box_lengths, image_size=image.image_size)
+        return struct(n = n, categories=categories, box_areas=box_areas, box_lengths=box_lengths, image_size=image.train_size)
     
     infos = list(map(count, filter_categories(dataset)))
     sizes = pluck('image_size', infos)
@@ -140,7 +140,7 @@ def match_datasets(dataset1, dataset2, threshold=0.5, check_overlap=True):
 def decode_dataset(data):
     data = to_structs(data)
     config = data.config
-    classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
+    classes = [struct(id = int(k), **v) for k, v in config.classes.items()]
 
     images = filter_none([decode_image(i, config) for i in data.images])
     images.sort(key = lambda image: image.start)

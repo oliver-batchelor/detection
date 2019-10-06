@@ -26,7 +26,7 @@ import tools.model.tools as model_tools
 import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, show_shapes, to_structs, Struct, window
+from tools import table, struct, logger, shape, to_structs, Struct, window
 
 from tools.logger import EpochLogger
 
@@ -395,7 +395,7 @@ def test_images(images, model, env, split=False, hook=None):
     eval_params = struct(
         overlap = env.args.overlap,
         split = split,
-        image_size = (env.args.image_size, env.args.image_size),
+        image_size = (env.args.train_size, env.args.train_size),
         batch_size = env.args.batch_size,
         nms_params = get_nms_params(env.args),
         device = env.device,

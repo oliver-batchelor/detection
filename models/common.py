@@ -7,7 +7,7 @@ from torch.autograd import Variable
 from functools import partial
 from tools.model import match_size_2d,  centre_crop
 
-from tools import Struct, show_shapes
+from tools import Struct, shape
 
 def identity(x, **kwargs):
     return x

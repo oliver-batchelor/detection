@@ -17,14 +17,12 @@ from models.common import Named, Parallel, image_size
 from models.feature_pyramid import feature_map, init_weights, init_classifier, \
     join_output, residual_subnet, pyramid_parameters
 
-from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables, tensors_to
+from tools import struct, table, shape, sum_list, cat_tables, stack_tables, tensors_to
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
 
 from . import encoding, loss
-
-
 
 
 class Encoder:
@@ -57,16 +55,28 @@ class Encoder:
 
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
 
-       
+    @property
+    def debug_keys(self):
+        return ["heatmap", "maxima"]
+    
+    def debug(self, image, target, prediction, classes):
+        class_colours = [c.colour for c in classes]
+        return struct(
+            heatmap=encoding.class_heatmap(prediction.classification, class_colours), 
+            maxima=encoding.show_local_maxima(prediction.classification)
+        )
+
 
        
     def loss(self, inputs, target, enc, prediction):
         batch, h, w, num_classes = prediction.classification.shape
         input_size = image_size(inputs)
 
-        targets = [encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) for t in target]
-        target = stack_tables(targets)
-
+        encoded_targets = stack_tables([
+            encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) 
+                for t in target
+            ])
+        
         class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
@@ -74,7 +84,7 @@ class Encoder:
 
         loc_loss = loss.giou(target.box_target, box_prediction, target.box_weight)
 
-        return struct(classification = class_loss / self.params.balance, location = loc_loss)
+        return struct(classification = class_loss * self.params.balance, location = loc_loss)
     
 
 
@@ -127,7 +137,7 @@ def create(args, dataset_args):
         balance = args.balance
     )
 
-    class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
+    class_weights = [c.get('weighting', 0.25) for c in dataset_args.classes]
     encoder = Encoder(args.first, class_weights=class_weights, params=params)
 
     return model, encoder
@@ -143,8 +153,8 @@ if __name__ == '__main__':
     model_args = struct(**parser.parse_args().__dict__)
 
     classes = [
-        struct(name=struct(weighting=0.25)),
-        struct(name=struct(weighting=0.25))
+        struct(weighting=0.25),
+        struct(weighting=0.25)
     ]
 
     model, encoder = model.create(model_args, struct(classes = classes, input_channels = 3))
@@ -156,7 +166,7 @@ if __name__ == '__main__':
 
     x = torch.FloatTensor(4, 370, 500, 3).uniform_(0, 255)
     out = model.cuda()(normalize_batch(x).cuda())
-    print(show_shapes(out))
+    print(shape(out))
 
     target = encoding.random_target(classes=len(classes))
     target = tensors_to(target, device='cuda:0')

@@ -2,7 +2,7 @@
 # https://github.com/amdegroot/ssd.pytorch.git
 
 
-from tools import struct, Table, show_shapes
+from tools import struct, Table, shape
 import torch
 
 import math

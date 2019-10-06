@@ -14,7 +14,7 @@ from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct, show_shapes
+from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct, shape
 
 
 from detection import box
@@ -271,7 +271,7 @@ def encode_with(args, encoder=None):
 
 def transform_training(args, encoder=None):
     s = args.scale
-    dest_size = (int(args.image_size * s), int(args.image_size * s))
+    dest_size = (int(args.train_size * s), int(args.train_size * s))
 
     crop = identity
 
@@ -324,7 +324,7 @@ def transform_testing(args, encoder=None):
     elif args.augment == "resize":
         s = args.scale
 
-        dest_size = (int(args.image_size * s), int(args.image_size * s))
+        dest_size = (int(args.train_size * s), int(args.train_size * s))
         transform =  resize_to(dest_size)
 
     encode = encode_with(args, encoder)         

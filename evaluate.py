@@ -12,7 +12,7 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import struct, tensor, show_shapes, cat_tables, show_shapes_info, \
+from tools import struct, tensor, shape, cat_tables, shape_info, \
     Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table
 
 import detection.box as box

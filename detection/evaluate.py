@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from detection import box
-from tools import struct, const, pluck
+from tools import struct, const, pluck, shape
 import numpy as np
 
 def bookend(*xs, dim=0):
@@ -142,15 +142,15 @@ def _match_positives(labels_pred, labels_target, ious, threshold=0.5):
 
 
 
-def match_positives(pred, target):
-    assert pred.label.dim() == 1 and target.label.dim() == 1
-    n, m = pred._size, target._size
+def match_positives(detections, target):
+    assert detections.label.dim() == 1 and target.label.dim() == 1
+    n, m = detections._size, target._size
 
     if m == 0 or n == 0:
         return const(torch.FloatTensor(n).zero_())
 
-    ious = box.iou_matrix(pred.bbox, target.bbox)
-    return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
+    ious = box.iou_matrix(detections.bbox, target.bbox)
+    return lambda threshold: _match_positives(detections.label, target.label, ious, threshold=threshold)
 
 def list_subset(xs, inds):
     return [xs[i] for i in inds]

@@ -84,3 +84,21 @@ def summarize_stats(results, epoch, globals={}):
 
     balances = counts.classes / counts.positive
     print("class balances: {}".format(str(balances.tolist())))    
+
+
+
+def find_anchors(image, target, encoder, num_classes, match_params=box.default_match):
+    size = (image.size(1), image.size(0))
+    anchors = box.point_form(encoder.anchors(size, crop_boxes = match_params.crop_boxes))
+
+    target_enc = encoder.encode(image, target, match_params=match_params)
+    matches = []
+
+    for i in range(0, num_classes):
+        inds = target_enc.classification.eq(i + 1).nonzero().squeeze()
+
+        if inds.dim() > 0:
+            for b in anchors[inds]:
+                matches.append(struct(label = i, bbox = b))
+
+    return matches    

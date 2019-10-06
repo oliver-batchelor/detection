@@ -6,13 +6,12 @@ import arguments
 # import pyximport; pyximport.install()
 
 from dataset.imports import load_dataset
-from dataset.detection import get_match_params
 from detection.display import overlay_batch
 
 from arguments import detection_parameters, train_parameters, make_input_parameters, debug_parameters
 from tools.parameters import parse_args
 
-from tools import struct, Table, show_shapes, pluck, transpose_structs
+from tools import struct, Table, shape, pluck, transpose_structs
 from tools.parameters import param, required, parse_args, choice, parse_choice, make_parser
 from tools.image import cv
 from tools.image.transforms import resize_scale
@@ -44,24 +43,6 @@ vis_parameters = struct (
 )
 
 
-
-def find_anchors(image, target, encoder, num_classes, match_params=box.default_match):
-    size = (image.size(1), image.size(0))
-    anchors = box.point_form(encoder.anchors(size, crop_boxes = match_params.crop_boxes))
-
-    target_enc = encoder.encode(image, target, match_params=match_params)
-    matches = []
-
-    for i in range(0, num_classes):
-        inds = target_enc.classification.eq(i + 1).nonzero().squeeze()
-
-        if inds.dim() > 0:
-            for b in anchors[inds]:
-                matches.append(struct(label = i, bbox = b))
-
-    return matches
-
-
 def image_stats(batch):
     assert(batch.dim() == 3 and batch.size(2) == 3)
 
@@ -76,31 +57,20 @@ def identity(batch):
 
 
 
-def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
+def evaluate_vis(model, encoder, data, nms_params, classes, args, debug_key=None, iou = 0.5):
 
     with torch.no_grad():
-        model.to(device)
-        encoder.to(device)
 
-        raw_prediction = evaluate.evaluate_raw(model, data.image, device=device)
-        decoded = encoder.decode(data.image, raw_prediction, crop_boxes=args.crop_boxes)
+        result = evaluate.evaluate_image(model, data.image, encoder, device=device, nms_params=nms_params)
+        print(shape(result))
 
-        prediction = encoder.nms(decoded, nms_params=nms_params)
+        target = data.target._map(Tensor.to, result.detections._device)
 
-        # prediction = evaluate.evaluate_image(model, data.image, encoder, nms_params, device)
+        matches = match_boxes(result.detections, target, threshold = iou)
+        scores = mAP_matches(matches, target.label.size(0))
 
-        target = data.target._map(Tensor.to, prediction._device)
-
-        matches = match_boxes(prediction, target, threshold = iou)
-        anchors = find_anchors(data.image, data.target, encoder, len(dataset.classes), match_params=get_match_params(args))
-
-        result = mAP_matches(matches, target.label.size(0))
-
-
-        # pred = transpose_structs(matches) 
-        # bbox = torch.stack (pred.bbox)
-
-        # detected = box.match_predictions(bbox, raw_prediction, threshold = 0.5)
+    
+        debug = encoder.debug(data.image, target, result.prediction, classes)
 
         return struct(
             image = data.image,
@@ -108,11 +78,11 @@ def evaluate_vis(model, encoder, data, nms_params, args, iou = 0.5):
             id = data.id,
             image_size = data.image_size,
             matches = matches,
-            anchors = anchors,
             target = data.target,
-            prediction = prediction,
+            detections = result.detections,
             stats = image_stats(data.image),
-            mAP = result.mAP
+            mAP = scores.mAP,
+            debug = debug[debug_key] if debug_key else None
         )
 
 def benchmark(model, encoder, iter, args):
@@ -134,7 +104,9 @@ def visualise(model, encoder, iter, args):
     threshold = 50
     zoom = 100
 
-    mode = 'target'
+    modes = ['target', 'matches', 'prediction', 'normal']
+    mode_index = 0
+    debug_index = 0
 
     help_str = """
     keys:
@@ -165,12 +137,19 @@ def visualise(model, encoder, iter, args):
 
     print(help_str)
 
+    model.to(device)
+    encoder.to(device)
+
+    print("classes:")
+    print(dataset.classes)
+
     for batch in iter:
 
         key = 0
         while (not key in [keys.escape, keys.space]):
 
-            evals = [evaluate_vis(model, encoder, i, nms, args) for i in batch]
+            debug_key = encoder.debug_keys[debug_index - 1] if debug_index > 0 else None
+            evals = [evaluate_vis(model, encoder, i, nms, dataset.classes, args, debug_key=debug_key) for i in batch]
 
             def show2(x):
                 return "{:.2f}".format(x)
@@ -181,8 +160,7 @@ def visualise(model, encoder, iter, args):
             for e in evals:
                 print("{}: {:d}x{:d} {}".format(e.file, e.image_size[0], e.image_size[1], str(e.stats._map(show_vector))))
 
-
-            display = overlay_batch(evals, mode=mode, scale=100 / zoom, classes=dataset.classes, threshold = threshold/100, cols=4)
+            display = overlay_batch(evals, mode=modes[mode_index], scale=100 / zoom, classes=dataset.classes, threshold = threshold/100, cols=4)
             if zoom != 100:
                 display = resize_scale(display, zoom / 100)
 
@@ -203,7 +181,7 @@ def visualise(model, encoder, iter, args):
             elif chr(key) == ')' and nms.nms < 1:
                 nms.nms = min(1, 0.05 + nms.nms)
                 print("increasing nms threshold: ", nms.nms)   
-            elif chr(key) == '<' and nms.max_detections > 50:
+            elif chr(key) == '<' and nms.detections > 50:
                 nms.detections -= 50
                 print("decreasing max detections: ", nms.detections)
             elif chr(key) == '>':
@@ -217,17 +195,16 @@ def visualise(model, encoder, iter, args):
                 zoom += 5
                 print("zoom in: ", zoom)
             elif chr(key) == 'm':
-                mode = 'matches'
-                print("showing matches")
-            elif chr(key) == 'p':
-                mode = 'prediction'
-                print("showing prediction")
-            elif chr(key) == 'a':
-                mode = 'anchors'
-                print("showing anchors")
-            elif chr(key) == 't':
-                mode = 'target'
-                print("showing target")
+                mode_index = (mode_index + 1) % len(modes)
+                print("showing " + modes[mode_index]) 
+
+            elif chr(key) == 'd':
+                debug_index = (debug_index + 1) % (len(encoder.debug_keys) + 1)
+                if debug_index > 0:
+                    print("showing debug: " + encoder.debug_keys[debug_index - 1])
+                else:
+                    print("hiding debug")
+
 
 
         if(key == 27):
@@ -275,9 +252,9 @@ if __name__ == '__main__':
     def show_dim(x, y):
         return "{:d}x{:d}".format(int(x), int(y))
 
-    print("anchor box sizes:")
-    for dims in env.encoder.box_sizes:
-        print(*("{0: <8}".format(show_dim(x, y)) for x, y in dims))
+    # print("anchor box sizes:")
+    # for dims in env.encoder.box_sizes:
+    #     print(*("{0: <8}".format(show_dim(x, y)) for x, y in dims))
 
 
     if args.action == 'visualise':

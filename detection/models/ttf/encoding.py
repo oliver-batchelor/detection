@@ -9,7 +9,33 @@ from torch import Tensor
 import numpy as np
 
 from detection import box, display
-from tools import struct, table, show_shapes, sum_list, cat_tables, show_shapes
+from tools import struct, table, shape, sum_list, cat_tables, shape
+
+from tools import image
+
+from detection.display import to_rgb
+
+
+
+def class_heatmap(prediction, colours):
+    h, w, num_classes = prediction.shape
+
+    heatmap = prediction.new_zeros(h, w, 4)
+    assert len(colours) == num_classes
+    for i, colour in enumerate(colours):
+        class_heatmap = prediction.select(2, i)
+
+        if type(colour) is int:
+            colour = map(lambda c: c / 255, to_rgb(colour))
+
+        colours = class_heatmap.unsqueeze(2) * prediction.new_tensor([*colour, 1]).clamp_(0, 1)    
+
+        alpha = class_heatmap.unsqueeze(2)
+        heatmap = heatmap * (1 - alpha) + colours * alpha
+
+    return heatmap
+
+
 
 
 def make_centres(w, h, stride, device):               
@@ -30,26 +56,38 @@ def expand_centres(centres, stride, input_size, device):
 
 def decode_boxes(predictions, centres):
     lower, upper = box.split(predictions)
+    return box.join(centres - lower, centres + upper)
 
-    lower = centres - lower
-    upper = centres + upper
 
-    return box.join(lower, upper)
+def show_local_maxima(classification, kernel=3):
+    maxima, mask = local_maxima(classification)
+    maxima = maxima.max(dim=0).values.unsqueeze(2)
+    alpha  = mask.max(dim=0).values.float().unsqueeze(2)
 
-def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
-    h, w, num_classes = classification.shape
+    colour = (1 - maxima) * maxima.new_tensor([1, 0, 0]) + maxima * maxima.new_tensor([0, 1, 0])
+    return torch.cat([colour, alpha], dim=2)
+
+
+
+def local_maxima(classification, kernel=3, threshold=0.05):
     classification = classification.permute(2, 0, 1).contiguous()
 
     maxima = F.max_pool2d(classification, (kernel, kernel), stride=1, padding=(kernel - 1) // 2)
-    mask = (maxima == classification) & (maxima >= nms_params.threshold)
+    mask = (maxima == classification) & (maxima >= threshold)
     
-    maxima.masked_fill_(~mask, 0.)
+    return maxima.masked_fill_(~mask, 0.), mask
+
+
+def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
+    h, w, num_classes = classification.shape
+    maxima, mask = local_maxima(classification, kernel=kernel, threshold=nms_params.threshold)
+
     confidence, inds = maxima.view(-1).topk(k = min(nms_params.detections, mask.sum()), dim=0)
 
     labels   = inds // (h * w)
     box_inds = inds % (h * w)
     
-    return struct(label = labels, bbox = boxes.view(-1, 4)[box_inds], confidence=confidence)
+    return table(label = labels, bbox = boxes.view(-1, 4)[box_inds], confidence=confidence)
 
 
 
@@ -149,16 +187,13 @@ def random_target(centre_range=(0, 600), size_range=(50, 200), classes=3, n=20):
     )
 
 
-def show_targets(encoded, target, layer=0):
+def show_targets(encoded, target, colours, layer=0):
 
-    h = encoded.heatmap.contiguous()
     w = encoded.box_weight.contiguous() * 255
+    h = class_heatmap(encoded.heatmap.contiguous(), colours)
 
     for b, l in zip(target.bbox / (2**layer), target.label):
-
-        print(b, l)
-        color = [0.2, 0.2, 0.2, 1]
-        color[l] = 1
+        color = colours[l]
 
         h = display.draw_box(h, b, thickness=1, color=color)
         w = display.draw_box(w, b, thickness=1, color=color)
@@ -169,12 +204,19 @@ if __name__ == "__main__":
     from tools.image import cv
 
     size = 600
-    target = random_target(centre_range=(0, 600), size_range=(10, 100), n=100)
+    colours = [(1, 1, 0), (0, 1, 1), (1, 0, 1), (0.5, 0.5, 0.5), (0.8, 0.2, 0.2)]
+
+    num_classes = len(colours)
+    target = random_target(centre_range=(0, 600), size_range=(10, 100), n=100, classes=num_classes)
 
     layer = 0
-    encoded = encode_layer(target, (size, size), layer, 3, struct(alpha=0.54))
+    encoded = encode_layer(target, (size, size), layer, num_classes, struct(alpha=0.54))
 
     decoded = decode(encoded.heatmap, encoded.box_target)
-    print(show_shapes(decoded))
-    show_targets(encoded, decoded)
+    # print(shape(decoded))
+    # show_targets(encoded, decoded, colours)
+
+    maxima = show_local_maxima(encoded.heatmap)
+    print(maxima.shape)
+    cv.display(maxima)
 
