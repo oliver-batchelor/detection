@@ -50,11 +50,7 @@ class Encoder:
 
     def decode(self, inputs, prediction, nms_params=box.nms_defaults):
         h, w, _ = prediction.classification.shape
-
-        centres = self._centres(w, h)
-        lower, upper = box.split(prediction.location)
-        boxes = box.join(centres - lower, centres + upper)
-
+        boxes = encoding.decode_boxes(self._centres(w, h), prediction.location)
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
 
     @property
@@ -89,7 +85,7 @@ class Encoder:
         class_loss = loss.class_loss(encoded_target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
-        box_prediction = encoding.decode_boxes(prediction.location, centres)
+        box_prediction = encoding.decode_boxes(centres, prediction.location)
 
         loc_loss = loss.giou(encoded_target.box_target, box_prediction, encoded_target.box_weight)
 
@@ -118,7 +114,7 @@ class TTFNet(nn.Module):
         features = self.pyramid(input)
         
         return struct(
-            location = permute(self.regressor(features)).fill_(1), # * self.scale_factor,
+            location = permute(self.regressor(features)) * self.scale_factor,
             classification = permute(self.classifier(features).sigmoid())
          )
 

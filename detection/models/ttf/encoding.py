@@ -85,7 +85,9 @@ def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
     
     return table(label = labels, bbox = boxes.view(-1, 4)[box_inds], confidence=confidence)
 
-
+def decode_boxes(centres, prediction):
+    lower, upper = box.split(prediction)
+    return box.join(centres - lower, centres + upper)
 
 
 def gaussian_2d(shape, sigma_x=1, sigma_y=1):

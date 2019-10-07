@@ -126,6 +126,6 @@ def decode_dataset(data):
 
 
 def init_dataset(config):
-    classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
+    classes = [struct(id = int(k), **v) for k, v in config.classes.items()]
 
     return config, DetectionDataset(classes=classes)
