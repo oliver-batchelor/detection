@@ -243,7 +243,7 @@ def compute_AP(results, classes, conf_thresholds=None):
 
 def summarize_test(name, results, classes, epoch, log, thresholds=None):
 
-    class_names = {c.id : c.name.name for c in classes}
+    class_names = {c.id : c.name for c in classes}
 
     summary = compute_AP(results, classes, thresholds)
     total, class_aps = summary.total, summary.classes

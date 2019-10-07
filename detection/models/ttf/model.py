@@ -41,6 +41,7 @@ class Encoder:
         self.centre_map = self.centre_map.to(device)
 
     def _centres(self, w, h):
+
         self.centre_map = encoding.expand_centres(self.centre_map, self.stride, (w, h), device=self.device)
         return self.centre_map[:h, :w]
 
@@ -49,21 +50,29 @@ class Encoder:
 
     def decode(self, inputs, prediction, nms_params=box.nms_defaults):
         h, w, _ = prediction.classification.shape
-        
+
         centres = self._centres(w, h)
-        boxes = encoding.decode_boxes(prediction.location, centres)
+        lower, upper = box.split(prediction.location)
+        boxes = box.join(centres - lower, centres + upper)
 
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
 
     @property
     def debug_keys(self):
-        return ["heatmap", "maxima"]
+        return ["heatmap", "maxima", "heatmap_target", "target_weight"]
     
     def debug(self, image, target, prediction, classes):
+        h, w, num_classes = prediction.classification.shape
+        input_size = image_size(image)
+
         class_colours = [c.colour for c in classes]
+        encoded_target = encoding.encode_layer(target, input_size, self.layer, num_classes, self.params)
+
         return struct(
-            heatmap=encoding.class_heatmap(prediction.classification, class_colours), 
-            maxima=encoding.show_local_maxima(prediction.classification)
+            heatmap=encoding.show_heatmap(prediction.classification, class_colours), 
+            maxima=encoding.show_local_maxima(prediction.classification),
+            heatmap_target=encoding.show_heatmap(encoded_target.heatmap, class_colours),
+            target_weight=encoding.show_weights(encoded_target.box_weight, (1, 0, 0))
         )
 
 
@@ -72,17 +81,17 @@ class Encoder:
         batch, h, w, num_classes = prediction.classification.shape
         input_size = image_size(inputs)
 
-        encoded_targets = stack_tables([
+        encoded_target = stack_tables([
             encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) 
                 for t in target
             ])
         
-        class_loss = loss.class_loss(target.heatmap, prediction.classification,  class_weights=self.class_weights)
+        class_loss = loss.class_loss(encoded_target.heatmap, prediction.classification,  class_weights=self.class_weights)
 
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
         box_prediction = encoding.decode_boxes(prediction.location, centres)
 
-        loc_loss = loss.giou(target.box_target, box_prediction, target.box_weight)
+        loc_loss = loss.giou(encoded_target.box_target, box_prediction, encoded_target.box_weight)
 
         return struct(classification = class_loss * self.params.balance, location = loc_loss)
     
@@ -109,7 +118,7 @@ class TTFNet(nn.Module):
         features = self.pyramid(input)
         
         return struct(
-            location = permute(self.regressor(features)) * self.scale_factor,
+            location = permute(self.regressor(features)).fill_(1), # * self.scale_factor,
             classification = permute(self.classifier(features).sigmoid())
          )
 

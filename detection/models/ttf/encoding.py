@@ -15,9 +15,10 @@ from tools import image
 
 from detection.display import to_rgb
 
+def show_weights(weights, colour):
+    return weights.unsqueeze(2).clamp(0, 1) * weights.new_tensor([*colour, 1])
 
-
-def class_heatmap(prediction, colours):
+def show_heatmap(prediction, colours):
     h, w, num_classes = prediction.shape
 
     heatmap = prediction.new_zeros(h, w, 4)
@@ -36,27 +37,22 @@ def class_heatmap(prediction, colours):
     return heatmap
 
 
-
-
 def make_centres(w, h, stride, device):               
     x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
     y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
 
-    return torch.stack(torch.meshgrid(y, x), dim=2)
+    return torch.stack(torch.meshgrid(x, y), dim=2).permute(1, 0, 2)
 
 def expand_centres(centres, stride, input_size, device):
     w, h = max(1, math.ceil(input_size[0])), max(1, math.ceil(input_size[1]))
     ch, cw, _ = centres.shape
 
-    if ch < h or cw < w:
+    if ch < h or cw < w: 
         return make_centres(max(w, cw), max(h, ch), stride, device=device)
     else:
         return centres
 
 
-def decode_boxes(predictions, centres):
-    lower, upper = box.split(predictions)
-    return box.join(centres - lower, centres + upper)
 
 
 def show_local_maxima(classification, kernel=3):
@@ -190,7 +186,7 @@ def random_target(centre_range=(0, 600), size_range=(50, 200), classes=3, n=20):
 def show_targets(encoded, target, colours, layer=0):
 
     w = encoded.box_weight.contiguous() * 255
-    h = class_heatmap(encoded.heatmap.contiguous(), colours)
+    h = show_heatmap(encoded.heatmap.contiguous(), colours)
 
     for b, l in zip(target.bbox / (2**layer), target.label):
         color = colours[l]
@@ -203,20 +199,19 @@ def show_targets(encoded, target, colours, layer=0):
 if __name__ == "__main__":
     from tools.image import cv
 
-    size = 600
     colours = [(1, 1, 0), (0, 1, 1), (1, 0, 1), (0.5, 0.5, 0.5), (0.8, 0.2, 0.2)]
 
     num_classes = len(colours)
     target = random_target(centre_range=(0, 600), size_range=(10, 100), n=100, classes=num_classes)
 
     layer = 0
-    encoded = encode_layer(target, (size, size), layer, num_classes, struct(alpha=0.54))
+    encoded = encode_layer(target, (640, 480), layer, num_classes, struct(alpha=0.54))
 
     decoded = decode(encoded.heatmap, encoded.box_target)
     # print(shape(decoded))
-    # show_targets(encoded, decoded, colours)
+    show_targets(encoded, decoded, colours)
 
-    maxima = show_local_maxima(encoded.heatmap)
-    print(maxima.shape)
-    cv.display(maxima)
+    # maxima = show_local_maxima(encoded.heatmap)
+    # print(maxima.shape)
+    # cv.display(maxima)
 
