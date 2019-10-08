@@ -37,18 +37,18 @@ def show_heatmap(prediction, colours):
     return heatmap
 
 
-def make_centres(w, h, stride, device):               
-    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5).mul_(stride)
-    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5).mul_(stride)
+def make_centres(w, h, device):               
+    x = torch.arange(0, w, device=device, dtype=torch.float).add_(0.5)
+    y = torch.arange(0, h, device=device, dtype=torch.float).add_(0.5)
 
     return torch.stack(torch.meshgrid(x, y), dim=2).permute(1, 0, 2)
 
-def expand_centres(centres, stride, input_size, device):
+def expand_centres(centres, input_size, device):
     w, h = max(1, math.ceil(input_size[0])), max(1, math.ceil(input_size[1]))
     ch, cw, _ = centres.shape
 
     if ch < h or cw < w: 
-        return make_centres(max(w, cw), max(h, ch), stride, device=device)
+        return make_centres(max(w, cw), max(h, ch), device=device)
     else:
         return centres
 
@@ -85,9 +85,9 @@ def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
     
     return table(label = labels, bbox = boxes.view(-1, 4)[box_inds], confidence=confidence)
 
-def decode_boxes(centres, prediction):
+def decode_boxes(centres, prediction, stride):
     lower, upper = box.split(prediction)
-    return box.join(centres - lower, centres + upper)
+    return box.join(centres - lower, centres + upper) * stride
 
 
 def gaussian_2d(shape, sigma_x=1, sigma_y=1):

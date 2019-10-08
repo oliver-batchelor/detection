@@ -8,6 +8,8 @@ from torch import Tensor
 import itertools
 import torchvision.models as m
 
+import torch.nn.functional as F
+
 import models.pretrained as pretrained
 from detection import box
 
@@ -42,15 +44,18 @@ class Encoder:
 
     def _centres(self, w, h):
 
-        self.centre_map = encoding.expand_centres(self.centre_map, self.stride, (w, h), device=self.device)
+        self.centre_map = encoding.expand_centres(self.centre_map, (w, h), device=self.device)
         return self.centre_map[:h, :w]
 
     def encode(self, inputs, target):
-        return struct()
+        input_size = image_size(inputs)
+        num_classes = len(self.class_weights)
+        return encoding.encode_layer(target, input_size, self.layer, num_classes, self.params) 
+
 
     def decode(self, inputs, prediction, nms_params=box.nms_defaults):
         h, w, _ = prediction.classification.shape
-        boxes = encoding.decode_boxes(self._centres(w, h), prediction.location)
+        boxes = encoding.decode_boxes(self._centres(w, h), prediction.location, self.stride)
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
 
     @property
@@ -71,31 +76,31 @@ class Encoder:
             target_weight=encoding.show_weights(encoded_target.box_weight, (1, 0, 0))
         )
 
-
        
-    def loss(self, inputs, target, enc, prediction):
+    def loss(self, inputs, target, encoded_target, prediction):
         batch, h, w, num_classes = prediction.classification.shape
-        input_size = image_size(inputs)
+        # input_size = image_size(inputs)
 
-        encoded_target = stack_tables([
-            encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) 
-                for t in target
-            ])
+        # encoded_target = stack_tables([
+        #     encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) 
+        #         for t in target
+        #     ])
+
+        # print(shape(encoded_target), shape(enc))
         
         class_loss = loss.class_loss(encoded_target.heatmap, prediction.classification,  class_weights=self.class_weights)
-
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
-        box_prediction = encoding.decode_boxes(centres, prediction.location)
-
+                     
+        box_prediction = encoding.decode_boxes(centres, prediction.location, 1)
         loc_loss = loss.giou(encoded_target.box_target, box_prediction, encoded_target.box_weight)
 
-        return struct(classification = class_loss * self.params.balance, location = loc_loss)
+        return struct(classification = class_loss / self.params.balance, location = loc_loss)
     
 
 
 class TTFNet(nn.Module):
 
-    def __init__(self, backbone_name, first, depth, features=32, num_classes=2, scale_factor=16):
+    def __init__(self, backbone_name, first, depth, features=32, num_classes=2, scale_factor=4):
         super().__init__()
 
         self.num_classes = num_classes
@@ -114,20 +119,24 @@ class TTFNet(nn.Module):
         features = self.pyramid(input)
         
         return struct(
-            location = permute(self.regressor(features)) * self.scale_factor,
+            location = (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0),
             classification = permute(self.classifier(features).sigmoid())
          )
 
+
+pyramid_parameters = pyramid_parameters
 
 parameters = struct(
     anchor_scale = param (4, help = "anchor scale relative to box stride"),
     
     params = group('parameters',
-        alpha   = param(1., help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
-        balance = param(4., help = "loss = class_loss / balance + location loss")
+        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
+        balance = param(1., help = "loss = class_loss / balance + location loss")
     ),
 
-    pyramid = group('pyramid_parameters', **pyramid_parameters)
+    pyramid = group('pyramid_parameters', **pyramid_parameters._extend (
+        first     = param (2, help = "first layer of feature maps, scale = 1 / 2^first"),
+    ))
   )
 
 

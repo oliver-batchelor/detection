@@ -13,7 +13,7 @@ import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
 from tools import struct, tensor, shape, cat_tables, shape_info, \
-    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table
+    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table, tensors_to
 
 import detection.box as box
 from detection import evaluate
@@ -49,10 +49,11 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
 
-        target_table = data.target._map(Tensor.to, device)
-        targets = split_table(target_table, data.lengths.tolist())
+        target_table = tensors_to(data.target, device=device)
+        encoding = tensors_to(data.encoding, device=device)
 
-        loss = encoder.loss(image, targets, data.encoding, prediction)
+        targets = split_table(target_table, data.lengths.tolist())
+        loss = encoder.loss(image, targets, encoding, prediction)
 
         statistics = make_statistics(data, encoder, loss, prediction)
         return struct(error = sum(loss.values()) / image.data.size(0), statistics=statistics, size = data.image.size(0))
@@ -107,9 +108,10 @@ def evaluate_full(model, data, encoder, params=eval_defaults):
         result = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
 
         prediction = result.prediction._map(lambda p: p.unsqueeze(0))
-        target = data.target._map(Tensor.to, params.device)
+        target = tensors_to(data.target, device=params.device)
+        encoding = tensors_to(data.encoding, device=params.device)
 
-        loss = encoder.loss(data.image, [target], data.encoding, prediction)
+        loss = encoder.loss(data.image, [target], encoding, prediction)
         statistics = make_statistics(data, encoder, loss, result.prediction)
 
         return result._extend(statistics=statistics)
