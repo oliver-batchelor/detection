@@ -88,8 +88,6 @@ def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=t
         return struct(detections = encoder.decode(batch, prediction), prediction = prediction)
 
   
-
-
 eval_defaults = struct(
     overlap = 256,
     split = False,

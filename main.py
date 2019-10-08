@@ -26,7 +26,7 @@ import tools.model.tools as model_tools
 import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, shape, to_structs, Struct, window
+from tools import table, struct, logger, shape, to_structs, Struct, window, tensors_to
 
 from tools.logger import EpochLogger
 
@@ -192,10 +192,10 @@ def initialise(config, dataset, args):
     return struct(**locals())
 
 
-def encode_shape(box, config):
+def encode_shape(box, class_config):
     lower, upper =  box[:2], box[2:]
 
-    if config.shape == 'circle':
+    if class_config.shape == 'circle':
 
         centre = ((lower + upper) * 0.5).tolist()
         radius = ((upper - lower).sum().item() / 4)
@@ -203,10 +203,10 @@ def encode_shape(box, config):
         circle_shape = struct(centre = centre, radius = radius)
         return tagged('circle', circle_shape)
 
-    elif config.shape == 'box':
+    elif class_config.shape == 'box':
         return tagged('box', struct (lower = lower.tolist(), upper = upper.tolist()))
 
-    assert False, "unsupported shape config: " + config.shape
+    assert False, "unsupported shape config: " + class_config.shape
 
 
 def weight_counts(weight):
@@ -220,16 +220,15 @@ def weight_counts(weight):
 def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
-    class_map = {c.id: c.name for c in classes}
+    class_map = {c.id: c for c in classes}
     
     scale = env.args.scale
 
     def detection(p):
         object_class = classes[p.label]
-        config = object_class.name
 
         return struct (
-            shape      =  encode_shape(p.bbox.cpu() / scale, config),
+            shape      =  encode_shape(p.bbox.cpu() / scale, object_class),
             label      =  object_class.id,
             confidence = p.confidence.item(),
             match = p.match.item() if 'match' in p else None
@@ -290,25 +289,23 @@ def table_list(t):
     return list(t._sequence())
 
 def evaluate_review(env, image, nms_params, review):
-    model = env.best.model
+    model = env.best.model.to(env.device)
     scale = env.args.scale
 
     model.eval()
     with torch.no_grad():
-        prediction, _ = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
-            device=env.device)
-        review = review._map(torch.Tensor.to, env.device)
+        prediction = evaluate.evaluate_image(model, image, env.encoder, 
+            device=env.device, nms_params=nms_params).detections
+
+        review = tensors_to(review, device=env.device)
 
         ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
-
-
         review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
 
         prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
 
 
-        detections = table_list(review_predictions._extend(match = review.id)) + \
-                     table_list(env.encoder.nms(prediction, nms_params=nms_params))
+        detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
 
         return make_detections(env, detections)
 
