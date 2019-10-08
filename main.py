@@ -276,6 +276,7 @@ def select_matching(ious, label, prediction, threshold = 0.5):
     matching = matching & has_label
     confidence = prediction.confidence.unsqueeze(1).expand_as(matching).masked_fill(~matching, 0)
 
+    print(confidence.shape)
     _, max_ids = confidence.max(0)
     return prediction._index_select(max_ids)
 
