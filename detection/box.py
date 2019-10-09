@@ -181,11 +181,7 @@ def giou(box_a, box_b):
     return iou - giou
 
 
-nms_defaults = struct(
-    nms         = 0.5,
-    threshold   = 0.05,
-    detections  = 500
-)
+
 
 def random_points(r, n):
     lower, upper = r
@@ -196,21 +192,6 @@ def random(centre_range, size_range, n):
     extents = random_points(size_range, n) * 0.5
 
     return torch.cat([centre - extents, centre + extents], 1)
-
-def nms(prediction, params, max_box_factor=200):
-    # max_boxes is a 'safety' parameter, otherwise nms will can sometimes all the gpu ram
-
-    inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
-    prediction = prediction._index_select(inds)._extend(index = inds)
-
-    # prediction = prediction._sort_on('confidence', descending=True)
-    # prediction = prediction._take(max_box_factor * params.detections)
-
-    #inds = extern.nms(prediction.bbox, prediction.confidence, params.nms)\
-    inds = torchvision.nms(prediction.bbox, prediction.confidence, params.nms)
-    
-    return prediction._index_select(inds)._take(params.detections)
-
 
 
     

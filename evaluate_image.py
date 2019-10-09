@@ -10,7 +10,7 @@ from tools.image import cv
 from main import load_model
 
 from evaluate import evaluate_image
-from detection import box, display
+from detection import box, display, detection_table
 
 parameters = struct (
     model = param('',  required = True,     help = "model checkpoint to use for detection"),
@@ -34,7 +34,7 @@ encoder.to(device)
 
 frame = cv.imread_color(args.input)
 
-nms_params = box.nms_defaults._extend(nms = args.threshold)
+nms_params = detection_table.nms_defaults._extend(nms = args.threshold)
 pprint_struct(nms_params)
 
 detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device, crop_boxes=True)

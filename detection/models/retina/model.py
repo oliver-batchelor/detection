@@ -9,7 +9,7 @@ import itertools
 import torchvision.models as m
 
 import models.pretrained as pretrained
-from detection import box
+from detection import box, detection_table
 
 from models.common import Named, Parallel, image_size
 
@@ -61,7 +61,7 @@ class Encoder:
         
         return struct()
 
-    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
+    def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
 
         anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)

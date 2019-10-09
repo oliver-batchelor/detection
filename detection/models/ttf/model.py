@@ -11,7 +11,7 @@ import torchvision.models as m
 import torch.nn.functional as F
 
 import models.pretrained as pretrained
-from detection import box
+from detection import box, detection_table
 
 from tools.image.transforms import normalize_batch
 from models.common import Named, Parallel, image_size
@@ -53,7 +53,7 @@ class Encoder:
         return encoding.encode_layer(target, input_size, self.layer, num_classes, self.params) 
 
 
-    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
+    def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
         h, w, _ = prediction.classification.shape
         boxes = encoding.decode_boxes(self._centres(w, h), prediction.location, self.stride)
         return encoding.decode(prediction.classification, boxes, nms_params=nms_params)

@@ -72,12 +72,6 @@ def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
 
 
 
-# def rev_cummax(v):
-#     for i in range(v.size(0) - 1, 0, -1):
-#         v[i - 1] = max(v[i - 1], v[i])
-
-#     return v
-
 def rev_cummax(v):
     flipped = v.flip(0).numpy()
     rev_max = np.maximum.accumulate(flipped)

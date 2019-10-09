@@ -8,7 +8,7 @@ from torch import Tensor
 
 import numpy as np
 
-from detection import box, display
+from detection import box, display, detection_table
 from tools import struct, table, shape, sum_list, cat_tables, shape
 
 from tools import image
@@ -74,7 +74,7 @@ def local_maxima(classification, kernel=3, threshold=0.05):
     return maxima.masked_fill_(~mask, 0.), mask
 
 
-def decode(classification, boxes, kernel=3, nms_params=box.nms_defaults):
+def decode(classification, boxes, kernel=3, nms_params=detection_table.nms_defaults):
     h, w, num_classes = classification.shape
     maxima, mask = local_maxima(classification, kernel=kernel, threshold=nms_params.threshold)
 

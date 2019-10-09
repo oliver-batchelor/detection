@@ -15,11 +15,10 @@ from tools.image.transforms import normalize_batch
 from tools import struct, tensor, shape, cat_tables, shape_info, \
     Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table, tensors_to
 
-import detection.box as box
-from detection import evaluate
-import operator
+from detection import box, evaluate, detection_table
 from functools import reduce
 
+import operator
 
 
 def mean_results(results):
@@ -76,7 +75,7 @@ def summarize_train(name, results, classes, epoch, log):
 
 
 
-def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=torch.cuda.current_device()):
+def evaluate_image(model, image, encoder, nms_params=detection_table.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
         batch = image.unsqueeze(0) if image.dim() == 3 else image          
@@ -94,7 +93,7 @@ eval_defaults = struct(
 
     image_size = (600, 600),
     batch_size = 1,
-    nms_params = box.nms_defaults,
+    nms_params = detection_table.nms_defaults,
 
     device=torch.cuda.current_device(),
     debug = ()

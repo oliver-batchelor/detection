@@ -93,9 +93,6 @@ def load_state_partial(model, src):
             if source_param.dim() == dest_param.dim():
                 copy_partial(dest_param, source_param)
 
-
-
-
 def load_state(model, info):
     load_state_partial(model, info.state)
     return struct(model = model, 
@@ -264,7 +261,7 @@ def make_detections(env, predictions):
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
-        nms_params=nms_params, device=env.device)
+        nms_params=nms_params, device=env.device).detections
     return make_detections(env, list(detections._sequence()))
 
 
@@ -293,22 +290,20 @@ def evaluate_review(env, image, nms_params, review):
     model = env.best.model.to(env.device)
     scale = env.args.scale
 
-    model.eval()
-    with torch.no_grad():
-        prediction = evaluate.evaluate_image(model, image, env.encoder, 
-            device=env.device, nms_params=nms_params).detections
+    # TODO: FIXME
+    # result = evaluate.evaluate_image(model, image, env.encoder, 
+    #     device=env.device, nms_params=nms_params).detections
 
-        review = tensors_to(review, device=env.device)
+    # review = tensors_to(review, device=env.device)
+    # ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
 
-        ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
-        review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
+    # review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
 
-        prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
+    # prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
+    # detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
 
-
-        detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
-
-        return make_detections(env, detections)
+    detections = detection_table.empty_detections
+    return make_detections(env, detections)
 
 
 # def match_predictions(bbox, predictions, threshold=0.5):

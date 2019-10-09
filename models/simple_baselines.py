@@ -22,18 +22,6 @@ from collections import OrderedDict
 
 
 
-def init_weights(m):
-    if isinstance(m, nn.Conv2d):
-        init.normal_(m.weight, std=0.01)
-
-
-def init_classifier(m, prior=0.001):
-    if isinstance(m, nn.Conv2d):
-        init.normal_(m.weight, std=0.01)
-        if hasattr(m, 'bias') and m.bias is not None:           
-            b = -math.log((1 - prior)/prior)
-            init.constant_(m.bias, b)
-
 
 def residual_decoder(features):
         decoder = nn.Sequential (
@@ -56,6 +44,9 @@ def join_output(layers, n):
         return out.view(out.size(0), -1, n)
 
     return torch.cat(list(map(permute, layers)), 1)    
+
+
+
 
 
 class FeaturePyramid(nn.Module):
@@ -81,7 +72,7 @@ class FeaturePyramid(nn.Module):
      
         encoded_sizes = pretrained.encoder_sizes(self.backbone)
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
-        self.decoder = UpCascade(named([make_decoder(features) for size in encoded_sizes]))
+        self.decoder = UpCascade(named([make_decoder(features) for i in encoded_sizes]))
 
         for m in [self.reduce, self.decoder]:
             m.apply(init_weights)
@@ -138,6 +129,7 @@ def feature_pyramid(backbone_name, first=3, depth=8, features=64):
 def feature_map(backbone_name, **options):
     pyramid = feature_pyramid(backbone_name, **options)
     return nn.Sequential(pyramid, Lookup(0))
+
 
 if __name__ == '__main__':
 

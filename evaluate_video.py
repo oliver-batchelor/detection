@@ -10,7 +10,7 @@ from tools.image import cv
 from main import load_model
 
 from evaluate import evaluate_image
-from detection import box, display
+from detection import box, display, detection_table
 
 from dataset.annotate import tagged
 
@@ -98,7 +98,7 @@ detection_frames = []
 for i, frame in enumerate(frames()):
     if i > args.start:
 
-        nms_params = box.nms_defaults._extend(threshold = args.threshold)
+        nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
         detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device)
         
         for prediction in detections._sequence():
