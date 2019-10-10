@@ -410,7 +410,7 @@ def log_counts(env, image, stats):
 
     class_counts = image.target.label.bincount(minlength = len(env.dataset.classes))
 
-    class_names = {str(c.id) : c.name.name for c in env.dataset.classes}
+    class_names = {str(c.id) : c.name for c in env.dataset.classes}
     class_counts = {str(c.id) : count for c, count in zip(env.dataset.classes, class_counts)}
 
     if stats.class_counts is not None:
