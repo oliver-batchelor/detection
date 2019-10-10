@@ -260,7 +260,7 @@ def make_detections(env, predictions):
 
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
-    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
+    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder.to(env.device), 
         nms_params=nms_params, device=env.device).detections
     return make_detections(env, list(detections._sequence()))
 
@@ -273,7 +273,6 @@ def select_matching(ious, label, prediction, threshold = 0.5):
     matching = matching & has_label
     confidence = prediction.confidence.unsqueeze(1).expand_as(matching).masked_fill(~matching, 0)
 
-    print(confidence.shape)
     _, max_ids = confidence.max(0)
     return prediction._index_select(max_ids)
 
@@ -287,15 +286,24 @@ def table_list(t):
     return list(t._sequence())
 
 def evaluate_review(env, image, nms_params, review):
-    model = env.best.model.to(env.device)
-    scale = env.args.scale
+    # model = env.best.model.to(env.device)
+    # encoder = env.encoder.to(env.device)
 
-    # TODO: FIXME
-    # result = evaluate.evaluate_image(model, image, env.encoder, 
+    # scale = env.args.scale
+
+    # detections = evaluate.evaluate_image(model, image, encoder, 
     #     device=env.device, nms_params=nms_params).detections
 
     # review = tensors_to(review, device=env.device)
-    # ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
+    # ious = box.iou_matrix(detections.bbox, review.bbox * scale)
+    
+    # ious[ious < nms_params.nms].fill_(-1)
+    # scores = ious.mul(detections.confidence.unsqueeze(1))
+   
+    # review_inds = scores.max(0).values.argsort(descending=True)
+    # for i in review_inds.tolist():
+    #     ind, score = scores[i].max(0)
+
 
     # review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
 
