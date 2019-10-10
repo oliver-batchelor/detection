@@ -1,7 +1,7 @@
 from os import path
 import random
 import math
-from copy import copy
+from copy import deepcopy
 
 import torch
 from torch.utils.data.sampler import RandomSampler
@@ -294,7 +294,7 @@ def transform_training(args, encoder=None):
 
     
 
-    encode = encode_with(args, copy(encoder).to('cpu')) 
+    encode = encode_with(args, deepcopy(encoder).to('cpu')) 
     return multiple(args.image_samples, transforms.compose (crop, adjust_light, filter, flip, encode))
 
 def multiple(n, transform):

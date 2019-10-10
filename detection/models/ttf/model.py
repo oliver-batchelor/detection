@@ -76,18 +76,9 @@ class Encoder:
             heatmap_target=encoding.show_heatmap(encoded_target.heatmap, class_colours),
             target_weight=encoding.show_weights(encoded_target.box_weight, (1, 0, 0))
         )
-
        
     def loss(self, inputs, target, encoded_target, prediction):
         batch, h, w, num_classes = prediction.classification.shape
-        # input_size = image_size(inputs)
-
-        # encoded_target = stack_tables([
-        #     encoding.encode_layer(t, input_size, self.layer, num_classes, self.params) 
-        #         for t in target
-        #     ])
-
-        # print(shape(encoded_target), shape(enc))
         
         class_loss = loss.class_loss(encoded_target.heatmap, prediction.classification,  class_weights=self.class_weights)
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
