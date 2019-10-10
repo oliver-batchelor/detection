@@ -33,7 +33,7 @@ def collate_batch(batch):
         return cat_tables(batch)
            
     if elem_type is Struct:
-        d =  {key: collate_batch([d[key] for d in batch]) for key in elem}
+        d =  {key: collate_batch([d[key] for d in batch]) for key in elem.keys()}
         return Struct(d)
     elif isinstance(elem, str):
         return batch        
