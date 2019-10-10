@@ -302,7 +302,7 @@ def evaluate_review(env, image, nms_params, review):
     # prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
     # detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
 
-    detections = detection_table.empty_detections
+    detections = []
     return make_detections(env, detections)
 
 
