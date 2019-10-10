@@ -30,7 +30,6 @@ def sum_results(results):
 
 # TODO: move this entirely to the individual object detector
 def make_statistics(data, encoder, loss, prediction):
-    num_classes = prediction.classification.size(2)
 
     stats = struct(error=sum(loss.values()),
         loss = loss._map(Tensor.item),

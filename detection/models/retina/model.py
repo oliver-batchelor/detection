@@ -73,7 +73,7 @@ class Encoder:
             box.clamp(bbox, (0, 0), inputs)
 
         decoded = table(bbox = bbox, confidence = confidence, label = label)
-        return box.nms(decoded, nms_params)
+        return detection_table.nms(decoded, nms_params)
 
        
     def loss(self, inputs, target, encoding, prediction):
@@ -197,7 +197,7 @@ def create(args, dataset_args):
         balance = args.balance
     )
 
-    class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
+    class_weights = [c.get('weighting', 0.25) for c in dataset_args.classes]
     encoder = Encoder(args.first, box_sizes, class_weights=class_weights, params=params)
 
     return model, encoder
