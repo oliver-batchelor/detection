@@ -38,6 +38,8 @@ class Encoder:
         self.anchor_cache = {k: anchors.to(device) 
             for k, anchors in self.anchor_cache.items()}
 
+        return self
+
     def anchors(self, input_size):
         def layer_size(i):
             stride = 2 ** i
@@ -56,15 +58,12 @@ class Encoder:
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
-        # anchor_boxes = self.anchors(image_size(inputs))
-        # return anchor.encode(target, anchor_boxes, self.params) 
+        anchor_boxes = self.anchors(image_size(inputs))
+        return anchor.encode(target, anchor_boxes, self.params) 
         
-        return struct()
-
     def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
         assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
-
-        anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
+        anchor_boxes = self.anchors(image_size(inputs))
 
         bbox = anchor.decode(prediction.location, anchor_boxes)
         confidence, label = prediction.classification.max(1)
@@ -77,21 +76,19 @@ class Encoder:
 
        
     def loss(self, inputs, target, encoding, prediction):
-        
-
-        anchor_boxes = self.anchors(image_size(inputs)) #.to(prediction.location.device)
-        
-        target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
+        # target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
         # target = tensors_to(encoding, device=prediction.location.device)
 
-        class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+        class_loss = loss.class_loss(encoding.classification, prediction.classification,  class_weights=self.class_weights)
         loc_loss = 0
 
         if self.params.location_loss == "l1":
-            loc_loss = loss.l1(target.location, prediction.location, target.classification) 
+            loc_loss = loss.l1(encoding.location, prediction.location, encoding.classification) 
         elif self.params.location_loss == "giou":
+            anchor_boxes = self.anchors(image_size(inputs))      
+
             bbox = anchor.decode(prediction.location, anchor_boxes.unsqueeze(0).expand(prediction.location.size()))
-            loc_loss = loss.giou(target.location, bbox, target.classification)
+            loc_loss = loss.giou(encoding.location, bbox, encoding.classification)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
  

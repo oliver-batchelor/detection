@@ -1,6 +1,7 @@
 from os import path
 import random
 import math
+from copy import copy
 
 import torch
 from torch.utils.data.sampler import RandomSampler
@@ -24,15 +25,11 @@ import collections
 def collate_batch(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
-    error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
-
     elem = batch[0]
-    elem_type = type(batch[0])
-
-    if elem_type is Table:
+    if type(elem) is Table:
         return cat_tables(batch)
            
-    if elem_type is Struct:
+    if type(elem) is Struct:
         d =  {key: collate_batch([d[key] for d in batch]) for key in elem.keys()}
         return Struct(d)
     elif isinstance(elem, str):
@@ -48,7 +45,7 @@ def collate_batch(batch):
     else:
         return default_collate(batch) 
 
-    raise TypeError(error_msg.format(elem_type))
+    raise TypeError("batch must contain Table, numbers, dicts or lists; found {}".format(elem_type))
 
 
 # Use this to get around pickling problems using multi-processing
@@ -241,10 +238,8 @@ def sample_training(args, images, loader, transform, collate_fn=collate_batch):
         sampler=sampler,
         collate_fn=collate_fn)
 
-
 def load_testing(args, images, collate_fn=collate_batch):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
-
 
 def encode_target(encoder):
     def f(d):
@@ -295,7 +290,11 @@ def transform_training(args, encoder=None):
         transforms.adjust_colours(args.hue, args.saturation)
     ))
 
-    encode = encode_with(args, encoder) 
+
+
+    
+
+    encode = encode_with(args, copy(encoder).to('cpu')) 
     return multiple(args.image_samples, transforms.compose (crop, adjust_light, filter, flip, encode))
 
 def multiple(n, transform):

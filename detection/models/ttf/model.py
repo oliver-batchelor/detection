@@ -41,6 +41,7 @@ class Encoder:
     def to(self, device):
         self.device = device
         self.centre_map = self.centre_map.to(device)
+        return self
 
     def _centres(self, w, h):
 
