@@ -20,7 +20,7 @@ from dataset.imports import load_dataset
 from dataset.detection import least_recently_evaluated
 
 from detection.models import models
-from detection import box
+from detection import box, detection_table
 
 import tools.model.tools as model_tools
 import tools
@@ -306,13 +306,7 @@ def evaluate_review(env, image, nms_params, review):
     return make_detections(env, detections)
 
 
-# def match_predictions(bbox, predictions, threshold=0.5):
-#     ious = iou(predictions.bbox, bbox)
 
-#     _, max_ids = ious.max(1)
-#     return predictions._index_select(max_ids)
-
-# def review_request(env, file, nms_params, device):
 
 def detect_request(env, file, nms_params, review=None):
     path = os.path.join(env.data_root, file)
@@ -393,7 +387,7 @@ def test_images(images, model, env, split=False, hook=None):
         nms_params = get_nms_params(env.args),
         device = env.device,
         debug = env.debug
-    )  
+    )
 
     eval_test = evaluate.eval_test(model.eval(), env.encoder, eval_params)
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
