@@ -228,7 +228,7 @@ def make_detections(env, predictions):
             shape      =  encode_shape(p.bbox.cpu() / scale, object_class),
             label      =  object_class.id,
             confidence = p.confidence.item(),
-            match = p.match.item() if 'match' in p else None
+            match = int(p.match) if 'match' in p else None
         )
     detections = list(map(detection, predictions))
     total_confidence = torch.FloatTensor([d.confidence for d in detections])
@@ -286,31 +286,37 @@ def table_list(t):
     return list(t._sequence())
 
 def evaluate_review(env, image, nms_params, review):
-    # model = env.best.model.to(env.device)
-    # encoder = env.encoder.to(env.device)
+    model = env.best.model.to(env.device)
+    encoder = env.encoder.to(env.device)
 
-    # scale = env.args.scale
+    scale = env.args.scale
 
-    # detections = evaluate.evaluate_image(model, image, encoder, 
-    #     device=env.device, nms_params=nms_params).detections
+    detections = evaluate.evaluate_image(model, image, encoder, 
+        device=env.device, nms_params=nms_params).detections
 
-    # review = tensors_to(review, device=env.device)
-    # ious = box.iou_matrix(detections.bbox, review.bbox * scale)
+    review = tensors_to(review, device=env.device)
+    ious = box.iou_matrix(detections.bbox, review.bbox * scale)
     
-    # ious[ious < nms_params.nms].fill_(-1)
-    # scores = ious.mul(detections.confidence.unsqueeze(1))
+    ious[ious < nms_params.nms].fill_(-1)
+    scores = ious.mul(detections.confidence.unsqueeze(1))
    
-    # review_inds = scores.max(0).values.argsort(descending=True)
-    # for i in review_inds.tolist():
-    #     ind, score = scores[i].max(0)
+    review_inds = scores.max(0).values.argsort(descending=True)
+
+    detections = table_list(detections)
+    for i in review_inds.tolist():
+        score, ind = scores[: , i].max(0)
+        
+        # print(score.item(), scores[ind.item(), i].item(), detections[ind])
+        if score > 0:
+            detections[ind].match = i
+
+        scores[ind].fill_(0)
 
 
     # review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
 
     # prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
     # detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
-
-    detections = []
     return make_detections(env, detections)
 
 
