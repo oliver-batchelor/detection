@@ -294,12 +294,15 @@ def evaluate_review(env, image, nms_params, review):
     detections = evaluate.evaluate_image(model, image, encoder, 
         device=env.device, nms_params=nms_params).detections
 
+    if detections._size == 0:
+        return make_detections(env, [])
+
     review = tensors_to(review, device=env.device)
     ious = box.iou_matrix(detections.bbox, review.bbox * scale)
     
     ious[ious < nms_params.nms].fill_(-1)
     scores = ious.mul(detections.confidence.unsqueeze(1))
-   
+
     review_inds = scores.max(0).values.argsort(descending=True)
 
     detections = table_list(detections)
@@ -310,7 +313,6 @@ def evaluate_review(env, image, nms_params, review):
             detections[ind].match = i
 
         scores[ind].fill_(0)
-
 
     return make_detections(env, detections)
 
