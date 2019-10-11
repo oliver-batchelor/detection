@@ -306,17 +306,12 @@ def evaluate_review(env, image, nms_params, review):
     for i in review_inds.tolist():
         score, ind = scores[: , i].max(0)
         
-        # print(score.item(), scores[ind.item(), i].item(), detections[ind])
         if score > 0:
             detections[ind].match = i
 
         scores[ind].fill_(0)
 
 
-    # review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
-
-    # prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
-    # detections = table_list(review_predictions._extend(match = review.id)) + table_list(prediction)
     return make_detections(env, detections)
 
 

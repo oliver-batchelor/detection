@@ -83,7 +83,7 @@ def evaluate_image(model, image, encoder, nms_params=detection_table.nms_default
         norm_data = normalize_batch(batch).to(device)
         prediction = model(norm_data)._map(lambda p: p.detach()[0])
 
-        return struct(detections = encoder.decode(batch, prediction), prediction = prediction)
+        return struct(detections = encoder.decode(batch, prediction, nms_params=nms_params), prediction = prediction)
 
   
 eval_defaults = struct(
