@@ -318,7 +318,6 @@ def evaluate_review(env, image, nms_params, review):
 
 
 
-
 def detect_request(env, file, nms_params, review=None):
     path = os.path.join(env.data_root, file)
 

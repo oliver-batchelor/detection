@@ -14,6 +14,7 @@ from detection import box, display, detection_table
 
 from dataset.annotate import tagged
 
+from time import time
 import json
 
 parameters = struct (
@@ -40,7 +41,6 @@ device = torch.cuda.current_device()
 model, encoder, model_args = load_model(args.model)
 print("model parameters:")
 print(model_args)
-
 
 classes = model_args.dataset.classes
 
@@ -94,31 +94,39 @@ def export_detections(predictions):
     return list(map(detection, predictions._sequence()))
 
 detection_frames = []
+nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
+start = time()
+last = start
 
 for i, frame in enumerate(frames()):
     if i > args.start:
-
-        nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
-        detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device)
         
-        for prediction in detections._sequence():
-            label_class = classes[prediction.label].name
-            display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), int(255 * prediction.confidence), 0))
+        detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device).detections
 
-        detection_frames.append(export_detections(detections))
+        if args.log:
+            detection_frames.append(export_detections(detections))
+
+        if args.show or args.output:
+            for prediction in detections._sequence():
+                label_class = classes[prediction.label]
+                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), int(255 * prediction.confidence), 0))
 
         if args.show:
             cv.imshow(frame)
-        frame = cv.rgb_to_bgr(cv.resize(frame, size))
-
-        if out:
+        
+        if args.output:
+            frame = cv.rgb_to_bgr(cv.resize(frame, size))
             out.write(frame.numpy())
 
     if args.end is not None and i >= args.end:
         break
 
     if i % 50 == 0:
-        print(i)
+        now = time()
+        elapsed = now - last
+
+        print("frame: {} 50 frames in {:.1f} seconds, at {:.2f} fps".format(i, elapsed, 50./elapsed))
+        last = now
 
 if out:
     out.release()
