@@ -146,14 +146,7 @@ class Residual(nn.Sequential):
 
     def forward(self, input):
         output = self.module(input)
-
-        d = output.size(1) - input.size(1)
-        if d > 0:   # zero padded skip connection
-            input = output.narrow(1, 0, input.size(1)) + input
-            output = output.narrow(1, input.size(1), d)
-            return torch.cat([input, output], 1)
-        elif d < 0: # truncated skip conection
-            return input.narrow(1, 0, output.size(1)) + output
+        # assert (output.size(1) == input.size(1))
 
         return output + input
 

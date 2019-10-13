@@ -55,36 +55,40 @@ class Encoder:
 
 
     def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
-        h, w, _ = prediction.classification.shape
-        boxes = encoding.decode_boxes(self._centres(w, h), prediction.location, self.stride)
-        return encoding.decode(prediction.classification, boxes, nms_params=nms_params)
+        (classification, location) = prediction
+
+        h, w, _ = classification.shape
+        boxes = encoding.decode_boxes(self._centres(w, h), location, self.stride)
+        return encoding.decode(classification, boxes, nms_params=nms_params)
 
     @property
     def debug_keys(self):
         return ["heatmap", "maxima", "heatmap_target", "target_weight"]
     
     def debug(self, image, target, prediction, classes):
-        h, w, num_classes = prediction.classification.shape
+        (classification, location) = prediction
+
+        h, w, num_classes = classification.shape
         input_size = image_size(image)
 
         class_colours = [c.colour for c in classes]
         encoded_target = encoding.encode_layer(target, input_size, self.layer, num_classes, self.params)
 
         return struct(
-            heatmap=encoding.show_heatmap(prediction.classification, class_colours), 
-            maxima=encoding.show_local_maxima(prediction.classification),
+            heatmap=encoding.show_heatmap(classification, class_colours), 
+            maxima=encoding.show_local_maxima(classification),
             heatmap_target=encoding.show_heatmap(encoded_target.heatmap, class_colours),
             target_weight=encoding.show_weights(encoded_target.box_weight, (1, 0, 0))
         )
 
        
     def loss(self, inputs, target, encoded_target, prediction):
-        batch, h, w, num_classes = prediction.classification.shape
+        batch, h, w, num_classes = classification.shape
           
-        class_loss = loss.class_loss(encoded_target.heatmap, prediction.classification,  class_weights=self.class_weights)
+        class_loss = loss.class_loss(encoded_target.heatmap, classification,  class_weights=self.class_weights)
         centres = self._centres(w, h).unsqueeze(0).expand(batch, h, w, -1)
                      
-        box_prediction = encoding.decode_boxes(centres, prediction.location, 1)
+        box_prediction = encoding.decode_boxes(centres, location, 1)
         loc_loss = loss.giou(encoded_target.box_target, box_prediction, encoded_target.box_weight)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
@@ -111,9 +115,9 @@ class TTFNet(nn.Module):
         permute = lambda layer: layer.permute(0, 2, 3, 1).contiguous()
         features = self.pyramid(input)
         
-        return struct(
-            location = (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0),
-            classification = permute(self.classifier(features).sigmoid())
+        return (
+            (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0),
+            permute(self.classifier(features).sigmoid())
          )
 
 

@@ -14,6 +14,8 @@ from detection import box, display, detection_table
 
 from dataset.annotate import tagged
 
+import torch.onnx
+
 from time import time
 import json
 
@@ -57,6 +59,19 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = None
 if args.output:
     out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
+
+x = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).cuda()
+out = model(x)
+
+torch.onnx.export(model,               # model being run
+                  x,                         # model input (or a tuple for multiple inputs)
+                  "model.onnx",   # where to save the model (can be a file or file-like object)
+                  export_params=True,        # store the trained parameter weights inside the model file
+                  opset_version=10,          # the ONNX version to export the model to
+                  do_constant_folding=True,  # wether to execute constant folding for optimization
+                  input_names = ['input'],   # the model's input names
+                  output_names = ['output'], # the model's output names
+                  dynamic_axes={})
 
 
 
