@@ -5,9 +5,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from functools import partial
-from tools.model import match_size_2d,  centre_crop
-
 from tools import Struct, shape
+
+
+
 
 def identity(x, **kwargs):
     return x
@@ -28,6 +29,8 @@ def image_size(inputs):
     assert (len(inputs) == 2)
     return inputs
 
+    
+
 def map_modules(m, type, f):
     if isinstance(m, type):
         return f(m)
@@ -46,6 +49,31 @@ def replace_batchnorms(m, num_groups):
         return g
 
     return map_modules(m, nn.BatchNorm2d, convert)
+
+def match_size_2d(t, sized):
+    assert t.dim() == 4 and sized.dim() == 4
+    dh = sized.size(2) - t.size(2)
+    dw = sized.size(3) - t.size(3)
+
+    pad = (dw // 2, dw - dw // 2, dh // 2, dh - dh // 2)
+    return F.pad(t, pad)
+
+
+def centre_crop(t, size):
+    dw = size[3] - t.size(3)
+    dh = size[2] - t.size(2)
+
+    padding = (dw//2, dw - dw//2, dh//2, dh - dh//2)
+
+    return F.pad(t, padding)
+
+
+def concat_skip(inputs, skip, scale):
+    upscaled = F.upsample_nearest(skip, scale_factor=scale)
+    upscaled = centre_crop(upscaled, inputs.size())
+
+    return torch.cat([inputs, upscaled], 1)
+
 
 
 class Lift(nn.Module):
@@ -298,7 +326,7 @@ class Decode(nn.Module):
         self.scale_factor = scale_factor
         self.reduce = Conv(features * 2, features)
         self.module = module or identity
-        #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
+        # self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
         self.upscale = Upscale(features, scale_factor=scale_factor)
 
 
