@@ -46,7 +46,7 @@ def residual_decoder(num_blocks=2):
 
 def residual_subnet(features, n, num_blocks=2):
     blocks = [Residual(basic_block(features, features))  for i in range(num_blocks)]
-    return nn.Sequential (*blocks, Conv(features, features, 3), nn.ReLU(), nn.Conv2d(features, n, 1, bias=True))
+    return nn.Sequential (*blocks, Conv(features, features, 3), Conv(features, n, 1, bias=True))
 
 
 def join_output(layers, n):
