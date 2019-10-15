@@ -168,7 +168,7 @@ def initialise(config, dataset, args):
     output_path, log = logger.make_experiment(log_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
 
-    model, encoder = models.create(models, model_args.model, model_args.dataset)
+    model, encoder = models.create(model_args.model, model_args.dataset)
 
     set_bn_momentum(model, args.bn_momentum)
 
