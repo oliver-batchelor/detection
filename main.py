@@ -19,10 +19,9 @@ from dataset.imports import load_dataset
 
 from dataset.detection import least_recently_evaluated
 
-from detection.models import models
+from detection import models
 from detection import box, detection_table
 
-import tools.model.tools as model_tools
 import tools
 
 from tools.parameters import default_parameters, get_choice
@@ -114,7 +113,7 @@ def load_model(model_path):
 
     args = loaded.args
 
-    model, encoder = model_tools.create(models, args.model, args.dataset)
+    model, encoder = models.create(args.model, args.dataset)
     best = load_state(model, loaded.best)
 
     return model, encoder, args
@@ -169,7 +168,7 @@ def initialise(config, dataset, args):
     output_path, log = logger.make_experiment(log_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
 
-    model, encoder = model_tools.create(models, model_args.model, model_args.dataset)
+    model, encoder = models.create(models, model_args.model, model_args.dataset)
 
     set_bn_momentum(model, args.bn_momentum)
 
@@ -315,7 +314,6 @@ def evaluate_review(env, image, nms_params, review):
         scores[ind].fill_(0)
 
     return make_detections(env, detections)
-
 
 
 

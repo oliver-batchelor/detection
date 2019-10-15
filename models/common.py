@@ -5,9 +5,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from functools import partial
-from tools.model import match_size_2d,  centre_crop
-
 from tools import Struct, shape
+
+
+
 
 def identity(x, **kwargs):
     return x
@@ -28,6 +29,8 @@ def image_size(inputs):
     assert (len(inputs) == 2)
     return inputs
 
+    
+
 def map_modules(m, type, f):
     if isinstance(m, type):
         return f(m)
@@ -46,6 +49,31 @@ def replace_batchnorms(m, num_groups):
         return g
 
     return map_modules(m, nn.BatchNorm2d, convert)
+
+def match_size_2d(t, sized):
+    assert t.dim() == 4 and sized.dim() == 4
+    dh = sized.size(2) - t.size(2)
+    dw = sized.size(3) - t.size(3)
+
+    pad = (dw // 2, dw - dw // 2, dh // 2, dh - dh // 2)
+    return F.pad(t, pad)
+
+
+def centre_crop(t, size):
+    dw = size[3] - t.size(3)
+    dh = size[2] - t.size(2)
+
+    padding = (dw//2, dw - dw//2, dh//2, dh - dh//2)
+
+    return F.pad(t, padding)
+
+
+def concat_skip(inputs, skip, scale):
+    upscaled = F.upsample_nearest(skip, scale_factor=scale)
+    upscaled = centre_crop(upscaled, inputs.size())
+
+    return torch.cat([inputs, upscaled], 1)
+
 
 
 class Lift(nn.Module):
@@ -146,14 +174,7 @@ class Residual(nn.Sequential):
 
     def forward(self, input):
         output = self.module(input)
-
-        d = output.size(1) - input.size(1)
-        if d > 0:   # zero padded skip connection
-            input = output.narrow(1, 0, input.size(1)) + input
-            output = output.narrow(1, input.size(1), d)
-            return torch.cat([input, output], 1)
-        elif d < 0: # truncated skip conection
-            return input.narrow(1, 0, output.size(1)) + output
+        # assert (output.size(1) == input.size(1))
 
         return output + input
 
@@ -175,6 +196,20 @@ class Conv(nn.Module):
 
         self.norm = nn.BatchNorm2d(in_size)
         self.conv = nn.Conv2d(in_size, out_size, kernel, stride=stride, padding=padding, bias=bias, groups=1)
+        self.activation = activation
+
+    def forward(self, inputs):
+        return self.conv(self.activation(self.norm(inputs)))
+
+
+class Deconv(nn.Module):
+    def __init__(self, in_size, out_size, kernel=3, stride=1, padding=None, bias=False, activation=nn.ReLU(inplace=True), groups=1):
+        super().__init__()
+
+        padding = kernel//2 if padding is None else padding
+
+        self.norm = nn.BatchNorm2d(in_size)
+        self.conv = nn.ConvTranspose2d(in_size, out_size, kernel, stride=stride, padding=padding, bias=bias, groups=1)
         self.activation = activation
 
     def forward(self, inputs):
@@ -293,7 +328,8 @@ class DecodeAdd(nn.Module):
     def forward(self, inputs, skip):
         if not (inputs is None):
             upscaled = self.upscale(inputs)
-            upscaled = match_size_2d(upscaled, skip)
+            upscaled = trim_size_2d(upscaled, skip)
+            
             return self.module(skip + upscaled)
 
         return self.module(skip)
@@ -305,7 +341,7 @@ class Decode(nn.Module):
         self.scale_factor = scale_factor
         self.reduce = Conv(features * 2, features)
         self.module = module or identity
-        #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
+        # self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
         self.upscale = Upscale(features, scale_factor=scale_factor)
 
 
@@ -318,6 +354,9 @@ class Decode(nn.Module):
             return self.module(self.reduce(torch.cat([upscaled, skip], 1)))
 
         return self.module(skip)
+
+
+
 
 
 
