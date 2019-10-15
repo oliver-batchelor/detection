@@ -202,6 +202,20 @@ class Conv(nn.Module):
         return self.conv(self.activation(self.norm(inputs)))
 
 
+class Deconv(nn.Module):
+    def __init__(self, in_size, out_size, kernel=3, stride=1, padding=None, bias=False, activation=nn.ReLU(inplace=True), groups=1):
+        super().__init__()
+
+        padding = kernel//2 if padding is None else padding
+
+        self.norm = nn.BatchNorm2d(in_size)
+        self.conv = nn.ConvTranspose2d(in_size, out_size, kernel, stride=stride, padding=padding, bias=bias, groups=1)
+        self.activation = activation
+
+    def forward(self, inputs):
+        return self.conv(self.activation(self.norm(inputs)))
+
+
 class LocalSE(nn.Module):
 
     def __init__(self, features, kernel = 7):
@@ -340,6 +354,9 @@ class Decode(nn.Module):
             return self.module(self.reduce(torch.cat([upscaled, skip], 1)))
 
         return self.module(skip)
+
+
+
 
 
 
