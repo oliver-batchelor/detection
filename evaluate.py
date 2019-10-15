@@ -105,7 +105,7 @@ def evaluate_full(model, data, encoder, params=eval_defaults):
     with torch.no_grad():
         result = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
 
-        prediction = result.prediction._map(lambda p: p.unsqueeze(0))
+        prediction = map_tensors(result.prediction, lambda p: p.unsqueeze(0))
         target = tensors_to(data.target, device=params.device)
         encoding = tensors_to(data.encoding, device=params.device)
 
