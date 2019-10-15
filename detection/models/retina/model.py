@@ -126,7 +126,7 @@ class RetinaNet(nn.Module):
 
         self.outputs = Named(
             location=output(pyramid.features, 4 * num_boxes, range(pyramid.first, pyramid.depth)),
-            classification=output(pyramid.features, num_classes * num_boxes, range(pyramid.first,pyramid.depth), init=init_classifier)
+            classification=output(pyramid.features, num_classes * num_boxes, range(pyramid.first, pyramid.depth), init=init_classifier)
         )
 
         self.pyramid = pyramid
