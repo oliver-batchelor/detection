@@ -3,7 +3,7 @@ opencv-python
 Cython
 pycocotools
 matplotlib
-tensorflow
+tensorflow==1.14
 xmltodict
 websockets
 natsort
