@@ -13,7 +13,7 @@ import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
 from tools import struct, tensor, shape, cat_tables, shape_info, \
-    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table, tensors_to
+    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table, tensors_to, map_tensors
 
 from detection import box, evaluate, detection_table
 from functools import reduce
@@ -80,8 +80,10 @@ def evaluate_image(model, image, encoder, nms_params=detection_table.nms_default
         batch = image.unsqueeze(0) if image.dim() == 3 else image          
         assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
 
-        norm_data = normalize_batch(batch).to(device)
-        prediction = tuple(map(lambda p: p.detach()[0], model(norm_data)))
+        norm_data = normalize_batch(batch.to(device))
+        prediction = map_tensors(model(norm_data), lambda p: p.detach()[0])
+
+        # print(shape(prediction))
 
         return struct(detections = encoder.decode(batch, prediction, nms_params=nms_params), prediction = prediction)
 

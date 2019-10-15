@@ -45,7 +45,6 @@ print(info)
 
 size = (int(info.size[0] // 2), int(info.size[1] // 2))
 
-
 nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
 images = []
 
@@ -58,12 +57,23 @@ print("loaded {} images".format(len(images)))
 
 start = time()
 
-for image in images:        
-    detections = evaluate_image(model, image, encoder, nms_params = nms_params, device=device).detections
-
+for i in range(len(images)):  
+    dummy = torch.tensor(1, 3, info.size[0], info.size[1])
+    model(dummy)
 
 now = time()
 elapsed = now - start
 
-print("{} frames in {:.1f} seconds, at {:.2f} fps".format(len(images), elapsed, len(images)/elapsed))
+print("model only: {} frames in {:.1f} seconds, at {:.2f} fps".format(len(images), elapsed, len(images)/elapsed))
+
+
+start = time()
+
+for image in images:        
+    detections = evaluate_image(model, image, encoder, nms_params = nms_params, device=device).detections
+
+now = time()
+elapsed = now - start
+
+print("evaluate_image: {} frames in {:.1f} seconds, at {:.2f} fps".format(len(images), elapsed, len(images)/elapsed))
         

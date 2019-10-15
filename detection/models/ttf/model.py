@@ -116,18 +116,17 @@ class TTFNet(nn.Module):
         features = self.pyramid(input)
         
         return (
-            (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0),
-            permute(self.classifier(features).sigmoid())
+            permute(self.classifier(features).sigmoid()),
+            (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0)
          )
 
 
 pyramid_parameters = pyramid_parameters
 
 parameters = struct(
-    anchor_scale = param (4, help = "anchor scale relative to box stride"),
-    
+  
     params = group('parameters',
-        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = length / (6 * alpha)"),
+        alpha   = param(0.54, help = "control size of heatmap gaussian sigma = alpha * length / 6"),
         balance = param(1., help = "loss = class_loss / balance + location loss")
     ),
 

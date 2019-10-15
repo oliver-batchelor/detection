@@ -75,7 +75,6 @@ class FeaturePyramid(nn.Module):
             assert len(modules) == len(self.names)
             return OrderedDict(zip(self.names, modules))
 
-
         def make_reducer(size):
             return Conv(size, features, 1)
      
