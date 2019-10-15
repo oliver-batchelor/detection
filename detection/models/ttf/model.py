@@ -98,14 +98,14 @@ class Encoder:
 
 class TTFNet(nn.Module):
 
-    def __init__(self, pyramid, features=32, num_classes=2, scale_factor=4):
+    def __init__(self, pyramid, features=32, num_classes=2, head_blocks=2, scale_factor=4):
         super().__init__()
 
         self.num_classes = num_classes
         self.scale_factor = scale_factor
 
-        self.regressor = residual_subnet(features, 4)
-        self.classifier = residual_subnet(features, num_classes)
+        self.regressor = residual_subnet(features, 4, num_blocks=head_blocks)
+        self.classifier = residual_subnet(features, num_classes, num_blocks=head_blocks)
 
         self.classifier.apply(init_classifier)
         self.regressor.apply(init_weights)
@@ -133,7 +133,9 @@ parameters = struct(
 
     pyramid = group('pyramid_parameters', **pyramid_parameters._extend (
         first     = param (2, help = "first layer of feature maps, scale = 1 / 2^first"),
-    ))
+    )),
+
+    head_blocks = param (2, help = "number of residual blocks in network heads"),
   )
 
 
@@ -141,7 +143,7 @@ def create(args, dataset_args):
     num_classes = len(dataset_args.classes)
 
     feature_gen = feature_map(backbone_name=args.backbone, first=args.first, depth=args.depth, features=args.features, decode_blocks=args.decode_blocks)     
-    model = TTFNet(feature_gen, features=args.features, num_classes=num_classes)
+    model = TTFNet(feature_gen, features=args.features, num_classes=num_classes, head_blocks=args.head_blocks)
 
     params = struct(
         alpha=args.alpha, 
