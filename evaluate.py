@@ -81,7 +81,7 @@ def evaluate_image(model, image, encoder, nms_params=detection_table.nms_default
         assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
 
         norm_data = normalize_batch(batch).to(device)
-        prediction = model(norm_data)._map(lambda p: p.detach()[0])
+        prediction = tuple(map(lambda p: p.detach()[0], model(norm_data)))
 
         return struct(detections = encoder.decode(batch, prediction, nms_params=nms_params), prediction = prediction)
 

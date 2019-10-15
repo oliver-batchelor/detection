@@ -314,7 +314,8 @@ class DecodeAdd(nn.Module):
     def forward(self, inputs, skip):
         if not (inputs is None):
             upscaled = self.upscale(inputs)
-            upscaled = match_size_2d(upscaled, skip)
+            upscaled = trim_size_2d(upscaled, skip)
+            
             return self.module(skip + upscaled)
 
         return self.module(skip)
