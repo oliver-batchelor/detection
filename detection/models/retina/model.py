@@ -115,21 +115,21 @@ def output(features, n, layers, init=init_weights):
 
 class RetinaNet(nn.Module):
 
-    def __init__(self, backbone_name, first, depth, features=32, num_boxes=9, num_classes=2, shared=False):
+    def __init__(self, pyramid, num_boxes=9, num_classes=2, shared=False):
         super().__init__()
 
         def named(modules):
-            modules = [(str(i + first), module) for i, module in enumerate(modules)]
+            modules = [(str(i + pyramid.first), module) for i, module in enumerate(modules)]
             return OrderedDict(modules)
        
         self.num_classes = num_classes
 
         self.outputs = Named(
-            location=output(features, 4 * num_boxes, range(first, depth)),
-            classification=output(features, num_classes * num_boxes, range(first, depth), init=init_classifier)
+            location=output(pyramid.features, 4 * num_boxes, range(pyramid.first, pyramid.depth)),
+            classification=output(pyramid.features, num_classes * num_boxes, range(pyramid.first,pyramid.depth), init=init_classifier)
         )
 
-        self.pyramid = feature_pyramid(backbone_name=backbone_name, features=features, first=first, depth=depth)     
+        self.pyramid = pyramid
 
     def forward(self, input):
         features = self.pyramid(input)
@@ -185,8 +185,10 @@ def create(args, dataset_args):
 
     num_boxes, box_sizes = anchor_sizes(args.first, args.depth, anchor_scale=args.anchor_scale, square=args.square)
 
-    model = RetinaNet(backbone_name=args.backbone, first=args.first, depth=args.depth, num_boxes=num_boxes, \
-        num_classes=num_classes, features=args.features, shared=args.shared)
+    pyramid = feature_pyramid(backbone_name=args.backbone, features=args.features, \
+         first=args.first, depth=args.depth, decode_blocks=args.decode_blocks)     
+
+    model = RetinaNet(pyramid, num_boxes=num_boxes, num_classes=num_classes, shared=args.shared)
 
     assert args.location_loss in ["l1", "giou"]
     params = struct(

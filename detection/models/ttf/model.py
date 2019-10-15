@@ -83,6 +83,7 @@ class Encoder:
 
        
     def loss(self, inputs, target, encoded_target, prediction):
+        (classification, location) = prediction
         batch, h, w, num_classes = classification.shape
           
         class_loss = loss.class_loss(encoded_target.heatmap, classification,  class_weights=self.class_weights)
@@ -97,7 +98,7 @@ class Encoder:
 
 class TTFNet(nn.Module):
 
-    def __init__(self, backbone_name, first, depth, features=32, num_classes=2, scale_factor=4):
+    def __init__(self, pyramid, features=32, num_classes=2, scale_factor=4):
         super().__init__()
 
         self.num_classes = num_classes
@@ -109,7 +110,7 @@ class TTFNet(nn.Module):
         self.classifier.apply(init_classifier)
         self.regressor.apply(init_weights)
 
-        self.pyramid = feature_map(backbone_name=backbone_name, features=features, first=first, depth=depth)     
+        self.pyramid = pyramid 
 
     def forward(self, input):
         permute = lambda layer: layer.permute(0, 2, 3, 1).contiguous()
@@ -139,8 +140,8 @@ parameters = struct(
 def create(args, dataset_args):
     num_classes = len(dataset_args.classes)
 
-    model = TTFNet(backbone_name=args.backbone, first=args.first, depth=args.depth,
-        num_classes=num_classes, features=args.features)
+    feature_gen = feature_map(backbone_name=args.backbone, first=args.first, depth=args.depth, features=args.features, decode_blocks=args.decode_blocks)     
+    model = TTFNet(feature_gen, features=args.features, num_classes=num_classes)
 
     params = struct(
         alpha=args.alpha, 

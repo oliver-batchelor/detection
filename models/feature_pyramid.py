@@ -76,6 +76,10 @@ class FeaturePyramid(nn.Module):
 
         def make_reducer(size):
             return Conv(size, features, 1)
+
+        self.first = first
+        self.features = features
+        self.depth = len(backbone_layers)
      
         encoded_sizes = pretrained.encoder_sizes(self.backbone)
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
