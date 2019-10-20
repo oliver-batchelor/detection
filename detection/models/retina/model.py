@@ -9,12 +9,12 @@ import itertools
 import torchvision.models as m
 
 import models.pretrained as pretrained
-from detection import box
+from detection import box, detection_table
 
 from models.common import Named, Parallel, image_size
 
 from models.feature_pyramid import feature_pyramid, init_weights, init_classifier, join_output, residual_subnet, pyramid_parameters
-from tools import struct, table, show_shapes, sum_list, cat_tables, stack_tables, tensors_to
+from tools import struct, table, shape, sum_list, cat_tables, stack_tables, tensors_to
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser, group
 from collections import OrderedDict
@@ -38,6 +38,8 @@ class Encoder:
         self.anchor_cache = {k: anchors.to(device) 
             for k, anchors in self.anchor_cache.items()}
 
+        return self
+
     def anchors(self, input_size):
         def layer_size(i):
             stride = 2 ** i
@@ -46,52 +48,50 @@ class Encoder:
         input_args = (input_size, self.params.crop_boxes)
 
         if not (input_args in self.anchor_cache):
+            
             layer_dims = [layer_size(self.start_layer + i) for i in range(0, len(self.box_sizes))]
             anchors = anchor.make_anchors(self.box_sizes, layer_dims, device=self.device)
             if self.params.crop_boxes:
                 anchors = anchor.crop_anchors(anchors, input_size)
-
             self.anchor_cache[input_args] = anchors
 
         return self.anchor_cache[input_args]
 
     def encode(self, inputs, target):
-        # anchor_boxes = self.anchors(image_size(inputs))
-        # return anchor.encode(target, anchor_boxes, self.params) 
-        
         return struct()
+        
+    def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
+        classification, location = prediction
+        location.dim() == 2 and classification.dim() == 2
 
-    def decode(self, inputs, prediction, nms_params=box.nms_defaults):
-        assert prediction.location.dim() == 2 and prediction.classification.dim() == 2
+        anchor_boxes = self.anchors(image_size(inputs))
 
-        anchor_boxes = self.anchors(image_size(inputs)).type_as(prediction.location)
-
-        bbox = anchor.decode(prediction.location, anchor_boxes)
-        confidence, label = prediction.classification.max(1)
+        bbox = anchor.decode(location, anchor_boxes)
+        confidence, label = classification.max(1)
 
         if self.params.crop_boxes:
             box.clamp(bbox, (0, 0), inputs)
 
         decoded = table(bbox = bbox, confidence = confidence, label = label)
-        return box.nms(decoded, nms_params)
+        return detection_table.nms(decoded, nms_params)
 
        
     def loss(self, inputs, target, encoding, prediction):
-        
+        classification, location = prediction
 
-        anchor_boxes = self.anchors(image_size(inputs)) #.to(prediction.location.device)
-        
-        target = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
+        anchor_boxes = self.anchors(image_size(inputs))      
+        encoding = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
         # target = tensors_to(encoding, device=prediction.location.device)
 
-        class_loss = loss.class_loss(target.classification, prediction.classification,  class_weights=self.class_weights)
+        class_loss = loss.class_loss(encoding.classification, classification,  class_weights=self.class_weights)
         loc_loss = 0
 
         if self.params.location_loss == "l1":
-            loc_loss = loss.l1(target.location, prediction.location, target.classification) 
+            loc_loss = loss.l1(encoding.location, prediction.location, encoding.classification) 
         elif self.params.location_loss == "giou":
-            bbox = anchor.decode(prediction.location, anchor_boxes.unsqueeze(0).expand(prediction.location.size()))
-            loc_loss = loss.giou(target.location, bbox, target.classification)
+
+            bbox = anchor.decode(location, anchor_boxes.unsqueeze(0).expand(prediction.location.size()))
+            loc_loss = loss.giou(encoding.location, bbox, encoding.classification)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)
  
@@ -115,29 +115,29 @@ def output(features, n, layers, init=init_weights):
 
 class RetinaNet(nn.Module):
 
-    def __init__(self, backbone_name, first, depth, features=32, num_boxes=9, num_classes=2, shared=False):
+    def __init__(self, pyramid, num_boxes=9, num_classes=2, shared=False):
         super().__init__()
 
         def named(modules):
-            modules = [(str(i + first), module) for i, module in enumerate(modules)]
+            modules = [(str(i + pyramid.first), module) for i, module in enumerate(modules)]
             return OrderedDict(modules)
        
         self.num_classes = num_classes
 
         self.outputs = Named(
-            location=output(features, 4 * num_boxes, range(first, depth)),
-            classification=output(features, num_classes * num_boxes, range(first, depth), init=init_classifier)
+            location=output(pyramid.features, 4 * num_boxes, range(pyramid.first, pyramid.depth)),
+            classification=output(pyramid.features, num_classes * num_boxes, range(pyramid.first, pyramid.depth), init=init_classifier)
         )
 
-        self.pyramid = feature_pyramid(backbone_name=backbone_name, features=features, first=first, depth=depth)     
+        self.pyramid = pyramid
 
     def forward(self, input):
         features = self.pyramid(input)
         output = self.outputs(features)
 
-        return struct(
-            classification = torch.sigmoid(join_output(output.classification , self.num_classes)),
-            location = join_output(output.location, 4)
+        return (
+            torch.sigmoid(join_output(output.classification , self.num_classes)),
+            join_output(output.location, 4)
         )
 
 
@@ -185,8 +185,10 @@ def create(args, dataset_args):
 
     num_boxes, box_sizes = anchor_sizes(args.first, args.depth, anchor_scale=args.anchor_scale, square=args.square)
 
-    model = RetinaNet(backbone_name=args.backbone, first=args.first, depth=args.depth, num_boxes=num_boxes, \
-        num_classes=num_classes, features=args.features, shared=args.shared)
+    pyramid = feature_pyramid(backbone_name=args.backbone, features=args.features, \
+         first=args.first, depth=args.depth, decode_blocks=args.decode_blocks)     
+
+    model = RetinaNet(pyramid, num_boxes=num_boxes, num_classes=num_classes, shared=args.shared)
 
     assert args.location_loss in ["l1", "giou"]
     params = struct(
@@ -197,7 +199,7 @@ def create(args, dataset_args):
         balance = args.balance
     )
 
-    class_weights = [c.name.get('weighting', 0.25) for c in dataset_args.classes]
+    class_weights = [c.get('weighting', 0.25) for c in dataset_args.classes]
     encoder = Encoder(args.first, box_sizes, class_weights=class_weights, params=params)
 
     return model, encoder
@@ -213,8 +215,8 @@ if __name__ == '__main__':
     model_args = struct(**parser.parse_args().__dict__)
 
     classes = [
-        struct(name=struct(weighting=0.25)),
-        struct(name=struct(weighting=0.25))
+        struct(weighting=0.25),
+        struct(weighting=0.25)
     ]
 
     model, encoder = model.create(model_args, struct(classes = classes, input_channels = 3))
@@ -222,4 +224,4 @@ if __name__ == '__main__':
     x = torch.FloatTensor(4, 3, 370, 500)
     out = model.cuda()(x.cuda())
 
-    print(show_shapes(out))
+    print(shape(out))

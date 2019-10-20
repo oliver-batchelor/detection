@@ -1,6 +1,7 @@
 from os import path
 import random
 import math
+from copy import deepcopy
 
 import torch
 from torch.utils.data.sampler import RandomSampler
@@ -14,7 +15,7 @@ from tools.dataset.samplers import RepeatSampler
 from tools.image import transforms, cv
 
 from tools.image.index_map import default_map
-from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct, show_shapes
+from tools import over_struct, tensor, struct, table, cat_tables, Table, Struct, shape
 
 
 from detection import box
@@ -24,16 +25,12 @@ import collections
 def collate_batch(batch):
     r"""Puts each data field into a tensor with outer dimension batch size"""
 
-    error_msg = "batch must contain Table, numbers, dicts or lists; found {}"
-
     elem = batch[0]
-    elem_type = type(batch[0])
-
-    if elem_type is Table:
+    if type(elem) is Table:
         return cat_tables(batch)
            
-    if elem_type is Struct:
-        d =  {key: collate_batch([d[key] for d in batch]) for key in elem}
+    if type(elem) is Struct:
+        d =  {key: collate_batch([d[key] for d in batch]) for key in elem.keys()}
         return Struct(d)
     elif isinstance(elem, str):
         return batch        
@@ -48,7 +45,7 @@ def collate_batch(batch):
     else:
         return default_collate(batch) 
 
-    raise TypeError(error_msg.format(elem_type))
+    raise TypeError("batch must contain Table, numbers, dicts or lists; found {}".format(elem_type))
 
 
 # Use this to get around pickling problems using multi-processing
@@ -241,10 +238,8 @@ def sample_training(args, images, loader, transform, collate_fn=collate_batch):
         sampler=sampler,
         collate_fn=collate_fn)
 
-
 def load_testing(args, images, collate_fn=collate_batch):
     return DataLoader(images, num_workers=args.num_workers, batch_size=1, collate_fn=collate_fn)
-
 
 def encode_target(encoder):
     def f(d):
@@ -271,7 +266,7 @@ def encode_with(args, encoder=None):
 
 def transform_training(args, encoder=None):
     s = args.scale
-    dest_size = (int(args.image_size * s), int(args.image_size * s))
+    dest_size = (int(args.train_size * s), int(args.train_size * s))
 
     crop = identity
 
@@ -295,7 +290,11 @@ def transform_training(args, encoder=None):
         transforms.adjust_colours(args.hue, args.saturation)
     ))
 
-    encode = encode_with(args, encoder) 
+
+
+    
+
+    encode = encode_with(args, deepcopy(encoder).to('cpu')) 
     return multiple(args.image_samples, transforms.compose (crop, adjust_light, filter, flip, encode))
 
 def multiple(n, transform):
@@ -324,7 +323,7 @@ def transform_testing(args, encoder=None):
     elif args.augment == "resize":
         s = args.scale
 
-        dest_size = (int(args.image_size * s), int(args.image_size * s))
+        dest_size = (int(args.train_size * s), int(args.train_size * s))
         transform =  resize_to(dest_size)
 
     encode = encode_with(args, encoder)         

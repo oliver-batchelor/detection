@@ -15,7 +15,7 @@ from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, 
             DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
-from tools import struct, table, show_shapes, sum_list, cat_tables, Struct
+from tools import struct, table, shape, sum_list, cat_tables, Struct
 
 from tools.parameters import param, choice, parse_args, parse_choice, make_parser
 from collections import OrderedDict
@@ -35,19 +35,18 @@ def init_classifier(m, prior=0.001):
             init.constant_(m.bias, b)
 
 
-def decoder(features, upscale='nearest'):
-        modules = nn.Sequential (
-            Residual(basic_block(features, features)),
-            Residual(basic_block(features, features))
-        )
-        # decoder = identity
-        return Decode(features, upscale=upscale, module=modules)
+def residual_decoder(num_blocks=2, upscale='nearest'):
+    def create(features):
+        blocks = [Residual(basic_block(features, features))  for i in range(num_blocks)]
+        decoder = nn.Sequential (*blocks)
+        
+        return Decode(features, module=decoder, module=modules)
+    return create
 
-def residual_subnet(features, n):
-    return nn.Sequential(
-        Residual(basic_block(features, features)),
-        Residual(basic_block(features, features)),
-        Conv(features, n, 1, bias=True))        
+
+def residual_subnet(features, n, num_blocks=2):
+    blocks = [Residual(basic_block(features, features))  for i in range(num_blocks)]
+    return nn.Sequential (*blocks, Conv(features, features, 3), Conv(features, n, 1, bias=True))
 
 
 def join_output(layers, n):
@@ -64,7 +63,7 @@ class FeaturePyramid(nn.Module):
         first:    Highest level resolution
         features: Number of features in the outputs and decoder side of the network
     """
-    def __init__(self, backbone_layers, first=3, features=32, upscale='nearest'):
+    def __init__(self, backbone_layers, first=3, features=32, make_decoder=residual_decoder(2, 'nearest')):
         super().__init__()
 
         backbone_names = list(backbone_layers.keys())
@@ -75,13 +74,16 @@ class FeaturePyramid(nn.Module):
             assert len(modules) == len(self.names)
             return OrderedDict(zip(self.names, modules))
 
-
         def make_reducer(size):
             return Conv(size, features, 1)
+
+        self.first = first
+        self.features = features
+        self.depth = len(backbone_layers)
      
         encoded_sizes = pretrained.encoder_sizes(self.backbone)
         self.reduce = Parallel(named([make_reducer(size) for size in encoded_sizes]))
-        self.decoder = UpCascade(named([make_decoder(features) for i in encoded_sizes]))
+        self.decoder = UpCascade(named([make_decoder(features) for size in encoded_sizes]))
 
         for m in [self.reduce, self.decoder]:
             m.apply(init_weights)
@@ -97,6 +99,7 @@ pyramid_parameters = struct(
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of feature maps, scale = 1 / 2^first"),
     depth     = param (8, help = "depth in scale levels"),
+    decode_blocks    = param(2, help = "number of residual blocks per layer in decoder")
     upscale    = param('nearest', help="upscaling method used (nearest | shuffle)")
   )
 
@@ -126,7 +129,7 @@ def label_layers(layers):
     layers = [(str(i), layer) for i, layer in enumerate(layers)]
     return OrderedDict(layers)
 
-def feature_pyramid(backbone_name, first=3, depth=8, features=64, upscale='nearest'):
+def feature_pyramid(backbone_name, first=3, depth=8, features=64, decode_blocks=2, upscale='nearest'):
 
     assert first < depth
     assert backbone_name in pretrained.models, "base model not found: " + backbone_name + ", options: " + base_options
@@ -134,7 +137,7 @@ def feature_pyramid(backbone_name, first=3, depth=8, features=64, upscale='neare
     base_layers = pretrained.models[backbone_name]()
     backbone_layers = label_layers(extend_layers(base_layers, depth, features = features*2))
     
-    return FeaturePyramid(backbone_layers, first=first, features=features, upscale=upscale)
+    return FeaturePyramid(backbone_layers, first=first, features=features, make_decoder=residual_decoder(decode_blocks, upscale))
 
 def feature_map(backbone_name, **options):
     pyramid = feature_pyramid(backbone_name, **options)
@@ -149,5 +152,5 @@ if __name__ == '__main__':
     x = torch.FloatTensor(4, 3, 500, 500)
     out = model.cuda()(x.cuda())
 
-    print(show_shapes(out))
+    print(shape(out))
 

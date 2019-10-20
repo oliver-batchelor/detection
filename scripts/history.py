@@ -6,7 +6,7 @@ from os import path
 import argparse
 
 from tools import table, struct, to_structs, filter_none, drop_while, \
-     concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, show_shapes, Struct, transpose_structs
+     concat_lists, map_dict, sum_list, pluck, count_dict, partition_by, shape, Struct, transpose_structs
 
 from detection import evaluate
 

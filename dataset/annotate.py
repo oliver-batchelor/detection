@@ -119,13 +119,13 @@ def filterDict(d):
 def decode_dataset(data):
     data = to_structs(data)   
     config = data.config
-    classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
+    classes = [struct(id = int(k), **v) for k, v in config.classes.items()]
 
     images = { i.image_file:decode_image(i, config) for i in data.images }
     return config, DetectionDataset(classes=classes, images = images)
 
 
 def init_dataset(config):
-    classes = [struct(id = int(k), name = v) for k, v in config.classes.items()]
+    classes = [struct(id = int(k), **v) for k, v in config.classes.items()]
 
     return config, DetectionDataset(classes=classes)

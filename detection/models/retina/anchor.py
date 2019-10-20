@@ -1,7 +1,7 @@
 import math
 
 import torch
-from tools import struct, Table, show_shapes
+from tools import struct, Table, shape
 
 from detection import box
 

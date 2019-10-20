@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from detection import box
-from tools import struct, const, pluck
+from tools import struct, const, pluck, shape
 import numpy as np
 
 def bookend(*xs, dim=0):
@@ -72,12 +72,6 @@ def match_boxes(prediction, target,  threshold=0.5, eps=1e-7):
 
 
 
-# def rev_cummax(v):
-#     for i in range(v.size(0) - 1, 0, -1):
-#         v[i - 1] = max(v[i - 1], v[i])
-
-#     return v
-
 def rev_cummax(v):
     flipped = v.flip(0).numpy()
     rev_max = np.maximum.accumulate(flipped)
@@ -142,15 +136,15 @@ def _match_positives(labels_pred, labels_target, ious, threshold=0.5):
 
 
 
-def match_positives(pred, target):
-    assert pred.label.dim() == 1 and target.label.dim() == 1
-    n, m = pred._size, target._size
+def match_positives(detections, target):
+    assert detections.label.dim() == 1 and target.label.dim() == 1
+    n, m = detections._size, target._size
 
     if m == 0 or n == 0:
         return const(torch.FloatTensor(n).zero_())
 
-    ious = box.iou_matrix(pred.bbox, target.bbox)
-    return lambda threshold: _match_positives(pred.label, target.label, ious, threshold=threshold)
+    ious = box.iou_matrix(detections.bbox, target.bbox)
+    return lambda threshold: _match_positives(detections.label, target.label, ious, threshold=threshold)
 
 def list_subset(xs, inds):
     return [xs[i] for i in inds]
@@ -211,12 +205,12 @@ def mAP_smoothed(image_pairs, xs):
 
 
 def mAP_classes(image_pairs, num_classes):
-    confidence    = torch.cat([i.prediction.confidence for i in image_pairs]).float()
+    confidence    = torch.cat([i.detections.confidence for i in image_pairs]).float()
     confidence, order = confidence.sort(0, descending=True)    
 
-    matchers =  [match_positives(i.prediction, i.target) for i in image_pairs]
+    matchers =  [match_positives(i.detections, i.target) for i in image_pairs]
 
-    predicted_label = torch.cat([i.prediction.label for i in image_pairs])[order]
+    predicted_label = torch.cat([i.detections.label for i in image_pairs])[order]
     target_label = torch.cat([i.target.label for i in image_pairs])
 
     num_targets = torch.bincount(target_label, minlength=num_classes)

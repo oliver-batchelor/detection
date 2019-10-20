@@ -10,7 +10,7 @@ from tools.image import cv
 from main import load_model
 
 from evaluate import evaluate_image
-from detection import box, display
+from detection import box, display, detection_table
 
 parameters = struct (
     model = param('',  required = True,     help = "model checkpoint to use for detection"),
@@ -34,7 +34,7 @@ encoder.to(device)
 
 frame = cv.imread_color(args.input)
 
-nms_params = box.nms_defaults._extend(nms = args.threshold)
+nms_params = detection_table.nms_defaults._extend(nms = args.threshold)
 pprint_struct(nms_params)
 
 detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device, crop_boxes=True)
@@ -43,7 +43,8 @@ for prediction in detections._sequence():
     
     if prediction.confidence > 0.7:
         label_class = classes[prediction.label].name
-        display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=display.to_rgb(label_class.colour))
+        display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
+            name=label_class.name, color=display.to_rgb(label_class.colour))
 
 frame = cv.resize(frame, (frame.size(1) // 2,  frame.size(0) // 2))
 cv.display(frame)

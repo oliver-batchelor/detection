@@ -10,10 +10,14 @@ from tools.image import cv
 from main import load_model
 
 from evaluate import evaluate_image
-from detection import box, display
+from detection import box, display, detection_table
 
 from dataset.annotate import tagged
 
+# from torch2trt import torch2trt
+# import torch.onnx
+
+from time import time
 import json
 
 parameters = struct (
@@ -36,11 +40,11 @@ parameters = struct (
 args = parse_args(parameters, "video detection", "video evaluation parameters")
 print(args)
 device = torch.cuda.current_device()
+# device = torch.device('cpu')
 
 model, encoder, model_args = load_model(args.model)
 print("model parameters:")
 print(model_args)
-
 
 classes = model_args.dataset.classes
 
@@ -57,6 +61,20 @@ fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = None
 if args.output:
     out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
+
+# x = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
+# model_trt = torch2trt(model, [x])
+
+# out = model(x)
+# torch.onnx.export(model,               # model being run
+#                   x,                         # model input (or a tuple for multiple inputs)
+#                   "model.onnx",   # where to save the model (can be a file or file-like object)
+#                   export_params=True,        # store the trained parameter weights inside the model file
+#                   opset_version=11,          # the ONNX version to export the model to
+#                   do_constant_folding=True,  # wether to execute constant folding for optimization
+#                   input_names = ['input'],   # the model's input names
+#                   output_names = ['output'], # the model's output names
+#                   dynamic_axes={'input_1':{0:'batch', 2:'width', 3:'height'}})
 
 
 
@@ -94,31 +112,39 @@ def export_detections(predictions):
     return list(map(detection, predictions._sequence()))
 
 detection_frames = []
+nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
+start = time()
+last = start
 
 for i, frame in enumerate(frames()):
     if i > args.start:
-
-        nms_params = box.nms_defaults._extend(threshold = args.threshold)
-        detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device)
         
-        for prediction in detections._sequence():
-            label_class = classes[prediction.label].name
-            display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), int(255 * prediction.confidence), 0))
+        detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device).detections
 
-        detection_frames.append(export_detections(detections))
+        if args.log:
+            detection_frames.append(export_detections(detections))
+
+        if args.show or args.output:
+            for prediction in detections._sequence():
+                label_class = classes[prediction.label]
+                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), int(255 * prediction.confidence), 0))
 
         if args.show:
             cv.imshow(frame)
-        frame = cv.rgb_to_bgr(cv.resize(frame, size))
-
-        if out:
+        
+        if args.output:
+            frame = cv.rgb_to_bgr(cv.resize(frame, size))
             out.write(frame.numpy())
 
     if args.end is not None and i >= args.end:
         break
 
     if i % 50 == 0:
-        print(i)
+        now = time()
+        elapsed = now - last
+
+        print("frame: {} 50 frames in {:.1f} seconds, at {:.2f} fps".format(i, elapsed, 50./elapsed))
+        last = now
 
 if out:
     out.release()

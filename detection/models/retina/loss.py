@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from tools import tensor, struct, show_shapes
+from tools import tensor, struct, shape
 from detection import box
 
 # makes a one_hot vector from class labels

@@ -70,3 +70,35 @@ def prediction_stats(encoding, prediction, num_bins = 50):
         )
 
     return ZipList(class_histogram(i) for i in range(0, num_classes))
+
+
+
+def summarize_stats(results, epoch, globals={}):
+    avg = mean_results(results)
+    counts = avg.box_counts
+    
+
+    print ("image: mean = {}, std = {}".format(str(avg.image.mean), str(avg.image.std)))
+    print("instances: {:.2f}, anchors {:.2f}, anchors/instance {:.2f}, positive {:.2f},  ignored {:.2f}, negative {:.2f} "
+        .format(avg.boxes, counts.total, counts.positive / avg.boxes, counts.positive, counts.ignored, counts.negative ))
+
+    balances = counts.classes / counts.positive
+    print("class balances: {}".format(str(balances.tolist())))    
+
+
+
+def find_anchors(image, target, encoder, num_classes, match_params=box.default_match):
+    size = (image.size(1), image.size(0))
+    anchors = box.point_form(encoder.anchors(size, crop_boxes = match_params.crop_boxes))
+
+    target_enc = encoder.encode(image, target, match_params=match_params)
+    matches = []
+
+    for i in range(0, num_classes):
+        inds = target_enc.classification.eq(i + 1).nonzero().squeeze()
+
+        if inds.dim() > 0:
+            for b in anchors[inds]:
+                matches.append(struct(label = i, bbox = b))
+
+    return matches    

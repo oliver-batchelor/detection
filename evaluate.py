@@ -12,26 +12,13 @@ import tools.image.cv as cv
 import tools.confusion as c
 
 from tools.image.transforms import normalize_batch
-from tools import struct, tensor, show_shapes, cat_tables, show_shapes_info, \
-    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table
+from tools import struct, tensor, shape, cat_tables, shape_info, \
+    Histogram, ZipList, transpose_structs, transpose_lists, pluck, Struct, filter_none, split_table, tensors_to, map_tensors
 
-import detection.box as box
-from detection import evaluate
-import operator
+from detection import box, evaluate, detection_table
 from functools import reduce
 
-
-def eval_forward(model, device=torch.cuda.current_device()):
-
-    def f(data):
-        norm_data = normalize_batch(data.image).to(device)
-        return model(norm_data)
-
-    return f
-
-
-
-
+import operator
 
 
 def mean_results(results):
@@ -41,60 +28,33 @@ def mean_results(results):
 def sum_results(results):
     return reduce(operator.add, results)
 
-
-
-def summarize_stats(results, epoch, globals={}):
-    avg = mean_results(results)
-    counts = avg.box_counts
-    
-
-    print ("image: mean = {}, std = {}".format(str(avg.image.mean), str(avg.image.std)))
-    print("instances: {:.2f}, anchors {:.2f}, anchors/instance {:.2f}, positive {:.2f},  ignored {:.2f}, negative {:.2f} "
-        .format(avg.boxes, counts.total, counts.positive / avg.boxes, counts.positive, counts.ignored, counts.negative ))
-
-    balances = counts.classes / counts.positive
-    print("class balances: {}".format(str(balances.tolist())))
-
-
-def train_statistics(data, loss, prediction, encoding, debug = struct(), device=torch.cuda.current_device()):
-    num_classes = prediction.classification.size(2)
+# TODO: move this entirely to the individual object detector
+def make_statistics(data, encoder, loss, prediction):
 
     stats = struct(error=sum(loss.values()),
         loss = loss._map(Tensor.item),
         size = data.image.size(0),
         instances=data.lengths.sum().item(),
-        # class_instances=count_instances(data.target.label, num_classes)
     )
 
-    # if debug.predictions and prediction is not None:
-    #     stats = stats._extend(predictions = prediction_stats(encoding, prediction))
-
-    # if debug.boxes:
-    #     stats = stats._extend(
-    #         boxes=count_classes(encoding.classification, num_classes),
-    #     )
-
-        
     return stats
 
 
 
 def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_device()):
-
     def f(data):
-
         image = data.image.to(device)
         norm_data = normalize_batch(image)
         prediction = model(norm_data)
-        target = data.target._map(Tensor.to, device)
 
-        targets = split_table(target, data.lengths.tolist())
+        target_table = tensors_to(data.target, device=device)
+        encoding = tensors_to(data.encoding, device=device)
 
-        loss = encoder.loss(image, targets, data.encoding, prediction)
+        targets = split_table(target_table, data.lengths.tolist())
+        loss = encoder.loss(image, targets, encoding, prediction)
 
-        stats = train_statistics(data, loss, prediction, data.encoding, debug, device)
-        return struct(error = sum(loss.values()) / image.data.size(0), statistics=stats, size = data.image.size(0))
-
+        statistics = make_statistics(data, encoder, loss, prediction)
+        return struct(error = sum(loss.values()) / image.data.size(0), statistics=statistics, size = data.image.size(0))
     return f
 
 
@@ -103,18 +63,6 @@ def summarize_train_stats(name, results, classes, log):
     avg = totals._subset('loss', 'instances', 'error') / totals.size
 
     log.scalars(name + "/loss", avg.loss._extend(total = avg.error))
-
-    class_names = [c.name.name for c in classes]
-
-    # class_counts = {"class_{}".format(c):count for c, count in zip(class_names, totals.class_instances) }
-    # log.scalars(name + "/instances",
-    #     struct(total = totals.instances, **class_counts))
-
-    # if 'boxes' in totals:
-    #     log_boxes(name, class_names, totals.boxes / totals.size,  log)
-
-    if 'predictions' in totals:
-        log_predictions(name, class_names, totals.predictions, log)
 
     loss_str = " + ".join(["{} : {:.3f}".format(k, v) for k, v in sorted(avg.loss.items())])
     return ('n: {}, instances : {:.2f}, loss: {} = {:.3f}'.format(totals.size, avg.instances, loss_str, avg.error))
@@ -125,81 +73,28 @@ def summarize_train(name, results, classes, epoch, log):
     print('{} epoch: {} {}'.format(name, epoch, summary))
 
 
-def axis_splits(size, eval_size, min_overlap=0):
-    if eval_size >= size:
-        return [(0, size)]
 
-    n = math.ceil((size - min_overlap) / (eval_size - min_overlap))
-    overlap = (n * eval_size - size) / (n - 1)
-    size_crop = eval_size - overlap
-    offsets = [int(i * size_crop) for i in range(n)]
-    return [(x, x + eval_size) for x in offsets]
-
-def image_splits(size, eval_size, overlap=0):
-    w, h = size
-    ex, ey = eval_size
-    return [((lx, ly), (ux, uy))
-        for lx, ux in axis_splits(w, ex, overlap)
-        for ly, uy in axis_splits(h, ey, overlap) ]
-
-def split_image(image, eval_size, overlap=0):
-    def sub_image(ranges):
-        (lx, ly), (ux, uy) = ranges
-        return ((lx, ly), image.narrow(0, ly, uy - ly).narrow(1, lx, ux - lx))
-
-    size = (image.size(1), image.size(0))
-    return [ sub_image(r) for r in image_splits(size, eval_size, overlap) ]
-
-
-
-def evaluate_image(model, image, encoder, nms_params=box.nms_defaults,  device=torch.cuda.current_device()):
+def evaluate_image(model, image, encoder, nms_params=detection_table.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
     with torch.no_grad():
-        prediction, _ = evaluate_decode(model, image, encoder=encoder,  device=device)
-        return  encoder.nms(prediction, nms_params=nms_params)
+        batch = image.unsqueeze(0) if image.dim() == 3 else image          
+        assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
 
-def evaluate_raw(model, image, device):
-    if image.dim() == 3:
-        image = image.unsqueeze(0)
+        norm_data = normalize_batch(batch.to(device))
+        prediction = map_tensors(model(norm_data), lambda p: p.detach()[0])
 
-    assert image.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
-    
-    def detach(p):
-        return p.detach()[0]
+        # print(shape(prediction))
 
-    norm_data = normalize_batch(image).to(device)
-    predictions = model(norm_data)._map(detach)
+        return struct(detections = encoder.decode(batch, prediction, nms_params=nms_params), prediction = prediction)
 
-    #gc.collect()
-    return predictions
-
-def evaluate_decode(model, image, encoder, device, offset = (0, 0)):
-    raw = evaluate_raw(model, image, device=device)
-    p = encoder.decode(image, raw)
-
-    offset = torch.Tensor([*offset, *offset]).to(device)
-    return p._extend(bbox = p.bbox + offset), raw
-
-def test_loss(data, encoder, encoding, prediction, debug = struct(), device=torch.cuda.current_device()):
-    def unsqueeze(p):
-        return p.unsqueeze(0)
-
-    if prediction is not None:
-        prediction = prediction._map(unsqueeze)
-
-    target = data.target._map(Tensor.to, device),
-
-    loss = encoder.loss(data.image, target, encoding, prediction)
-    return train_statistics(data, loss, prediction, encoding, debug, device)
-
-
+  
 eval_defaults = struct(
     overlap = 256,
     split = False,
 
     image_size = (600, 600),
     batch_size = 1,
-    nms_params = box.nms_defaults,
+    nms_params = detection_table.nms_defaults,
 
     device=torch.cuda.current_device(),
     debug = ()
@@ -208,37 +103,34 @@ eval_defaults = struct(
 def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
+<<<<<<< HEAD
         prediction = evaluate_decode(model, data.image.squeeze(0), encoder, device=params.device)
+=======
+        result = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
+>>>>>>> 35c6d9c1927653db88e3fa6e4ad0b060281d327d
 
-        train_stats = test_loss(data, encoder, data.encoding, raw, debug=params.debug, device=params.device)
-        return encoder.nms(prediction, nms_params=params.nms_params), train_stats
+        prediction = map_tensors(result.prediction, lambda p: p.unsqueeze(0))
+        target = tensors_to(data.target, device=params.device)
+        encoding = tensors_to(data.encoding, device=params.device)
 
+        loss = encoder.loss(data.image, [target], encoding, prediction)
+        statistics = make_statistics(data, encoder, loss, result.prediction)
 
-def evaluate_split(model, data, encoder, params=eval_defaults):
-    model.eval()
-    with torch.no_grad():
-        splits = split_image(data.image.squeeze(0), params.image_size, params.overlap)
+        return result._extend(statistics=statistics)
 
-        outputs = [evaluate_decode(model, image, encoder, device=params.device, offset=offset) for offset, image in splits]
-        prediction, raw = zip(*outputs)
-
-        #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
-        return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
 
 def eval_test(model, encoder, params=eval_defaults):
-    evaluate = evaluate_split if params.split else evaluate_full
-
     def f(data):
-        prediction, train_stats = evaluate(model, data, encoder, params)
+        result = evaluate_full(model, data, encoder, params)
         return struct (
             id = data.id,
             target = data.target._map(Tensor.to, params.device),
 
-            prediction = prediction,
+            detections = result.detections,
 
             # for summary of loss
             instances=data.lengths.sum().item(),
-            train_stats = train_stats,
+            statistics = result.statistics,
 
             size = data.image.size(0),
         )
@@ -354,7 +246,7 @@ def compute_AP(results, classes, conf_thresholds=None):
 
 def summarize_test(name, results, classes, epoch, log, thresholds=None):
 
-    class_names = {c.id : c.name.name for c in classes}
+    class_names = {c.id : c.name for c in classes}
 
     summary = compute_AP(results, classes, thresholds)
     total, class_aps = summary.total, summary.classes

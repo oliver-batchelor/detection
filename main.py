@@ -19,14 +19,13 @@ from dataset.imports import load_dataset
 
 from dataset.detection import least_recently_evaluated
 
-from detection.models import models
-from detection import box
+from detection import models
+from detection import box, detection_table
 
-import tools.model.tools as model_tools
 import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, show_shapes, to_structs, Struct, window
+from tools import table, struct, logger, shape, to_structs, Struct, window, tensors_to
 
 from tools.logger import EpochLogger
 
@@ -93,9 +92,6 @@ def load_state_partial(model, src):
             if source_param.dim() == dest_param.dim():
                 copy_partial(dest_param, source_param)
 
-
-
-
 def load_state(model, info):
     load_state_partial(model, info.state)
     return struct(model = model, 
@@ -117,7 +113,7 @@ def load_model(model_path):
 
     args = loaded.args
 
-    model, encoder = model_tools.create(models, args.model, args.dataset)
+    model, encoder = models.create(args.model, args.dataset)
     best = load_state(model, loaded.best)
 
     return model, encoder, args
@@ -172,7 +168,7 @@ def initialise(config, dataset, args):
     output_path, log = logger.make_experiment(log_root, args.run_name, load=not args.no_load, dry_run=args.dry_run)
     model_path = os.path.join(output_path, "model.pth")
 
-    model, encoder = model_tools.create(models, model_args.model, model_args.dataset)
+    model, encoder = models.create(model_args.model, model_args.dataset)
 
     set_bn_momentum(model, args.bn_momentum)
 
@@ -192,10 +188,10 @@ def initialise(config, dataset, args):
     return struct(**locals())
 
 
-def encode_shape(box, config):
+def encode_shape(box, class_config):
     lower, upper =  box[:2], box[2:]
 
-    if config.shape == 'circle':
+    if class_config.shape == 'circle':
 
         centre = ((lower + upper) * 0.5).tolist()
         radius = ((upper - lower).sum().item() / 4)
@@ -203,10 +199,10 @@ def encode_shape(box, config):
         circle_shape = struct(centre = centre, radius = radius)
         return tagged('circle', circle_shape)
 
-    elif config.shape == 'box':
+    elif class_config.shape == 'box':
         return tagged('box', struct (lower = lower.tolist(), upper = upper.tolist()))
 
-    assert False, "unsupported shape config: " + config.shape
+    assert False, "unsupported shape config: " + class_config.shape
 
 
 def weight_counts(weight):
@@ -220,19 +216,18 @@ def weight_counts(weight):
 def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
-    class_map = {c.id: c.name for c in classes}
+    class_map = {c.id: c for c in classes}
     
     scale = env.args.scale
 
     def detection(p):
         object_class = classes[p.label]
-        config = object_class.name
 
         return struct (
-            shape      =  encode_shape(p.bbox.cpu() / scale, config),
+            shape      =  encode_shape(p.bbox.cpu() / scale, object_class),
             label      =  object_class.id,
             confidence = p.confidence.item(),
-            match = p.match.item() if 'match' in p else None
+            match = int(p.match) if 'match' in p else None
         )
     detections = list(map(detection, predictions))
     total_confidence = torch.FloatTensor([d.confidence for d in detections])
@@ -264,8 +259,8 @@ def make_detections(env, predictions):
 
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
-    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder, 
-        nms_params=nms_params, device=env.device)
+    detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder.to(env.device), 
+        nms_params=nms_params, device=env.device).detections
     return make_detections(env, list(detections._sequence()))
 
 
@@ -290,36 +285,37 @@ def table_list(t):
     return list(t._sequence())
 
 def evaluate_review(env, image, nms_params, review):
-    model = env.best.model
+    model = env.best.model.to(env.device)
+    encoder = env.encoder.to(env.device)
+
     scale = env.args.scale
 
-    model.eval()
-    with torch.no_grad():
-        prediction, _ = evaluate.evaluate_decode(model.to(env.device), image, env.encoder, 
-            device=env.device)
-        review = review._map(torch.Tensor.to, env.device)
+    detections = evaluate.evaluate_image(model, image, encoder, 
+        device=env.device, nms_params=nms_params).detections
 
-        ious = box.iou_matrix(prediction.bbox, review.bbox * scale)
+    if detections._size == 0:
+        return make_detections(env, [])
+
+    review = tensors_to(review, device=env.device)
+    ious = box.iou_matrix(detections.bbox, review.bbox * scale)
+    
+    ious[ious < nms_params.nms].fill_(-1)
+    scores = ious.mul(detections.confidence.unsqueeze(1))
+
+    review_inds = scores.max(0).values.argsort(descending=True)
+
+    detections = table_list(detections)
+    for i in review_inds.tolist():
+        score, ind = scores[: , i].max(0)
+        
+        if score > 0:
+            detections[ind].match = i
+
+        scores[ind].fill_(0)
+
+    return make_detections(env, detections)
 
 
-        review_predictions = select_matching(ious, review.label, prediction, threshold = nms_params.threshold)
-
-        prediction = suppress_boxes(ious, prediction, threshold = nms_params.threshold)
-
-
-        detections = table_list(review_predictions._extend(match = review.id)) + \
-                     table_list(env.encoder.nms(prediction, nms_params=nms_params))
-
-        return make_detections(env, detections)
-
-
-# def match_predictions(bbox, predictions, threshold=0.5):
-#     ious = iou(predictions.bbox, bbox)
-
-#     _, max_ids = ious.max(1)
-#     return predictions._index_select(max_ids)
-
-# def review_request(env, file, nms_params, device):
 
 def detect_request(env, file, nms_params, review=None):
     path = os.path.join(env.data_root, file)
@@ -395,12 +391,12 @@ def test_images(images, model, env, split=False, hook=None):
     eval_params = struct(
         overlap = env.args.overlap,
         split = split,
-        image_size = (env.args.image_size, env.args.image_size),
+        image_size = (env.args.train_size, env.args.train_size),
         batch_size = env.args.batch_size,
         nms_params = get_nms_params(env.args),
         device = env.device,
         debug = env.debug
-    )  
+    )
 
     eval_test = evaluate.eval_test(model.eval(), env.encoder, eval_params)
     return trainer.test(env.dataset.test_on(images, env.args, env.encoder), eval_test, hook=hook)
@@ -423,7 +419,7 @@ def log_counts(env, image, stats):
 
     class_counts = image.target.label.bincount(minlength = len(env.dataset.classes))
 
-    class_names = {str(c.id) : c.name.name for c in env.dataset.classes}
+    class_names = {str(c.id) : c.name for c in env.dataset.classes}
     class_counts = {str(c.id) : count for c, count in zip(env.dataset.classes, class_counts)}
 
     if stats.class_counts is not None:
