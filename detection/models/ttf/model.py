@@ -118,7 +118,7 @@ class TTFNet(nn.Module):
         features = self.pyramid(input)
         
         return (
-            permute(F.sigmoid(self.classifier(features))),
+            permute(torch.sigmoid(self.classifier(features))),
             (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0)
          )
 
