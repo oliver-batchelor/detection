@@ -299,27 +299,27 @@ class DecodeAdd(nn.Module):
         return self.module(skip)
 
 
+def make_upscale(scale_factor, method):
+    if method in ['nearest', 'linear', 'bilinear']:
+        return nn.Upsample(scale_factor=scale_factor, mode=method)
+    elif method == 'shuffle':
+        return Upscale(features, scale_factor=scale_factor)
+
 class Decode(nn.Module):
-    def __init__(self, features, module=None, scale_factor=2):
+    def __init__(self, features, module=None, scale_factor=2, upscale='nearest'):
         super().__init__()
         self.scale_factor = scale_factor
         self.reduce = Conv(features * 2, features)
         self.module = module or identity
-        #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
-        self.upscale = Upscale(features, scale_factor=scale_factor)
-
+        self.upscale = make_upscale(scale_factor, method=upscale)
 
     def forward(self, inputs, skip):
         if not (inputs is None):
-            #upscaled = F.upsample(inputs, scale_factor=self.scale_factor)
             upscaled = self.upscale(inputs)
             upscaled = match_size_2d(upscaled, skip)
-
             return self.module(self.reduce(torch.cat([upscaled, skip], 1)))
 
         return self.module(skip)
-
-
 
 def init_weights(module):
     def f(m):

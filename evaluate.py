@@ -208,8 +208,7 @@ eval_defaults = struct(
 def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
-        prediction, raw = evaluate_decode(model, data.image.squeeze(0), encoder, 
-            device=params.device)
+        prediction = evaluate_decode(model, data.image.squeeze(0), encoder, device=params.device)
 
         train_stats = test_loss(data, encoder, data.encoding, raw, debug=params.debug, device=params.device)
         return encoder.nms(prediction, nms_params=params.nms_params), train_stats
@@ -225,7 +224,6 @@ def evaluate_split(model, data, encoder, params=eval_defaults):
 
         #train_stats = test_loss(data, encoder, data.encoding, prediction, debug=params.debug, device=params.device)
         return encoder.nms(cat_tables(prediction), nms_params=params.nms_params), None
-
 
 def eval_test(model, encoder, params=eval_defaults):
     evaluate = evaluate_split if params.split else evaluate_full

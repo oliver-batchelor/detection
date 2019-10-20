@@ -35,13 +35,13 @@ def init_classifier(m, prior=0.001):
             init.constant_(m.bias, b)
 
 
-def residual_decoder(features):
-        decoder = nn.Sequential (
+def decoder(features, upscale='nearest'):
+        modules = nn.Sequential (
             Residual(basic_block(features, features)),
             Residual(basic_block(features, features))
         )
         # decoder = identity
-        return Decode(features, module=decoder)
+        return Decode(features, upscale=upscale, module=modules)
 
 def residual_subnet(features, n):
     return nn.Sequential(
@@ -64,7 +64,7 @@ class FeaturePyramid(nn.Module):
         first:    Highest level resolution
         features: Number of features in the outputs and decoder side of the network
     """
-    def __init__(self, backbone_layers, first=3, features=32, make_decoder=residual_decoder):
+    def __init__(self, backbone_layers, first=3, features=32, upscale='nearest'):
         super().__init__()
 
         backbone_names = list(backbone_layers.keys())
@@ -96,7 +96,8 @@ pyramid_parameters = struct(
     backbone  = param ("resnet18", help = "name of pretrained model to use as backbone: " + base_options),
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of feature maps, scale = 1 / 2^first"),
-    depth      = param (8, help = "depth in scale levels")
+    depth     = param (8, help = "depth in scale levels"),
+    upscale    = param('nearest', help="upscaling method used (nearest | shuffle)")
   )
 
 def extra_layer(inp, features):
@@ -125,7 +126,7 @@ def label_layers(layers):
     layers = [(str(i), layer) for i, layer in enumerate(layers)]
     return OrderedDict(layers)
 
-def feature_pyramid(backbone_name, first=3, depth=8, features=64):
+def feature_pyramid(backbone_name, first=3, depth=8, features=64, upscale='nearest'):
 
     assert first < depth
     assert backbone_name in pretrained.models, "base model not found: " + backbone_name + ", options: " + base_options
@@ -133,7 +134,7 @@ def feature_pyramid(backbone_name, first=3, depth=8, features=64):
     base_layers = pretrained.models[backbone_name]()
     backbone_layers = label_layers(extend_layers(base_layers, depth, features = features*2))
     
-    return FeaturePyramid(backbone_layers, first=first, features=features)
+    return FeaturePyramid(backbone_layers, first=first, features=features, upscale=upscale)
 
 def feature_map(backbone_name, **options):
     pyramid = feature_pyramid(backbone_name, **options)
