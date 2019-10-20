@@ -335,11 +335,15 @@ class DecodeAdd(nn.Module):
         return self.module(skip)
 
 
-def make_upscale(scale_factor, method):
+def make_upscale(features, scale_factor, method):
     if method in ['nearest', 'linear', 'bilinear']:
         return nn.Upsample(scale_factor=scale_factor, mode=method)
     elif method == 'shuffle':
         return Upscale(features, scale_factor=scale_factor)
+    elif method == 'conv':
+        return Deconv(features, features, stride=2)
+    else:
+        assert False, "unknown upscale method: " + method
 
 class Decode(nn.Module):
     def __init__(self, features, module=None, scale_factor=2, upscale='nearest'):
@@ -347,13 +351,7 @@ class Decode(nn.Module):
         self.scale_factor = scale_factor
         self.reduce = Conv(features * 2, features)
         self.module = module or identity
-<<<<<<< HEAD
-        self.upscale = make_upscale(scale_factor, method=upscale)
-=======
-        # self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
-        self.upscale = Upscale(features, scale_factor=scale_factor)
-
->>>>>>> 35c6d9c1927653db88e3fa6e4ad0b060281d327d
+        self.upscale = make_upscale(features, scale_factor, method=upscale)
 
     def forward(self, inputs, skip):
         if not (inputs is None):
@@ -363,14 +361,6 @@ class Decode(nn.Module):
 
         return self.module(skip)
 
-<<<<<<< HEAD
-=======
-
-
-
-
-
->>>>>>> 35c6d9c1927653db88e3fa6e4ad0b060281d327d
 def init_weights(module):
     def f(m):
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):

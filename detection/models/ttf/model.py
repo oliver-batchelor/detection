@@ -113,11 +113,12 @@ class TTFNet(nn.Module):
         self.pyramid = pyramid 
 
     def forward(self, input):
-        permute = lambda layer: layer.permute(0, 2, 3, 1).contiguous()
+        def permute(layer):
+            return layer.permute(0, 2, 3, 1).contiguous()
         features = self.pyramid(input)
         
         return (
-            permute(self.classifier(features).sigmoid()),
+            permute(F.sigmoid(self.classifier(features))),
             (permute(self.regressor(features)) * self.scale_factor).clamp_(min=0)
          )
 

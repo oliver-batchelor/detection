@@ -103,11 +103,7 @@ eval_defaults = struct(
 def evaluate_full(model, data, encoder, params=eval_defaults):
     model.eval()
     with torch.no_grad():
-<<<<<<< HEAD
-        prediction = evaluate_decode(model, data.image.squeeze(0), encoder, device=params.device)
-=======
         result = evaluate_image(model, data.image, encoder, device=params.device, nms_params=params.nms_params)
->>>>>>> 35c6d9c1927653db88e3fa6e4ad0b060281d327d
 
         prediction = map_tensors(result.prediction, lambda p: p.unsqueeze(0))
         target = tensors_to(data.target, device=params.device)

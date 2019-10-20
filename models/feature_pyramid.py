@@ -38,9 +38,7 @@ def init_classifier(m, prior=0.001):
 def residual_decoder(num_blocks=2, upscale='nearest'):
     def create(features):
         blocks = [Residual(basic_block(features, features))  for i in range(num_blocks)]
-        decoder = nn.Sequential (*blocks)
-        
-        return Decode(features, module=decoder, module=modules)
+        return Decode(features, module=nn.Sequential (*blocks))
     return create
 
 
@@ -99,7 +97,7 @@ pyramid_parameters = struct(
     features  = param (64, help = "fixed size features in new conv layers"),
     first     = param (3, help = "first layer of feature maps, scale = 1 / 2^first"),
     depth     = param (8, help = "depth in scale levels"),
-    decode_blocks    = param(2, help = "number of residual blocks per layer in decoder")
+    decode_blocks    = param(2, help = "number of residual blocks per layer in decoder"),
     upscale    = param('nearest', help="upscaling method used (nearest | shuffle)")
   )
 

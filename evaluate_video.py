@@ -14,7 +14,6 @@ from detection import box, display, detection_table
 
 from dataset.annotate import tagged
 
-# from torch2trt import torch2trt
 # import torch.onnx
 
 from time import time
@@ -32,6 +31,8 @@ parameters = struct (
     end = param(None, type='int', help = "start end number"),
 
     show = param(False, help='show progress visually'),
+    tensorrt = param(False, help='optimize model with tensorrt'),
+
 
     threshold = param(0.3, "detection threshold"),
     batch = param(8, "batch size for faster evaluation")
@@ -62,8 +63,10 @@ out = None
 if args.output:
     out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
 
-# x = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
-# model_trt = torch2trt(model, [x])
+if args.tensorrt:
+    from torch2trt import torch2trt
+    x = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
+    model = torch2trt(model, [x], fp16_mode=True)
 
 # out = model(x)
 # torch.onnx.export(model,               # model being run
