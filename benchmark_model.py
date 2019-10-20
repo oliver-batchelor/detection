@@ -21,7 +21,7 @@ parameters = struct (
     model = param('',  required = True,     help = "model checkpoint to use for detection"),
     input = param('',    required = True,   help = "input video sequence for detection"),
 
-    frames = param(128, help="number of frames to use"),
+    frames = param(256, help="number of frames to use"),
 
     threshold = param(0.3, "detection threshold"),
     batch = param(8, "batch size for faster evaluation")
@@ -55,10 +55,14 @@ for i, frame in enumerate(frames()):
 
 print("loaded {} images".format(len(images)))
 
+dummy = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
+model(dummy)
+
+
 start = time()
 
 for i in range(len(images)):  
-    dummy = torch.tensor(1, 3, info.size[0], info.size[1])
+    dummy = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
     model(dummy)
 
 now = time()

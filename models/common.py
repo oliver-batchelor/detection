@@ -341,7 +341,7 @@ def make_upscale(features, scale_factor, method):
     elif method == 'shuffle':
         return Upscale(features, scale_factor=scale_factor)
     elif method == 'conv':
-        return Deconv(features, features, stride=2)
+        return Deconv(features, features, stride=2, padding=0)
     else:
         assert False, "unknown upscale method: " + method
 
