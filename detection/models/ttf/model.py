@@ -144,7 +144,8 @@ parameters = struct(
 def create(args, dataset_args):
     num_classes = len(dataset_args.classes)
 
-    feature_gen = feature_map(backbone_name=args.backbone, first=args.first, depth=args.depth, features=args.features, decode_blocks=args.decode_blocks)     
+    feature_gen = feature_map(backbone_name=args.backbone, first=args.first,
+         depth=args.depth, features=args.features, decode_blocks=args.decode_blocks, upscale=args.upscale)     
     model = TTFNet(feature_gen, features=args.features, num_classes=num_classes, head_blocks=args.head_blocks)
 
     params = struct(

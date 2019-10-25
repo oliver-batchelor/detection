@@ -39,6 +39,7 @@ pprint_struct(nms_params)
 
 detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device, crop_boxes=True)
 
+
 for prediction in detections._sequence():
     
     if prediction.confidence > 0.7:

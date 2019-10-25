@@ -25,6 +25,9 @@ parameters = struct (
     input = param('',    required = True,   help = "input video sequence for detection"),
     output = param(None, type='str',        help = "output annotated video sequence"),
 
+    scale = param(None, type='float', help = "scaling of input"),
+
+
     log = param(None, type='str', help="output json log of detections"),
 
     start = param(0, help = "start frame number"),
@@ -55,7 +58,10 @@ frames, info  = cv.video_capture(args.input)
 
 print(info)
 
-size = (int(info.size[0] // 2), int(info.size[1] // 2))
+output_size = (int(info.size[0] // 2), int(info.size[1] // 2))
+
+scale = args.scale or 1
+size = (int(info.size[0] * scale), int(info.size[1] * scale))
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 
@@ -64,20 +70,22 @@ if args.output:
     out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
 
 if args.tensorrt:
+    print ("compiling with tensorrt...")
     from torch2trt import torch2trt
-    x = torch.ones(1, 3, int(info.size[1]), int(info.size[0])).to(device)
-    model = torch2trt(model, [x], fp16_mode=True)
+    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)
+    model = torch2trt(model, [x]).to(device)
+    print("done")
 
-# out = model(x)
-# torch.onnx.export(model,               # model being run
-#                   x,                         # model input (or a tuple for multiple inputs)
-#                   "model.onnx",   # where to save the model (can be a file or file-like object)
-#                   export_params=True,        # store the trained parameter weights inside the model file
-#                   opset_version=11,          # the ONNX version to export the model to
-#                   do_constant_folding=True,  # wether to execute constant folding for optimization
-#                   input_names = ['input'],   # the model's input names
-#                   output_names = ['output'], # the model's output names
-#                   dynamic_axes={'input_1':{0:'batch', 2:'width', 3:'height'}})
+out = model(x)
+torch.onnx.export(model,               # model being run
+                  x,                         # model input (or a tuple for multiple inputs)
+                  "model.onnx",   # where to save the model (can be a file or file-like object)
+                  export_params=True,        # store the trained parameter weights inside the model file
+                  opset_version=11,          # the ONNX version to export the model to
+                  do_constant_folding=True,  # wether to execute constant folding for optimization
+                  input_names = ['input'],   # the model's input names
+                  output_names = ['location', 'classification'], # the model's output names
+                  dynamic_axes={})
 
 
 
@@ -121,8 +129,10 @@ last = start
 
 for i, frame in enumerate(frames()):
     if i > args.start:
-        
-        detections = evaluate_image(model, frame, encoder, nms_params = nms_params, device=device).detections
+        if scale != 1:
+            frame = cv.resize(frame, size)
+
+        detections = evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
 
         if args.log:
             detection_frames.append(export_detections(detections))
@@ -136,7 +146,7 @@ for i, frame in enumerate(frames()):
             cv.imshow(frame)
         
         if args.output:
-            frame = cv.rgb_to_bgr(cv.resize(frame, size))
+            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
             out.write(frame.numpy())
 
     if args.end is not None and i >= args.end:

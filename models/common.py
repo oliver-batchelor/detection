@@ -317,25 +317,26 @@ class Upscale(nn.Module):
         return F.pixel_shuffle(self.conv(inputs), self.scale_factor)
 
 
-class DecodeAdd(nn.Module):
-    def __init__(self, features, module=None, scale_factor=2):
-        super().__init__()
-        self.scale_factor = scale_factor
-        self.module = module or identity
-        #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
-        self.upscale = Upscale(features, scale_factor=scale_factor)
+# class DecodeAdd(nn.Module):
+#     def __init__(self, features, module=None, scale_factor=2):
+#         super().__init__()
+#         self.scale_factor = scale_factor
+#         self.module = module or identity
+#         #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
+#         self.upscale = Upscale(features, scale_factor=scale_factor)
 
-    def forward(self, inputs, skip):
-        if not (inputs is None):
-            upscaled = self.upscale(inputs)
-            upscaled = trim_size_2d(upscaled, skip)
+#     def forward(self, inputs, skip):
+#         if not (inputs is None):
+#             upscaled = self.upscale(inputs)
+#             upscaled = trim_size_2d(upscaled, skip)
             
-            return self.module(skip + upscaled)
+#             return self.module(skip + upscaled)
 
-        return self.module(skip)
+#         return self.module(skip)
 
 
 def make_upscale(features, scale_factor, method):
+    print(method)
     if method in ['nearest', 'linear', 'bilinear']:
         return nn.Upsample(scale_factor=scale_factor, mode=method)
     elif method == 'shuffle':
@@ -344,6 +345,11 @@ def make_upscale(features, scale_factor, method):
         return Deconv(features, features, stride=2, padding=0)
     else:
         assert False, "unknown upscale method: " + method
+
+@torch.jit.script
+def trim_2d(t, h : int, w : int):
+    return t[:, :, :h, :w]
+
 
 class Decode(nn.Module):
     def __init__(self, features, module=None, scale_factor=2, upscale='nearest'):
@@ -356,7 +362,8 @@ class Decode(nn.Module):
     def forward(self, inputs, skip):
         if not (inputs is None):
             upscaled = self.upscale(inputs)
-            upscaled = match_size_2d(upscaled, skip)
+            upscaled = trim_2d(upscaled, skip.shape[2], skip.shape[3])            
+
             return self.module(self.reduce(torch.cat([upscaled, skip], 1)))
 
         return self.module(skip)

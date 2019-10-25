@@ -12,7 +12,7 @@ import models.pretrained as pretrained
 from detection import box
 
 from models.common import Conv, Cascade, UpCascade, Residual, Parallel, Shared, Lookup,  \
-            DecodeAdd, Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
+            Decode,  basic_block, se_block, reduce_features, replace_batchnorms, identity, GlobalSE
 
 import torch.nn.init as init
 from tools import struct, table, shape, sum_list, cat_tables, Struct
@@ -38,7 +38,7 @@ def init_classifier(m, prior=0.001):
 def residual_decoder(num_blocks=2, upscale='nearest'):
     def create(features):
         blocks = [Residual(basic_block(features, features))  for i in range(num_blocks)]
-        return Decode(features, module=nn.Sequential (*blocks))
+        return Decode(features, module=nn.Sequential (*blocks), upscale=upscale)
     return create
 
 
@@ -135,7 +135,8 @@ def feature_pyramid(backbone_name, first=3, depth=8, features=64, decode_blocks=
     base_layers = pretrained.models[backbone_name]()
     backbone_layers = label_layers(extend_layers(base_layers, depth, features = features*2))
     
-    return FeaturePyramid(backbone_layers, first=first, features=features, make_decoder=residual_decoder(decode_blocks, upscale))
+    return FeaturePyramid(backbone_layers, first=first, features=features,
+         make_decoder=residual_decoder(decode_blocks, upscale))
 
 def feature_map(backbone_name, **options):
     pyramid = feature_pyramid(backbone_name, **options)
