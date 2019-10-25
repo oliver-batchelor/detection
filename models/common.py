@@ -317,26 +317,8 @@ class Upscale(nn.Module):
         return F.pixel_shuffle(self.conv(inputs), self.scale_factor)
 
 
-# class DecodeAdd(nn.Module):
-#     def __init__(self, features, module=None, scale_factor=2):
-#         super().__init__()
-#         self.scale_factor = scale_factor
-#         self.module = module or identity
-#         #self.upscale = nn.Upsample(scale_factor=scale_factor, mode='nearest')
-#         self.upscale = Upscale(features, scale_factor=scale_factor)
-
-#     def forward(self, inputs, skip):
-#         if not (inputs is None):
-#             upscaled = self.upscale(inputs)
-#             upscaled = trim_size_2d(upscaled, skip)
-            
-#             return self.module(skip + upscaled)
-
-#         return self.module(skip)
-
 
 def make_upscale(features, scale_factor, method):
-    print(method)
     if method in ['nearest', 'linear', 'bilinear']:
         return nn.Upsample(scale_factor=scale_factor, mode=method)
     elif method == 'shuffle':
