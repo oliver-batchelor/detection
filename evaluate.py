@@ -79,13 +79,14 @@ def evaluate_image(model, image, encoder, nms_params=detection_table.nms_default
     with torch.no_grad():
         batch = image.unsqueeze(0) if image.dim() == 3 else image          
         assert batch.dim() == 4, "evaluate: expected image of 4d  [1,H,W,C] or 3d [H,W,C]"
+        input_size = (batch.shape[2], batch.shape[1])
 
         norm_data = normalize_batch(batch.to(device))
         prediction = map_tensors(model(norm_data), lambda p: p.detach()[0])
 
         # print(shape(prediction))
 
-        return struct(detections = encoder.decode(batch, prediction, nms_params=nms_params), prediction = prediction)
+        return struct(detections = encoder.decode(input_size, prediction, nms_params=nms_params), prediction = prediction)
 
   
 eval_defaults = struct(

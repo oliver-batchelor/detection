@@ -50,10 +50,26 @@ def replace_batchnorms(m, num_groups):
 
     return map_modules(m, nn.BatchNorm2d, convert)
 
-def match_size_2d(t, sized):
-    assert t.dim() == 4 and sized.dim() == 4
-    dh = sized.size(2) - t.size(2)
-    dw = sized.size(3) - t.size(3)
+
+
+# @torch.jit.script
+def trim_2d(t, w : int, h : int):
+    dh = t.shape[2] - h
+    dw = t.shape[3] - w
+
+    assert dh >=0 and dw >= 0
+
+    pad_w = slice(dw // 2, t.shape[3] -(dw - dw // 2))
+    pad_h = slice(dh // 2, t.shape[2] -(dh - dh // 2))
+
+    return t[:, :, pad_h, pad_w]
+
+
+# @torch.jit.script
+def match_size_2d(t, w : int, h : int):
+    # assert t.dim() == 4 and len(shape) == 4
+    dh = h - t.shape[2]
+    dw = w - t.shape[3]
 
     pad = (dw // 2, dw - dw // 2, dh // 2, dh - dh // 2)
     return F.pad(t, pad)
@@ -328,9 +344,6 @@ def make_upscale(features, scale_factor, method):
     else:
         assert False, "unknown upscale method: " + method
 
-@torch.jit.script
-def trim_2d(t, h : int, w : int):
-    return t[:, :, :h, :w]
 
 
 class Decode(nn.Module):
@@ -344,9 +357,10 @@ class Decode(nn.Module):
     def forward(self, inputs, skip):
         if not (inputs is None):
             upscaled = self.upscale(inputs)
-            upscaled = trim_2d(upscaled, skip.shape[2], skip.shape[3])            
 
-            return self.module(self.reduce(torch.cat([upscaled, skip], 1)))
+            trim = trim_2d(upscaled, skip.shape[3], skip.shape[2])            
+            #trim = match_size_2d(upscaled, skip.shape[3], skip.shape[2])                 
+            return self.module(self.reduce(torch.cat([trim, skip], 1)))
 
         return self.module(skip)
 

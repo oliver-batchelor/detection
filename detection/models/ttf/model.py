@@ -54,11 +54,13 @@ class Encoder:
         return encoding.encode_layer(target, input_size, self.layer, num_classes, self.params) 
 
 
-    def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
+    def decode(self, input_size, prediction, nms_params=detection_table.nms_defaults):
         (classification, location) = prediction
 
         h, w, _ = classification.shape
-        boxes = encoding.decode_boxes(self._centres(w, h), location, self.stride)
+        centres = self._centres(w, h)
+        
+        boxes = encoding.decode_boxes(centres, location, self.stride)
         return encoding.decode(classification, boxes, nms_params=nms_params)
 
     @property
@@ -82,7 +84,7 @@ class Encoder:
         )
 
        
-    def loss(self, inputs, target, encoded_target, prediction):
+    def loss(self, input_size, target, encoded_target, prediction):
         (classification, location) = prediction
         batch, h, w, num_classes = classification.shape
           

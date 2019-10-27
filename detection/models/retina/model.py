@@ -60,11 +60,11 @@ class Encoder:
     def encode(self, inputs, target):
         return struct()
         
-    def decode(self, inputs, prediction, nms_params=detection_table.nms_defaults):
+    def decode(self, input_size, prediction, nms_params=detection_table.nms_defaults):
         classification, location = prediction
         location.dim() == 2 and classification.dim() == 2
 
-        anchor_boxes = self.anchors(image_size(inputs))
+        anchor_boxes = self.anchors(input_size)
 
         bbox = anchor.decode(location, anchor_boxes)
         confidence, label = classification.max(1)
@@ -76,10 +76,10 @@ class Encoder:
         return detection_table.nms(decoded, nms_params)
 
        
-    def loss(self, inputs, target, encoding, prediction):
+    def loss(self, input_size, target, encoding, prediction):
         classification, location = prediction
 
-        anchor_boxes = self.anchors(image_size(inputs))      
+        anchor_boxes = self.anchors(input_size)      
         encoding = stack_tables([anchor.encode(t, anchor_boxes, self.params) for t in target])
         # target = tensors_to(encoding, device=prediction.location.device)
 

@@ -3,7 +3,7 @@ import cv2
 
 import torch
 
-from tools import struct
+from tools import struct, tensors_to, shape, map_tensors
 from tools.parameters import param, parse_args
 
 from tools.image import cv
@@ -13,6 +13,7 @@ from evaluate import evaluate_image
 from detection import box, display, detection_table
 
 from dataset.annotate import tagged
+from export_model import export_onnx
 
 # import torch.onnx
 
@@ -34,8 +35,8 @@ parameters = struct (
     end = param(None, type='int', help = "start end number"),
 
     show = param(False, help='show progress visually'),
-    tensorrt = param(False, help='optimize model with tensorrt'),
 
+    backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
 
     threshold = param(0.3, "detection threshold"),
     batch = param(8, "batch size for faster evaluation")
@@ -43,8 +44,6 @@ parameters = struct (
 
 args = parse_args(parameters, "video detection", "video evaluation parameters")
 print(args)
-device = torch.cuda.current_device()
-# device = torch.device('cpu')
 
 model, encoder, model_args = load_model(args.model)
 print("model parameters:")
@@ -52,10 +51,7 @@ print(model_args)
 
 classes = model_args.dataset.classes
 
-model.to(device)
-encoder.to(device)
 frames, info  = cv.video_capture(args.input)
-
 print(info)
 
 output_size = (int(info.size[0] // 2), int(info.size[1] // 2))
@@ -64,29 +60,11 @@ scale = args.scale or 1
 size = (int(info.size[0] * scale), int(info.size[1] * scale))
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
 
 out = None
 if args.output:
     out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
-
-if args.tensorrt:
-    print ("compiling with tensorrt...")
-    from torch2trt import torch2trt
-    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)
-    model = torch2trt(model, [x]).to(device)
-    print("done")
-
-out = model(x)
-torch.onnx.export(model,               # model being run
-                  x,                         # model input (or a tuple for multiple inputs)
-                  "model.onnx",   # where to save the model (can be a file or file-like object)
-                  export_params=True,        # store the trained parameter weights inside the model file
-                  opset_version=11,          # the ONNX version to export the model to
-                  do_constant_folding=True,  # wether to execute constant folding for optimization
-                  input_names = ['input'],   # the model's input names
-                  output_names = ['location', 'classification'], # the model's output names
-                  dynamic_axes={})
-
 
 
 def encode_shape(box, config):
@@ -105,8 +83,6 @@ def encode_shape(box, config):
 
     assert False, "unsupported shape config: " + config.shape
 
-
-
 def export_detections(predictions):
     def detection(p):
         object_class = classes[p.label]
@@ -122,8 +98,71 @@ def export_detections(predictions):
         
     return list(map(detection, predictions._sequence()))
 
+
+def evaluate_onnx(model, encoder, size, onnx_file):   
+    export_onnx(model, size, onnx_file)
+    
+    import onnxruntime as ort
+
+    print("Device: " + ort.get_device())
+    ort_session = ort.InferenceSession(onnx_file)
+
+    def f(image, nms_params=detection_table.nms_defaults):
+        assert image.dim() == 3, "evaluate_onnx: expected image of 3d [H,W,C], got: " + str(image.shape)
+        image_size = (image.shape[1], image.shape[0])
+        image = image.unsqueeze(0)
+
+        prediction = ort_session.run(None, {'input': image.numpy()})
+        prediction = map_tensors(prediction, torch.squeeze, 0)
+
+        return encoder.decode(image_size, prediction, nms_params=nms_params)
+    return f
+
+
+def evaluate_pytorch(model, encoder, device = torch.cuda.current_device()):
+    model.to(device)
+    encoder.to(device)
+
+    def f(image, nms_params=detection_table.nms_defaults):
+        return evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
+    return f
+
+def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
+    print ("Compiling with tensorrt...")
+
+    model.to(device)
+    encoder.to(device)
+
+    from torch2trt import torch2trt
+    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)
+    model = torch2trt(model, [x], max_workspace_size=1<<26).to(device)
+
+    def f(image, nms_params=detection_table.nms_defaults):
+        return evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
+
+    return f
+
+
+device = torch.cuda.current_device()
+
+evaluate = None
+if args.backend == "tensorrt":
+    evaluate = evaluate_tensorrt(model, encoder, device=device)
+elif args.backend == "onnx":
+    filename = args.model + ".onnx"
+    evaluate = evaluate_onnx(model, encoder, size, filename)
+elif args.backend == "pytorch":
+    evaluate = evaluate_pytorch(model, encoder, device=device)
+else:
+    assert False, "unknown backend: " + args.backend
+
+print("Ready")
+
+
+
+
 detection_frames = []
-nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
+
 start = time()
 last = start
 
@@ -132,7 +171,7 @@ for i, frame in enumerate(frames()):
         if scale != 1:
             frame = cv.resize(frame, size)
 
-        detections = evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
+        detections = evaluate(frame, nms_params=nms_params)
 
         if args.log:
             detection_frames.append(export_detections(detections))
@@ -140,9 +179,12 @@ for i, frame in enumerate(frames()):
         if args.show or args.output:
             for prediction in detections._sequence():
                 label_class = classes[prediction.label]
-                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), int(255 * prediction.confidence), 0))
+                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
+                    name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
+                    int(255 * prediction.confidence), 0))
 
         if args.show:
+            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
             cv.imshow(frame)
         
         if args.output:
@@ -152,7 +194,7 @@ for i, frame in enumerate(frames()):
     if args.end is not None and i >= args.end:
         break
 
-    if i % 50 == 0:
+    if i % 50 == 49:
         now = time()
         elapsed = now - last
 
