@@ -149,7 +149,12 @@ def centre_on(image_size):
 
     def apply(d):
         dx = (width - d.image.size(1)) / 2
-        dy = (height - d.image.size(0)) / 2
+        dy = (height - d.image.size(0)) / 2# Use this to get around pickling problems using multi-processing
+def callable(name, f):
+    cls = type(name, (object,), {'__call__': f})
+
+callable('collate_batch', _collate_batch)
+
 
         bbox = box.transform(d.target.bbox, (dx, dy), (1, 1))
         image = transforms.warp_affine(d.image, transforms.translation(dx, dy), image_size)
