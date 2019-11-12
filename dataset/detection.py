@@ -153,14 +153,7 @@ def centre_on(image_size):
 def callable(name, f):
     cls = type(name, (object,), {'__call__': f})
 
-callable('collate_batch', _collate_batch)
-
-
-        bbox = box.transform(d.target.bbox, (dx, dy), (1, 1))
-        image = transforms.warp_affine(d.image, transforms.translation(dx, dy), image_size)
-
-        return transformed(d, image, bbox)
-    return apply        
+#callable('collate_batch', _collate_batch)
 
 
 # def fit_to(image_size):

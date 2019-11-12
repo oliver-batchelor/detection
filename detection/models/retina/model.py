@@ -41,6 +41,7 @@ class Encoder:
         return self
 
     def anchors(self, input_size):
+
         def layer_size(i):
             stride = 2 ** i
             return (stride, max(1, math.ceil(input_size[0] / stride)), max(1, math.ceil(input_size[1] / stride)))
@@ -87,10 +88,10 @@ class Encoder:
         loc_loss = 0
 
         if self.params.location_loss == "l1":
-            loc_loss = loss.l1(encoding.location, prediction.location, encoding.classification) 
+            loc_loss = loss.l1(encoding.location, location, encoding.classification) 
         elif self.params.location_loss == "giou":
 
-            bbox = anchor.decode(location, anchor_boxes.unsqueeze(0).expand(prediction.location.size()))
+            bbox = anchor.decode(location, anchor_boxes.unsqueeze(0).expand(location.size()))
             loc_loss = loss.giou(encoding.location, bbox, encoding.classification)
 
         return struct(classification = class_loss / self.params.balance, location = loc_loss)

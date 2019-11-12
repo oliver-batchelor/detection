@@ -51,7 +51,9 @@ def eval_train(model, encoder, debug = struct(), device=torch.cuda.current_devic
         encoding = tensors_to(data.encoding, device=device)
 
         targets = split_table(target_table, data.lengths.tolist())
-        loss = encoder.loss(image, targets, encoding, prediction)
+
+        input_size = (image.shape[2], image.shape[1])
+        loss = encoder.loss(input_size, targets, encoding, prediction)
 
         statistics = make_statistics(data, encoder, loss, prediction)
         return struct(error = sum(loss.values()) / image.data.size(0), statistics=statistics, size = data.image.size(0))
@@ -110,7 +112,8 @@ def evaluate_full(model, data, encoder, params=eval_defaults):
         target = tensors_to(data.target, device=params.device)
         encoding = tensors_to(data.encoding, device=params.device)
 
-        loss = encoder.loss(data.image, [target], encoding, prediction)
+        input_size = (data.image.shape[2], data.image.shape[1])
+        loss = encoder.loss(input_size, [target], encoding, prediction)
         statistics = make_statistics(data, encoder, loss, result.prediction)
 
         return result._extend(statistics=statistics)
