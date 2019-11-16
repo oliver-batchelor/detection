@@ -180,6 +180,8 @@ def count_struct(values, keys):
     return Struct({k:d.get(k, 0) for k in keys})
 
 
+    
+
 def history_summary(history):
     
     summaries = image_summaries(history)
@@ -187,7 +189,7 @@ def history_summary(history):
     n = len(history)
 
     summaries = transpose_structs(summaries)
-    actions = transpose_structs(totals.actions, ['action', 'duration', 'real_duration'])
+    actions = transpose_structs([actions._subset('action', 'duration', 'real_duration') for actions in totals.actions])
 
     actions_count = count_struct(actions.action, action_types)
     total_actions = sum(actions_count.values(), 0)

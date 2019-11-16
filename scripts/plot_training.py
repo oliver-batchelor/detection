@@ -1,5 +1,5 @@
 from os import path
-from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct, pprint_dict, \
+from tools import struct, to_structs, concat_lists, to_dicts, pluck, pprint_struct,  \
          transpose_structs, Struct, append_dict, transpose_dicts
 
 from scripts.load_figures import *

@@ -2,7 +2,7 @@ from scripts.load_figures import *
 from matplotlib.lines import Line2D
 
 from scripts.datasets import *
-from tools import to_structs, transpose_structs, pprint_dict, transpose_dicts
+from tools import to_structs, transpose_structs, transpose_dicts
 
 import scripts.figures
 

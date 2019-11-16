@@ -251,10 +251,11 @@ def make_detections(env, predictions):
         score   = score(detections),
         class_score = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
         counts = counts,
-        class_counts =  class_counts
+        class_counts =  class_counts,
+        network_id = (env.run, env.best.epoch)
     ) 
 
-    return struct(instances = detections, network_id = (env.run, env.best.epoch), stats = stats)
+    return struct(instances = detections, stats = stats)
 
 
 def evaluate_detections(env, image, nms_params):

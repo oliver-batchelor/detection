@@ -348,11 +348,16 @@ def show_errors(loaded):
 if __name__ == '__main__':
     figure_path = "/home/oliver/sync/figures/seals/"
 
-    scott_base = load_dataset("/home/oliver/annotate/working/scott_base.json")
+    razor = load_dataset("/home/oliver/storage/export/razor.json")
+    export_counts(path.join(figure_path, "razor.csv"), get_counts(razor))
+
+    # scott_base = load_dataset("/home/oliver/annotate/working/scott_base.json")
     
     # scott_base = load_dataset("/home/oliver/storage/export/scott_base.json")
     print("loaded")
-    plot_scott_base(figure_path, get_counts(scott_base), "scott_base_new")
+    # plot_scott_base(figure_path, get_counts(scott_base), "scott_base_new")
+
+    # plot_scott_base(figure_path, get_counts(scott_base), "scott_base_new")
 
     # loaded = datasets._map(load)
     # plot_counts(loaded)
