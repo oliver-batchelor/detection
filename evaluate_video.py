@@ -16,9 +16,7 @@ from evaluate import evaluate_image
 from detection import box, display, detection_table
 
 from dataset.annotate import tagged
-from export_model import export_onnx
 
-# import torch.onnx
 
 from time import time
 import json
@@ -104,9 +102,11 @@ def export_detections(predictions):
 
 
 def evaluate_onnx(model, encoder, size, onnx_file):   
-    export_onnx(model, size, onnx_file)
-    
+    from export_model import export_onnx
     import onnxruntime as ort
+
+    export_onnx(model, size, onnx_file)
+       
 
     print("Device: " + ort.get_device())
     ort_session = ort.InferenceSession(onnx_file)
