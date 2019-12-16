@@ -8,8 +8,9 @@ from tools.image.transforms import normalize_batch
 from tools.parameters import param, parse_args
 
 from tools.image import cv
-from main import load_model
+from main import load_model, try_load
 
+from os import path
 
 from evaluate import evaluate_image
 from detection import box, display, detection_table
@@ -37,6 +38,7 @@ parameters = struct (
     end = param(None, type='int', help = "start end number"),
 
     show = param(False, help='show progress visually'),
+    recompile = param(False, help='recompile exported model'),
 
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
 
@@ -130,25 +132,44 @@ def evaluate_pytorch(model, encoder, device = torch.cuda.current_device()):
     return f
 
 
-# def load_tensorrt(filename):
+def replace_ext(filename, ext):
+    return path.splitext(filename)[0]+ext   
 
 
+def build_tensorrt(model):
+    from torch2trt import torch2trt, TRTModule
+    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)       
+    trt_file = replace_ext(args.model, ".trt")
 
+    if path.isfile(trt_file) and not args.recompile:
+        print("Found TensorRT model file, loading...")
+
+        try:
+            trt_model = TRTModule()
+            weights = torch.load(trt_file)
+            trt_model.load_state_dict(weights)
+
+            trt_model(x)
+            return trt_model
+
+        except Exception as e:
+            print("Error occured: ")
+            print(e)  
+
+    print ("Compiling with tensorRT...")       
+    trt_model = torch2trt(model, [x], max_workspace_size=1<<27).to(device)
+    torch.save(trt_model.state_dict(), trt_file)
+
+    return trt_model
 
 def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
-    print ("Compiling with tensorrt...")
-
     model.to(device)
     encoder.to(device)
 
-    from torch2trt import torch2trt
-    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)
-    
-
-    model = torch2trt(model, [x], max_workspace_size=1<<26).to(device)
+    trt_model = build_tensorrt(model)
 
     def f(image, nms_params=detection_table.nms_defaults):
-        return evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
+        return evaluate_image(trt_model, frame, encoder, nms_params=nms_params, device=device).detections
 
     return f
 
