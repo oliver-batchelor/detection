@@ -5,7 +5,6 @@ import argparse
 import torch
 import json
 
-from pycocotools.coco import COCO
 import numpy as np
 
 from tools.image import cv, index_map
@@ -55,6 +54,8 @@ def tagged(tag, contents):
     return {'tag':tag, 'contents':contents}
 
 def import_subset(input, subset, target_category='Train', class_inputs=None):
+    from pycocotools.coco import COCO
+
     ann_file = '%s/annotations/instances_%s.json'%(input, subset)
 
     coco=COCO(ann_file)

@@ -29,7 +29,6 @@ parameters = struct (
 
     scale = param(None, type='float', help = "scaling of input"),
 
-
     log = param(None, type='str', help="output json log of detections"),
 
     start = param(0, help = "start frame number"),
@@ -37,6 +36,8 @@ parameters = struct (
 
     show = param(False, help='show progress visually'),
     recompile = param(False, help='recompile exported model'),
+
+    fp16 = param(False, help="use fp16 mode for inference"),
 
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
 
@@ -138,6 +139,8 @@ def replace_ext(filename, ext):
 
 def build_tensorrt(model):
     from torch2trt import torch2trt, TRTModule
+    import tensorrt as trt
+
     x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)       
     trt_file = replace_ext(args.model, ".trt")
 
@@ -157,7 +160,9 @@ def build_tensorrt(model):
             print(e)  
 
     print ("Compiling with tensorRT...")       
-    trt_model = torch2trt(model, [x], max_workspace_size=1<<27).to(device)
+    trt_model = torch2trt(model, [x], max_workspace_size=1<<27, fp16_mode=args.fp16, 
+        log_level=trt.Logger.INFO, strict_type_constraints=True)
+
     torch.save(trt_model.state_dict(), trt_file)
 
     return trt_model
