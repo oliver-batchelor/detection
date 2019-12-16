@@ -75,6 +75,19 @@ def summarize_train(name, results, classes, epoch, log):
     print('{} epoch: {} {}'.format(name, epoch, summary))
 
 
+def evaluate_batch(model, images, encoder, nms_params=detection_table.nms_defaults,  device=torch.cuda.current_device()):
+    model.eval()
+    with torch.no_grad():
+        batch = torch.stack(images)
+        input_size = (batch.shape[3], batch.shape[2])
+
+        norm_data = normalize_batch(batch.to(device)).contiguous()
+        prediction = zip(*map_tensors(model(norm_data), lambda p: torch.unbind(p.detach())))
+
+        return [struct(detections = encoder.decode(input_size, prediction, nms_params=nms_params), prediction = prediction) 
+            for prediction in predictions]
+
+
 
 def evaluate_image(model, image, encoder, nms_params=detection_table.nms_defaults,  device=torch.cuda.current_device()):
     model.eval()
@@ -85,9 +98,6 @@ def evaluate_image(model, image, encoder, nms_params=detection_table.nms_default
 
         norm_data = normalize_batch(batch.to(device)).contiguous()
         prediction = map_tensors(model(norm_data), lambda p: p.detach()[0])
-
-        # print(shape(prediction))
-
         return struct(detections = encoder.decode(input_size, prediction, nms_params=nms_params), prediction = prediction)
 
   

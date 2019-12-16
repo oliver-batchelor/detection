@@ -14,7 +14,6 @@ from tools import tensor, struct
 from xml.dom import minidom
 from tools.image.index_map import default_colors
 
-import xmltodict
 
 train_val = [('train', 'VOC2012', 'trainval'), ('train', 'VOC2007', 'trainval')]
 
@@ -63,6 +62,8 @@ def map_list(f, xs):
 
 
 def import_subset(input_path, year, subset, target_category, class_map):
+    import xmltodict
+
     print("{}: importing {} from {}".format(target_category, subset, year))
     assert subset in imagesets
 

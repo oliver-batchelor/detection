@@ -42,7 +42,7 @@ parameters = struct (
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
 
     threshold = param(0.3, "detection threshold"),
-    batch = param(8, "batch size for faster evaluation")
+    batch = param(4, "batch size for faster evaluation")
 )
 
 args = parse_args(parameters, "video detection", "video evaluation parameters")
@@ -173,7 +173,7 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
 
     trt_model = build_tensorrt(model)
 
-    def f(image, nms_params=detection_table.nms_defaults):
+    def f(frame, nms_params=detection_table.nms_defaults):
         return evaluate_image(trt_model, frame, encoder, nms_params=nms_params, device=device).detections
 
     return f
@@ -202,40 +202,53 @@ detection_frames = []
 start = time()
 last = start
 
-for i, frame in enumerate(frames()):
-    if i > args.start:
-        if scale != 1:
-            frame = cv.resize(frame, size)
 
-        detections = evaluate(frame, nms_params=nms_params)
+def group(iterator, count):
+    itr = iter(iterator)
+    while True:
+        yield tuple([next(itr) for i in range(count)])
+
+def draw_detections(frame, detections):
+    frame = frame.clone()
+    for prediction in d._sequence():
+        label_class = classes[prediction.label]
+        display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
+            name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
+            int(255 * prediction.confidence), 0))    
+
+    return frame
+
+processed = 0
+for i, frames in enumerate(group(frames(), args.batch)):
+    if i * args.batch > args.start:
+        if scale != 1:
+            frames = [cv.resize(frame, size) for frame in frames]
+
+        detections = [evaluate(frame, nms_params=nms_params) for frame in frames]
 
         if args.log:
-            detection_frames.append(export_detections(detections))
+            detection_frames += [export_detections(d) for d in detections]
 
         if args.show or args.output:
-            for prediction in detections._sequence():
-                label_class = classes[prediction.label]
-                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
-                    name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
-                    int(255 * prediction.confidence), 0))
+            frames = [draw_detections(frame, d) for frame, d in zip(frames, detections)]
 
-        if args.show:
-            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
-            cv.imshow(frame)
-        
-        if args.output:
-            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
-            out.write(frame.numpy())
+        if args.show or args.output:
+            frames = [cv.rgb_to_bgr(cv.resize(frame, output_size)) for frame in frames]
+            if args.show: cv.imshow(torch.cat(frames, dim=3))
+            if args.output: [out.write(frame.numpy()) for frame in frames]
+                  
 
-    if args.end is not None and i >= args.end:
+    if args.end is not None and i * args.batch >= args.end:
         break
 
-    if i % 50 == 49:
+    processed += args.batch
+    if processed >= 50:
         now = time()
         elapsed = now - last
 
-        print("frame: {} 50 frames in {:.1f} seconds, at {:.2f} fps".format(i, elapsed, 50./elapsed))
+        print("frame: {} {} frames in {:.1f} seconds, at {:.2f} fps".format(i * args.batch, processed, elapsed, processed/elapsed))
         last = now
+        processed = 0
 
 if out:
     out.release()
