@@ -4,10 +4,12 @@ import cv2
 import torch
 
 from tools import struct, tensors_to, shape, map_tensors
+from tools.image.transforms import normalize_batch
 from tools.parameters import param, parse_args
 
 from tools.image import cv
 from main import load_model
+
 
 from evaluate import evaluate_image
 from detection import box, display, detection_table
@@ -127,6 +129,12 @@ def evaluate_pytorch(model, encoder, device = torch.cuda.current_device()):
         return evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
     return f
 
+
+# def load_tensorrt(filename):
+
+
+
+
 def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
     print ("Compiling with tensorrt...")
 
@@ -135,6 +143,8 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
 
     from torch2trt import torch2trt
     x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)
+    
+
     model = torch2trt(model, [x], max_workspace_size=1<<26).to(device)
 
     def f(image, nms_params=detection_table.nms_defaults):

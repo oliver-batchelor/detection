@@ -358,8 +358,8 @@ class Decode(nn.Module):
         if not (inputs is None):
             upscaled = self.upscale(inputs)
 
-            trim = trim_2d(upscaled, skip.shape[3], skip.shape[2])            
-            #trim = match_size_2d(upscaled, skip.shape[3], skip.shape[2])                 
+            #trim = trim_2d(upscaled, skip.shape[3], skip.shape[2])            
+            trim = match_size_2d(upscaled, skip.shape[3], skip.shape[2])                 
             return self.module(self.reduce(torch.cat([trim, skip], 1)))
 
         return self.module(skip)
