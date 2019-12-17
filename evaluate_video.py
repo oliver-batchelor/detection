@@ -40,9 +40,7 @@ parameters = struct (
     fp16 = param(False, help="use fp16 mode for inference"),
 
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
-
-    threshold = param(0.3, "detection threshold"),
-    batch = param(8, "batch size for faster evaluation")
+    threshold = param(0.3, "detection threshold")
 )
 
 args = parse_args(parameters, "video detection", "video evaluation parameters")
@@ -161,7 +159,7 @@ def build_tensorrt(model):
 
     print ("Compiling with tensorRT...")       
     trt_model = torch2trt(model, [x], max_workspace_size=1<<27, fp16_mode=args.fp16, 
-        log_level=trt.Logger.INFO, strict_type_constraints=True)
+        log_level=trt.Logger.INFO, strict_type_constraints=True, max_batch_size=1)
 
     torch.save(trt_model.state_dict(), trt_file)
 
