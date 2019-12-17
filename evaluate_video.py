@@ -230,7 +230,9 @@ for i, frame in enumerate(frames()):
     if args.end is not None and i >= args.end:
         break
 
-    if i % 50 == 49:
+    if i % 50 == 49:        
+        torch.cuda.current_stream().synchronize()
+
         now = time()
         elapsed = now - last
 
