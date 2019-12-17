@@ -141,7 +141,7 @@ def build_tensorrt(model):
     from torch2trt import torch2trt, TRTModule
     import tensorrt as trt
 
-    x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)       
+    x = torch.ones(args.batch, 3, int(size[1]), int(size[0])).to(device)       
     trt_file = replace_ext(args.model, ".trt")
 
     if path.isfile(trt_file) and not args.recompile:
@@ -210,7 +210,7 @@ def group(iterator, count):
 
 def draw_detections(frame, detections):
     frame = frame.clone()
-    for prediction in d._sequence():
+    for prediction in detections._sequence():
         label_class = classes[prediction.label]
         display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
             name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
@@ -234,7 +234,11 @@ for i, frames in enumerate(group(frames(), args.batch)):
 
         if args.show or args.output:
             frames = [cv.rgb_to_bgr(cv.resize(frame, output_size)) for frame in frames]
-            if args.show: cv.imshow(torch.cat(frames, dim=3))
+
+            if args.show: 
+                joined = torch.cat(frames, dim=1)
+                cv.imshow(joined)
+
             if args.output: [out.write(frame.numpy()) for frame in frames]
                   
 
@@ -243,6 +247,8 @@ for i, frames in enumerate(group(frames(), args.batch)):
 
     processed += args.batch
     if processed >= 50:
+        torch.cuda.current_stream().synchronize()
+
         now = time()
         elapsed = now - last
 
