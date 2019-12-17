@@ -82,7 +82,7 @@ def evaluate_batch(model, images, encoder, nms_params=detection_table.nms_defaul
         input_size = (batch.shape[3], batch.shape[2])
 
         norm_data = normalize_batch(batch.to(device)).contiguous()
-        prediction = zip(*map_tensors(model(norm_data), lambda p: torch.unbind(p.detach())))
+        predictions = zip(*map_tensors(model(norm_data), lambda p: torch.unbind(p.detach())))
 
         return [struct(detections = encoder.decode(input_size, prediction, nms_params=nms_params), prediction = prediction) 
             for prediction in predictions]

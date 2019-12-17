@@ -12,7 +12,7 @@ from main import load_model, try_load
 
 from os import path
 
-from evaluate import evaluate_image
+from evaluate import evaluate_image, evaluate_batch
 from detection import box, display, detection_table
 
 from dataset.annotate import tagged
@@ -38,11 +38,12 @@ parameters = struct (
     recompile = param(False, help='recompile exported model'),
 
     fp16 = param(False, help="use fp16 mode for inference"),
+    int8 = param(False, help="use int8 mode for inference"),
 
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
 
     threshold = param(0.3, "detection threshold"),
-    batch = param(4, "batch size for faster evaluation")
+    batch = param(1, "batch size for faster evaluation")
 )
 
 args = parse_args(parameters, "video detection", "video evaluation parameters")
@@ -160,8 +161,8 @@ def build_tensorrt(model):
             print(e)  
 
     print ("Compiling with tensorRT...")       
-    trt_model = torch2trt(model, [x], max_workspace_size=1<<27, fp16_mode=args.fp16, 
-        log_level=trt.Logger.INFO, strict_type_constraints=True)
+    trt_model = torch2trt(model, [x], max_workspace_size=1<<28, fp16_mode=args.fp16, int8_mode=args.int8,
+        log_level=trt.Logger.INFO, strict_type_constraints=True, max_batch_size=args.batch)
 
     torch.save(trt_model.state_dict(), trt_file)
 
@@ -174,7 +175,7 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
     trt_model = build_tensorrt(model)
 
     def f(frame, nms_params=detection_table.nms_defaults):
-        return evaluate_image(trt_model, frame, encoder, nms_params=nms_params, device=device).detections
+        return [p.detections for p in evaluate_batch(trt_model, frame, encoder, nms_params=nms_params, device=device)]
 
     return f
 
@@ -224,7 +225,7 @@ for i, frames in enumerate(group(frames(), args.batch)):
         if scale != 1:
             frames = [cv.resize(frame, size) for frame in frames]
 
-        detections = [evaluate(frame, nms_params=nms_params) for frame in frames]
+        detections = evaluate(frames, nms_params=nms_params)
 
         if args.log:
             detection_frames += [export_detections(d) for d in detections]
