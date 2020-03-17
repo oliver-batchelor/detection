@@ -114,8 +114,6 @@ def load_model(model_path):
     args = loaded.args
 
     model, encoder = models.create(args.model, args.dataset)
-    best = load_state(model, loaded.best)
-
     return model, encoder, args
 
 
@@ -138,6 +136,7 @@ def load_checkpoint(model_path, model, model_args, args):
 
             best.score = 0.0
             best.epoch = current.epoch
+            best.thresholds = None
 
         return best, current, True
 
@@ -212,11 +211,26 @@ def weight_counts(weight):
     return f
 
 
+def get_counts(detections, classes, thresholds=None):
+
+    def count(class_id, t):
+        confidence = torch.FloatTensor([d.confidence for d in detections if d.label == class_id])
+        levels = {k : (t, (confidence > t).sum().item()) for k, t in t.items()}
+        return Struct(levels)
+
+    if thresholds is None:
+        thresholds = {c.id : struct(lower=0, middle=0, upper=0) for c in classes}
+
+    class_map = {c.id: c for c in classes}
+
+    class_counts = {k: count(k, t)  for k, t in thresholds.items()}
+    counts = tools.sum_list([counts._map(weight_counts(class_map[k].count_weight)) for k, counts in class_counts.items()])
+
+    return counts, class_counts
 
 def make_detections(env, predictions):
     classes = env.dataset.classes
     thresholds = env.best.thresholds
-    class_map = {c.id: c for c in classes}
     
     scale = env.args.scale
 
@@ -235,17 +249,7 @@ def make_detections(env, predictions):
     def score(ds):
         return (total_confidence ** 2).sum().item()
 
-    def count(class_id, t):
-        confidence = torch.FloatTensor([d.confidence for d in detections if d.label == class_id])
-        levels = {k : (t, (confidence > t).sum().item()) for k, t in t.items()}
-        return Struct(levels)
-
-    class_counts = None
-    counts = None
-
-    if thresholds is not None:
-        class_counts = {k: count(k, t)  for k, t in thresholds.items()}
-        counts = tools.sum_list([counts._map(weight_counts(class_map[k].count_weight)) for k, counts in class_counts.items()])
+    counts, class_counts = get_counts(detections, classes, thresholds)
 
     stats = struct (
         score   = score(detections),
@@ -415,26 +419,6 @@ def run_testing(name, images, model, env, split=False, hook=None, thresholds=Non
   return 0, None
 
 
-def log_counts(env, image, stats):
-    step = sum([n for cat, n in env.dataset.count_categories().items() if cat != 'new'], 0)
-
-    class_counts = image.target.label.bincount(minlength = len(env.dataset.classes))
-
-    class_names = {str(c.id) : c.name for c in env.dataset.classes}
-    class_counts = {str(c.id) : count for c, count in zip(env.dataset.classes, class_counts)}
-
-    if stats.class_counts is not None:
-        for k, levels in stats.class_counts.items():
-            
-            if k in class_counts:
-                counts = levels._map(lambda c: c[1])
-                rel = counts._map(lambda n: n - class_counts[k])
-
-                env.log.scalars("count/" + class_names[k], counts._extend(truth = class_counts[k]), step=step)
-                env.log.scalars("count/relative/" + class_names[k], rel, step=step)
-    
-
-
 def class_counts(detection, class_id):
     t, count = detection.stats.class_counts[class_id].middle
     return count
@@ -534,9 +518,6 @@ def run_trainer(args, conn = None, env = None):
 
                 image = decode_image(image_data, env.config)
                 env.dataset.update_image(image)
-
-                if method.tag == 'new' and image_data.detections is not None:
-                    log_counts(env, image, image_data.detections.stats)
 
                 if image.category == 'validate':
                     env.best.score = 0

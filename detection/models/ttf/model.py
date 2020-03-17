@@ -28,7 +28,7 @@ from . import encoding, loss
 
 
 class Encoder:
-    def __init__(self, layer, class_weights, params, device = torch.device('cpu')):
+    def __init__(self, layer, class_weights, params, device = torch.device('cpu'), dtype=torch.float):
         self.centre_map = torch.FloatTensor(0, 0, 2).to(device)
 
         self.layer = layer
@@ -38,9 +38,11 @@ class Encoder:
         self.params = params
         self.device = device
 
-    def to(self, device):
+    def to(self, device, dtype=torch.float):
         self.device = device
-        self.centre_map = self.centre_map.to(device)
+        self.dtype = dtype
+
+        self.centre_map = self.centre_map.to(device, dtype=self.dtype)
         return self
 
     def _centres(self, w, h):
