@@ -177,6 +177,8 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
     return f
 
 
+
+
 device = torch.cuda.current_device()
 
 evaluate = None

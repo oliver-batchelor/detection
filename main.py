@@ -25,7 +25,7 @@ from detection import box, detection_table
 import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, shape, to_structs, Struct, window, tensors_to
+from tools import table, struct, logger, shape, to_structs, Struct, window, tensors_to, shape
 
 from tools.logger import EpochLogger
 
@@ -252,7 +252,7 @@ def make_detections(env, predictions):
         class_score = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
         counts = counts,
         class_counts =  class_counts,
-        network_id = (env.run, env.best.epoch)
+        network_id = (env.run, env.epoch)
     ) 
 
     return struct(instances = detections, stats = stats)
@@ -448,7 +448,8 @@ def run_detections(model, env, images, hook=None, variation_window=None):
         results = test_images(images, model, env, hook=hook)
 
         mask = torch.ByteTensor([is_masked(image) for image in images])
-        detections = [make_detections(env, table_list(result.prediction)) for result in results]
+    
+        detections = [make_detections(env, table_list(result.detections)) for result in results]
 
         if variation_window is not None:
             variation = torch.Tensor(len(images)).zero_()
@@ -656,7 +657,6 @@ def run_trainer(args, conn = None, env = None):
             run_testing(test_name, env.dataset.get_images(test_name), model, env, 
                 hook=update('test'), thresholds = env.best.thresholds)                
         
-
         save_checkpoint = struct(current = current, best = best, args = env.model_args, run = env.run)
         torch.save(save_checkpoint, env.model_path)
 

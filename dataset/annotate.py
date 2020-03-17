@@ -6,7 +6,7 @@ import torch
 from dataset.detection import DetectionDataset
 from tools import struct, to_structs
 
-from tools import filter_map, pluck, filter_none, struct, table
+from tools import filter_map, pluck, filter_none, struct, table, pprint_struct
 
 def load_dataset(filename):
     with open(filename, "r") as file:
@@ -101,15 +101,13 @@ def class_mapping(config):
 def decode_image(data, config):
     target = decode_object_map(data.annotations, config)
 
-    evaluated = data.detections.network_id if data.get('detections', None) else None
-
     return struct(
         id = data.image_file,
         file = path.join(config.root, data.image_file),
         target = target,
         category = data.category,
-        evaluated = evaluated,
-        key = data.get('natural_key', None)
+        evaluated = data.evaluated,
+        key = data.key
     )
 
 def filterDict(d):
