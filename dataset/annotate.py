@@ -106,8 +106,8 @@ def decode_image(data, config):
         file = path.join(config.root, data.image_file),
         target = target,
         category = data.category,
-        evaluated = data.evaluated,
-        key = data.key
+        #evaluated = data.evaluated,
+        #key = data.key
     )
 
 def filterDict(d):
