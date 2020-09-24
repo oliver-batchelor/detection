@@ -66,12 +66,12 @@ def filter_invalid(target):
     boxes = target.bbox
 
     valid = (boxes[:, 2] - boxes[:, 0] > 0) & (boxes[:, 3] - boxes[:, 1] > 0)
-    return target[valid.nonzero().squeeze(1)]
+    return target[valid.nonzero(as_tuple=False).squeeze(1)]
 
 def filter_hidden(target, lower, upper, min_visible=0.0):
     bounds = torch.Tensor([[*lower, *upper]])
     overlaps = (intersect_matrix(bounds, target.bbox) / area(target.bbox)).squeeze(0)
-    return target._index_select(overlaps.gt(min_visible).nonzero().squeeze(1))
+    return target._index_select(overlaps.gt(min_visible).nonzero(as_tuple=False).squeeze(1))
 
 
 

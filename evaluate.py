@@ -178,7 +178,7 @@ def compute_thresholds(pr):
         diff = pr.false_positives - pr.false_negatives
         p = int((t / 100) * pr.n)
 
-        zeros = (diff + p == 0).nonzero()
+        zeros = (diff + p == 0).nonzero(as_tuple=False)
         i = 0 if zeros.size(0) == 0 else zeros[0]
 
         return pr.confidence[i].item()

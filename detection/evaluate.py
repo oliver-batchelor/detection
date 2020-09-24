@@ -78,7 +78,7 @@ def rev_cummax(v):
     return torch.from_numpy(rev_max).flip(0)
 
 def area_under_curve(xs, ys):
-    i = (xs[1:] != xs[:-1]).nonzero().squeeze(1)
+    i = (xs[1:] != xs[:-1]).nonzero(as_tuple=False).squeeze(1)
     return ((xs[i + 1] - xs[i]) * ys[i + 1]).sum().item()
 
 
@@ -219,7 +219,7 @@ def mAP_classes(image_pairs, num_classes):
 
         matches = torch.cat([match(threshold) for match in matchers])[order]
         def compute_class(i):
-            inds = [(predicted_label == i).nonzero().squeeze(1)]
+            inds = [(predicted_label == i).nonzero(as_tuple=False).squeeze(1)]
             return compute_mAP(matches[inds], confidence[inds].cpu(), num_targets[i].item())
 
         return struct(

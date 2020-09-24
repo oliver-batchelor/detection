@@ -95,7 +95,7 @@ def find_anchors(image, target, encoder, num_classes, match_params=box.default_m
     matches = []
 
     for i in range(0, num_classes):
-        inds = target_enc.classification.eq(i + 1).nonzero().squeeze()
+        inds = target_enc.classification.eq(i + 1).nonzero(as_tuple=False).squeeze()
 
         if inds.dim() > 0:
             for b in anchors[inds]:

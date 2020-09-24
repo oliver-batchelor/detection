@@ -43,46 +43,32 @@ parameters = struct (
     threshold = param(0.3, "detection threshold")
 )
 
-args = parse_args(parameters, "video detection", "video evaluation parameters")
-print(args)
 
-model, encoder, model_args = load_model(args.model)
-print("model parameters:")
-print(model_args)
+def main():
+    args = parse_args(parameters, "video detection", "video evaluation parameters")
+    print(args)
 
-classes = model_args.dataset.classes
+    model, encoder, model_args = load_model(args.model)
+    print("model parameters:")
+    print(model_args)
 
-frames, info  = cv.video_capture(args.input)
-print(info)
+    classes = model_args.dataset.classes
 
-output_size = (int(info.size[0] // 2), int(info.size[1] // 2))
+    frames, info  = cv.video_capture(args.input)
+    print(info)
 
-scale = args.scale or 1
-size = (int(info.size[0] * scale), int(info.size[1] * scale))
+    output_size = (int(info.size[0] // 2), int(info.size[1] // 2))
 
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
+    scale = args.scale or 1
+    size = (int(info.size[0] * scale), int(info.size[1] * scale))
 
-out = None
-if args.output:
-    out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
 
+    out = None
+    if args.output:
+        out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
 
-def encode_shape(box, config):
-    lower, upper =  box[:2], box[2:]
-
-    if config.shape == 'circle':
-
-        centre = ((lower + upper) * 0.5).tolist()
-        radius = ((upper - lower).sum().item() / 4)
-
-        circle_shape = struct(centre = centre, radius = radius)
-        return 'circle', circle_shape
-
-    elif config.shape == 'box':
-        return 'box', struct (lower = lower.tolist(), upper = upper.tolist())
-
-    assert False, "unsupported shape config: " + config.shape
 
 def export_detections(predictions):
     def detection(p):

@@ -19,13 +19,14 @@ from dataset.imports import load_dataset
 
 from dataset.detection import least_recently_evaluated
 
-from detection import models
-from detection import box, detection_table
+from detection import models, box, detection_table, export
+
+import checkpoint
 
 import tools
 
 from tools.parameters import default_parameters, get_choice
-from tools import table, struct, logger, shape, to_structs, Struct, window, tensors_to, shape
+from tools import table, struct, logger, to_structs, Struct, window, tensors_to, shape
 
 from tools.logger import EpochLogger
 
@@ -51,96 +52,6 @@ class Reset(Exception):
 class NotFound(Exception):
     def __init__(self, filename):
         self.filename = filename
-
-
-def show_differences(d1, d2, prefix=""):
-    unequal_keys = []
-    unequal_keys.extend(set(d1.keys()).symmetric_difference(set(d2.keys())))
-    for k in d1.keys():
-        if d1.get(k, '-') != d2.get(k, '-'):
-            unequal_keys.append(k)
-    if unequal_keys:
-        for k in set(unequal_keys):
-            v1 = d1.get(k, '-')
-            v2 = d2.get(k, '-')
-            if type(v1) != type(v2):
-                v1 = type(v1)
-                v2 = type(v2)
-
-            print ("{:20s} {:10s}, {:10s}".format(prefix + k, str(v1), str(v2)))
-
-
-def copy_partial(dest, src):
-    assert src.dim() == dest.dim()
-
-    for d in range(0, src.dim()):
-
-        if src.size(d) > dest.size(d):
-            src = src.narrow(d, 0, dest.size(d))
-        else:
-            dest = dest.narrow(d, 0, src.size(d))
-
-    dest.copy_(src)
-
-def load_state_partial(model, src):
-    dest = model.state_dict()
-
-    for k, dest_param in dest.items():
-        if k in src:
-            source_param = src[k]
-
-            if source_param.dim() == dest_param.dim():
-                copy_partial(dest_param, source_param)
-
-def load_state(model, info):
-    load_state_partial(model, info.state)
-    return struct(model = model, 
-        thresholds=info.thresholds if 'thresholds' in info else None, 
-        score = info.score, epoch = info.epoch)
-
-def new_state(model):
-    return struct (model = model, score = 0.0, epoch = 0, thresholds = None)
-
-def try_load(model_path):
-    try:
-        return torch.load(model_path)
-    except (FileNotFoundError, EOFError, RuntimeError):
-        pass
-
-def load_model(model_path):
-    loaded = try_load(model_path)
-    assert loaded is not None, "failed to load model from " + model_path
-
-    args = loaded.args
-
-    model, encoder = models.create(args.model, args.dataset)
-    return model, encoder, args
-
-
-def load_checkpoint(model_path, model, model_args, args):
-    loaded = try_load(model_path)
-
-    if not (args.no_load or not (type(loaded) is Struct)):
-
-        current = load_state(model, loaded.best if args.restore_best else loaded.current)
-        best = load_state(copy.deepcopy(model), loaded.best)
-
-        print(loaded.args)
-
-        if loaded.args == model_args:
-            print("loaded model dataset parameters match, resuming")
-
-        else:
-            print("loaded model dataset parameters differ, loading partial")
-            show_differences(model_args.__dict__,  loaded.args.__dict__)
-
-            best.score = 0.0
-            best.epoch = current.epoch
-            best.thresholds = None
-
-        return best, current, True
-
-    return new_state(copy.deepcopy(model)), new_state(model), False
 
 
 
@@ -171,7 +82,7 @@ def initialise(config, dataset, args):
 
     set_bn_momentum(model, args.bn_momentum)
 
-    best, current, resumed = load_checkpoint(model_path, model, model_args, args)
+    best, current, resumed = checkpoint.load_checkpoint(model_path, model, model_args, args)
     model, epoch = current.model, current.epoch + 1
 
     pause_time = args.pause_epochs
@@ -187,104 +98,18 @@ def initialise(config, dataset, args):
     return struct(**locals())
 
 
-def encode_shape(box, class_config):
-    lower, upper =  box[:2], box[2:]
-
-    if class_config.shape == 'circle':
-
-        centre = ((lower + upper) * 0.5).tolist()
-        radius = ((upper - lower).sum().item() / 4)
-
-        circle_shape = struct(centre = centre, radius = radius)
-        return tagged('circle', circle_shape)
-
-    elif class_config.shape == 'box':
-        return tagged('box', struct (lower = lower.tolist(), upper = upper.tolist()))
-
-    assert False, "unsupported shape config: " + class_config.shape
-
-
-def weight_counts(weight):
-    def f(counts):
-       return counts[1] * weight
-
-    return f
-
-
-def get_counts(detections, classes, thresholds=None):
-
-    def count(class_id, t):
-        confidence = torch.FloatTensor([d.confidence for d in detections if d.label == class_id])
-        levels = {k : (t, (confidence > t).sum().item()) for k, t in t.items()}
-        return Struct(levels)
-
-    if thresholds is None:
-        thresholds = {c.id : struct(lower=0, middle=0, upper=0) for c in classes}
-
-    class_map = {c.id: c for c in classes}
-
-    class_counts = {k: count(k, t)  for k, t in thresholds.items()}
-    counts = tools.sum_list([counts._map(weight_counts(class_map[k].count_weight)) for k, counts in class_counts.items()])
-
-    return counts, class_counts
-
 def make_detections(env, predictions):
-    classes = env.dataset.classes
-    thresholds = env.best.thresholds
-    
-    scale = env.args.scale
-
-    def detection(p):
-        object_class = classes[p.label]
-
-        return struct (
-            shape      =  encode_shape(p.bbox.cpu() / scale, object_class),
-            label      =  object_class.id,
-            confidence = p.confidence.item(),
-            match = int(p.match) if 'match' in p else None
-        )
-    detections = list(map(detection, predictions))
-    total_confidence = torch.FloatTensor([d.confidence for d in detections])
-
-    def score(ds):
-        return (total_confidence ** 2).sum().item()
-
-    counts, class_counts = get_counts(detections, classes, thresholds)
-
-    stats = struct (
-        score   = score(detections),
-        class_score = {c.id : score([d for d in detections if d.label == c.id]) for c in classes},
-        counts = counts,
-        class_counts =  class_counts,
-        network_id = (env.run, env.epoch)
-    ) 
-
-    return struct(instances = detections, stats = stats)
+    return export.make_detections(predictions, 
+        classes=env.dataset.classes, thresholds=env.best.thresholds, 
+        scale=env.scale, network_id = (env.run, env.epoch))
 
 
 def evaluate_detections(env, image, nms_params):
     model = env.best.model
     detections = evaluate.evaluate_image(model.to(env.device), image, env.encoder.to(env.device), 
         nms_params=nms_params, device=env.device).detections
-    return make_detections(env, list(detections._sequence()))
+    return make_detections(list(detections._sequence()))
 
-
-def select_matching(ious, label, prediction, threshold = 0.5):
-
-    matching = ious > threshold
-    has_label = prediction.label.unsqueeze(1).expand_as(matching) == label.unsqueeze(0).expand_as(matching)
-      
-    matching = matching & has_label
-    confidence = prediction.confidence.unsqueeze(1).expand_as(matching).masked_fill(~matching, 0)
-
-    _, max_ids = confidence.max(0)
-    return prediction._index_select(max_ids)
-
-
-def suppress_boxes(ious, prediction, threshold = 0.5):
-    max_ious, _ = ious.max(1)
-    return prediction._extend(
-        confidence = prediction.confidence.masked_fill(max_ious > threshold, 0))
 
 def table_list(t):
     return list(t._sequence())
@@ -363,22 +188,6 @@ def adjust_learning_rate(lr, optimizer):
         param_group['lr'] = modified
 
 
-def flatten_parameters(model):
-    return torch.cat([param.data.view(-1) for param in model.parameters()], 0)
-
-def load_flattened(model, flattened):
-    offset = 0
-    for param in model.parameters():
-
-        data = flattened[offset:offset + param.nelement()].view(param.size())
-        param.data.copy_(data)
-        offset += param.nelement()
-
-    return model
-
-
-def append_window(x, xs, window):
-    return [x, *xs][:window]
 
 
 def set_bn_momentum(model, mom):
@@ -423,15 +232,13 @@ def class_counts(detection, class_id):
     t, count = detection.stats.class_counts[class_id].middle
     return count
 
-def is_masked(image):
-    return (0 if image.category in ['discard'] else 1)
 
 def run_detections(model, env, images, hook=None, variation_window=None):
     if len(images) > 0:
         images = sorted(images, key = lambda img: img.key)
         results = test_images(images, model, env, hook=hook)
 
-        mask = torch.ByteTensor([is_masked(image) for image in images])
+        mask = torch.ByteTensor([image.category in ['discard'] for image in images])
     
         detections = [make_detections(env, table_list(result.detections)) for result in results]
 
@@ -450,8 +257,6 @@ def run_detections(model, env, images, hook=None, variation_window=None):
     
 
 
-
-
 def report_training(results):
     images = {}
 
@@ -461,12 +266,6 @@ def report_training(results):
 
     return images
 
-
-def add_noise(dataset, args):
-    if args.box_noise > 0 or args.box_offset > 0:
-      return dataset.add_noise(noise = args.box_noise / 100, offset = args.box_offset / 100) 
-
-    return dataset
 
 class UserCommand(Exception):
     def __init__(self, command):
@@ -602,20 +401,6 @@ def run_trainer(args, conn = None, env = None):
 
         send_command('training', report_training(train_stats))
 
-        # Save parameters for model averaging
-        training_params = flatten_parameters(model).cpu()
-
-        is_averaging = env.epoch >= args.average_start and args.average_window > 1
-        if is_averaging:
-            env.running_average = append_window(training_params, env.running_average, args.average_window)
-
-            # Replace model with averaged model for purposes of testing
-            load_flattened(model, sum(env.running_average) / len(env.running_average))
-
-            print("updating average batch norm:".format(env.epoch))
-            trainer.update_bn(env.dataset.sample_train(args._extend(batch_size = 16, epoch_size = 128), env.encoder),
-                evaluate.eval_forward(model.train(), device=env.device))
-
 
         score, thresholds = run_testing('validate', env.dataset.validate_images, model, env,  hook=update('validate'))
         if env.args.eval_split:           
@@ -626,8 +411,6 @@ def run_trainer(args, conn = None, env = None):
         if is_best:
             env.best = struct(model = copy.deepcopy(model), score = score, thresholds = thresholds, epoch = env.epoch)
 
-        if is_averaging:
-            load_flattened(model, training_params) # Restore parameters
 
         current = struct(state = model.state_dict(), epoch = env.epoch, thresholds = thresholds, score = score)
         best = struct(state = env.best.model.state_dict(), epoch = env.best.epoch, thresholds = env.best.thresholds, score = env.best.score)
@@ -738,7 +521,6 @@ def run_main():
         p, conn = connection.connect('ws://' + input_args.host)
     else:
         config, dataset = load_dataset(args)
-        dataset = add_noise(dataset, args)
         env = initialise(config, dataset, args)
 
 

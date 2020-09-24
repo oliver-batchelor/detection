@@ -12,7 +12,7 @@ nms_defaults = struct(
 )
 
 def nms(prediction, params):
-    inds = (prediction.confidence >= params.threshold).nonzero().squeeze(1)
+    inds = (prediction.confidence >= params.threshold).nonzero(as_tuple=False).squeeze(1)
     prediction = prediction._index_select(inds)._extend(index = inds)
 
     inds = torchvision.nms(prediction.bbox, prediction.confidence, params.nms)
