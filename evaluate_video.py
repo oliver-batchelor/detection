@@ -96,41 +96,42 @@ def replace_ext(filename, ext):
     return path.splitext(filename)[0]+ext   
 
 
-def build_tensorrt(model):
+def build_tensorrt(trt_file, model, size, device, recompile=False, fp16=True):
     from torch2trt import torch2trt, TRTModule
     import tensorrt as trt
 
     x = torch.ones(1, 3, int(size[1]), int(size[0])).to(device)       
-    trt_file = replace_ext(args.model, ".trt")
 
-    if path.isfile(trt_file) and not args.recompile:
+    if path.isfile(trt_file) and not recompile:
         print("Found TensorRT model file, loading...")
 
-        try:
-            trt_model = TRTModule()
-            weights = torch.load(trt_file)
-            trt_model.load_state_dict(weights)
+        # try:
+        trt_model = TRTModule()
+        weights = torch.load(trt_file)
+        trt_model.load_state_dict(weights)
 
-            trt_model(x)
-            return trt_model
+        trt_model(x)
+        return trt_model
 
-        except Exception as e:
-            print("Error occured: ")
-            print(e)  
+        # except Exception as e:
+        #     print("Error occured: ")
+        #     print(e)  
 
     print ("Compiling with tensorRT...")       
-    trt_model = torch2trt(model, [x], max_workspace_size=1<<27, fp16_mode=args.fp16, 
+    trt_model = torch2trt(model, [x], max_workspace_size=1<<27, fp16_mode=fp16, 
         log_level=trt.Logger.INFO, strict_type_constraints=True, max_batch_size=1)
 
     torch.save(trt_model.state_dict(), trt_file)
 
     return trt_model
 
-def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
+def evaluate_tensorrt(model, size, encoder, filename, device = torch.cuda.current_device()):
     model.to(device)
     encoder.to(device)
 
-    trt_model = build_tensorrt(model)
+    trt_file = replace_ext(filename, ".trt")
+    trt_model = build_tensorrt(trt_file, model, size, device)
+    
 
     def f(image, nms_params=detection_table.nms_defaults):
         return evaluate_image(trt_model, frame, encoder, nms_params=nms_params, device=device).detections
@@ -138,13 +139,13 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
     return f
 
 
-def initialise(model, encoder, size, backend="pytorch"):
+def initialise(model_file, model, encoder, size, backend="pytorch"):
 
     device = torch.cuda.current_device()
 
     evaluate = None
     if backend == "tensorrt":
-        return evaluate_tensorrt(model, encoder, device=device)
+        return evaluate_tensorrt(model, size, encoder, model_file, device=device)
     elif backend == "onnx":
         filename = args.model + ".onnx"
         return evaluate_onnx(model, encoder, size, filename)
@@ -233,7 +234,7 @@ def main():
     scale = args.scale or 1
     size = (int(info.size[0] * scale), int(info.size[1] * scale))
 
-    evaluate_image = initialise(model, encoder, size, args.backend)
+    evaluate_image = initialise(args.model, model, encoder, size, args.backend)
     evaluate_video(frames, evaluate_image, size, args, classes=classes, fps=info.fps)
 
 
