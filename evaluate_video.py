@@ -8,12 +8,13 @@ from tools.image.transforms import normalize_batch
 from tools.parameters import param, parse_args
 
 from tools.image import cv
-from main import load_model, try_load
+from checkpoint import load_model, try_load
 
 from os import path
 
 from evaluate import evaluate_image
 from detection import box, display, detection_table
+from detection.export import encode_shape
 
 from dataset.annotate import tagged
 
@@ -42,32 +43,6 @@ parameters = struct (
     backend = param('pytorch', help='use specific backend (onnx | pytorch | tensorrt)'),
     threshold = param(0.3, "detection threshold")
 )
-
-
-def main():
-    args = parse_args(parameters, "video detection", "video evaluation parameters")
-    print(args)
-
-    model, encoder, model_args = load_model(args.model)
-    print("model parameters:")
-    print(model_args)
-
-    classes = model_args.dataset.classes
-
-    frames, info  = cv.video_capture(args.input)
-    print(info)
-
-    output_size = (int(info.size[0] // 2), int(info.size[1] // 2))
-
-    scale = args.scale or 1
-    size = (int(info.size[0] * scale), int(info.size[1] * scale))
-
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
-
-    out = None
-    if args.output:
-        out = cv2.VideoWriter(args.output, fourcc, info.fps, size)
 
 
 def export_detections(predictions):
@@ -113,7 +88,7 @@ def evaluate_pytorch(model, encoder, device = torch.cuda.current_device()):
     encoder.to(device)
 
     def f(image, nms_params=detection_table.nms_defaults):
-        return evaluate_image(model, frame, encoder, nms_params=nms_params, device=device).detections
+        return evaluate_image(model, image, encoder, nms_params=nms_params, device=device).detections
     return f
 
 
@@ -163,72 +138,105 @@ def evaluate_tensorrt(model, encoder, device = torch.cuda.current_device()):
     return f
 
 
+def initialise(model, encoder, size, backend="pytorch"):
+
+    device = torch.cuda.current_device()
+
+    evaluate = None
+    if backend == "tensorrt":
+        return evaluate_tensorrt(model, encoder, device=device)
+    elif backend == "onnx":
+        filename = args.model + ".onnx"
+        return evaluate_onnx(model, encoder, size, filename)
+    elif backend == "pytorch":
+        return evaluate_pytorch(model, encoder, device=device)
+    else:
+        assert False, "unknown backend: " + backend
+
+    print("Ready")
 
 
-device = torch.cuda.current_device()
+def evaluate_video(frames, evaluate, size, args, classes, fps=20, scale=1):
 
-evaluate = None
-if args.backend == "tensorrt":
-    evaluate = evaluate_tensorrt(model, encoder, device=device)
-elif args.backend == "onnx":
-    filename = args.model + ".onnx"
-    evaluate = evaluate_onnx(model, encoder, size, filename)
-elif args.backend == "pytorch":
-    evaluate = evaluate_pytorch(model, encoder, device=device)
-else:
-    assert False, "unknown backend: " + args.backend
+    detection_frames = []
 
-print("Ready")
+    start = time()
+    last = start
+
+    output_size = (int(size[0] // 2), int(size[1] // 2))
+    nms_params = detection_table.nms_defaults._extend(threshold = args.threshold)
+
+    out = None
+    if args.output:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(args.output, fourcc, fps, size)
+
+    for i, frame in enumerate(frames()):
+        if i > args.start:
+            if args.scale is not None:
+                frame = cv.resize(frame, size)
+
+            detections = evaluate(frame, nms_params=nms_params)
+
+            if args.log:
+                detection_frames.append(export_detections(detections))
+
+            if args.show or args.output:
+                for prediction in detections._sequence():
+                    label_class = classes[prediction.label]
+                    display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
+                        name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
+                        int(255 * prediction.confidence), 0))
+
+            if args.show:
+                frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
+                cv.imshow(frame)
+            
+            if args.output:
+                frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
+                out.write(frame.numpy())
+
+        if args.end is not None and i >= args.end:
+            break
+
+        if i % 50 == 49:        
+            torch.cuda.current_stream().synchronize()
+
+            now = time()
+            elapsed = now - last
+
+            print("frame: {} 50 frames in {:.1f} seconds, at {:.2f} fps".format(i, elapsed, 50./elapsed))
+            last = now
+
+    if out:
+        out.release()
+
+    if args.log:
+        with open(args.log, "w") as f:
+            text = json.dumps(info._extend(filename=args.input, frames=detection_frames)._to_dicts())
+            f.write(text)
+
+
+def main():
+    args = parse_args(parameters, "video detection", "video evaluation parameters")
+    print(args)
+
+    model, encoder, model_args = load_model(args.model)
+    print("model parameters:")
+    print(model_args)
+
+    classes = model_args.dataset.classes
+
+    frames, info  = cv.video_capture(args.input)
+    print("Input video", info)
+
+    scale = args.scale or 1
+    size = (int(info.size[0] * scale), int(info.size[1] * scale))
+
+    evaluate_image = initialise(model, encoder, size, args.backend)
+    evaluate_video(frames, evaluate_image, size, args, classes=classes, fps=info.fps)
 
 
 
-
-detection_frames = []
-
-start = time()
-last = start
-
-for i, frame in enumerate(frames()):
-    if i > args.start:
-        if scale != 1:
-            frame = cv.resize(frame, size)
-
-        detections = evaluate(frame, nms_params=nms_params)
-
-        if args.log:
-            detection_frames.append(export_detections(detections))
-
-        if args.show or args.output:
-            for prediction in detections._sequence():
-                label_class = classes[prediction.label]
-                display.draw_box(frame, prediction.bbox, confidence=prediction.confidence, 
-                    name=label_class.name, color=(int((1.0 - prediction.confidence) * 255), 
-                    int(255 * prediction.confidence), 0))
-
-        if args.show:
-            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
-            cv.imshow(frame)
-        
-        if args.output:
-            frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
-            out.write(frame.numpy())
-
-    if args.end is not None and i >= args.end:
-        break
-
-    if i % 50 == 49:        
-        torch.cuda.current_stream().synchronize()
-
-        now = time()
-        elapsed = now - last
-
-        print("frame: {} 50 frames in {:.1f} seconds, at {:.2f} fps".format(i, elapsed, 50./elapsed))
-        last = now
-
-if out:
-    out.release()
-
-if args.log:
-    with open(args.log, "w") as f:
-        text = json.dumps(info._extend(filename=args.input, frames=detection_frames)._to_dicts())
-        f.write(text)
+if __name__ == "__main__":
+    main()

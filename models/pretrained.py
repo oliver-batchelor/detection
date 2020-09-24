@@ -10,6 +10,8 @@ import itertools
 from torchvision.models import resnet, densenet, vgg
 import torchvision.models as model_zoo
 
+
+
 # from pretrainedmodels.models import senet
 # import pretrainedmodels
 
@@ -54,6 +56,16 @@ def create_mobilenet(filename):
     return f
 
 
+def create_antialiased(name):
+    def f():
+        from antialiased_cnns import resnet
+        model = resnet.__all__[name](pretrained=True)
+        if isinstance(model, resnet.ResNet):
+            return resnet_layers(model)
+        else:
+            assert false, "unsupported model type " + name
+    return f
+
 def create_imagenet(name):
     def f():
 
@@ -73,6 +85,7 @@ def create_imagenet(name):
 
 
 models = {
+    'aa_resnet18':create_antialiased('resnet18'),
     'resnet18':create_imagenet('resnet18'),
     'resnet34':create_imagenet('resnet34'),
     'resnet50':create_imagenet('resnet50'),

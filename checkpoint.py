@@ -47,8 +47,12 @@ def load_state_partial(model, src):
             if source_param.dim() == dest_param.dim():
                 copy_partial(dest_param, source_param)
 
-def load_state(model, info):
-    load_state_partial(model, info.state)
+def load_state(model, info, strict=True):    
+    if strict:
+        model.load_state_dict(info.state, strict=True)
+    else:
+        load_state_partial(model, info.state)
+
     return struct(model = model, 
         thresholds=info.thresholds if 'thresholds' in info else None, 
         score = info.score, epoch = info.epoch)
@@ -69,16 +73,18 @@ def load_model(model_path):
     args = loaded.args
 
     model, encoder = models.create(args.model, args.dataset)
+    load_state(model, loaded.best)
+
     return model, encoder, args
 
 
-def load_checkpoint(model_path, model, model_args, args):
+def load_checkpoint(model_path, model, model_args, args, strict=True):
     loaded = try_load(model_path)
 
     if not (args.no_load or not (type(loaded) is Struct)):
 
-        current = load_state(model, loaded.best if args.restore_best else loaded.current)
-        best = load_state(copy.deepcopy(model), loaded.best)
+        current = load_state(model, loaded.best if args.restore_best else loaded.current, strict=strict)
+        best = load_state(copy.deepcopy(model), loaded.best, strict=strict)
 
         print(loaded.args)
 
