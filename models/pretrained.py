@@ -56,10 +56,10 @@ def create_mobilenet(filename):
     return f
 
 
-def create_antialiased(name):
+def create_antialiased(name, filter_size):
     def f():
         from antialiased_cnns import resnet
-        model = resnet.__all__[name](pretrained=True)
+        model = resnet.__dict__[name](filter_size=filter_size, pretrained=True)
         if isinstance(model, resnet.ResNet):
             return resnet_layers(model)
         else:
@@ -85,7 +85,7 @@ def create_imagenet(name):
 
 
 models = {
-    'aa_resnet18':create_antialiased('resnet18'),
+    'aa_resnet18':create_antialiased('resnet18', 2),
     'resnet18':create_imagenet('resnet18'),
     'resnet34':create_imagenet('resnet34'),
     'resnet50':create_imagenet('resnet50'),
