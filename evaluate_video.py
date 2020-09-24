@@ -189,11 +189,11 @@ def evaluate_video(frames, evaluate, size, args, classes, fps=20, scale=1):
                         int(255 * prediction.confidence), 0))
 
             if args.show:
-                frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
+                frame = cv.resize(frame, output_size)
                 cv.imshow(frame)
             
             if args.output:
-                frame = cv.rgb_to_bgr(cv.resize(frame, output_size))
+                frame = cv.resize(frame, output_size)
                 out.write(frame.numpy())
 
         if args.end is not None and i >= args.end:
